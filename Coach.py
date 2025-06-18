@@ -10,17 +10,19 @@ from tqdm import tqdm
 
 from Arena import Arena
 from MCTS import MCTS
+from Game import Game
+from NeuralNet import NeuralNet
+from Config import Config
 
 log = logging.getLogger(__name__)
 
 
 class Coach():
     """
-    This class executes the self-play + learning. It uses the functions defined
-    in Game and NeuralNet. args are specified in main.py.
+    This class executes the self-play + learning. It uses the functions defined in Game and NeuralNet. args are specified in main.py.
     """
 
-    def __init__(self, game, nnet, args):
+    def __init__(self, game: Game, nnet: NeuralNet, args: Config):
         self.game = game
         self.nnet = nnet
         self.pnet = self.nnet.__class__(self.game)  # the competitor network
@@ -127,10 +129,10 @@ class Coach():
                 self.nnet.save_checkpoint(folder=self.args.checkpoint, filename=self.getCheckpointFile(i))
                 self.nnet.save_checkpoint(folder=self.args.checkpoint, filename='best.pth.tar')
 
-    def getCheckpointFile(self, iteration):
+    def getCheckpointFile(self, iteration: int):
         return 'checkpoint_' + str(iteration) + '.pth.tar'
 
-    def saveTrainExamples(self, iteration):
+    def saveTrainExamples(self, iteration: int):
         folder = self.args.checkpoint
         if not os.path.exists(folder):
             os.makedirs(folder)

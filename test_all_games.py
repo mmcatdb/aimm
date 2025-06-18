@@ -51,7 +51,7 @@ from dotsandboxes.DotsAndBoxesGame import DotsAndBoxesGame
 from dotsandboxes.keras.NNet import NNetWrapper as DotsAndBoxesKerasNNet
 
 import numpy as np
-from utils import *
+from utils import dotdict
 
 class TestAllGames(unittest.TestCase):
 

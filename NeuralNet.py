@@ -1,3 +1,5 @@
+from Game import Game
+
 class NeuralNet():
     """
     This class specifies the base NeuralNet class. To define your own neural
@@ -8,7 +10,7 @@ class NeuralNet():
     See othello/NNet.py for an example implementation.
     """
 
-    def __init__(self, game):
+    def __init__(self, game: Game):
         pass
 
     def train(self, examples):
@@ -36,15 +38,36 @@ class NeuralNet():
         """
         pass
 
-    def save_checkpoint(self, folder, filename):
+    def save_checkpoint(self, folder: str, filename: str):
         """
         Saves the current neural network (with its parameters) in
         folder/filename
         """
         pass
 
-    def load_checkpoint(self, folder, filename):
+    def load_checkpoint(self, folder: str, filename: str):
         """
         Loads parameters of the neural network from folder/filename
         """
         pass
+
+class NNetConfig:
+    def __init__(
+        self,
+        lr: float,
+        dropout: float,
+        epochs: int,
+        batch_size: int,
+        cuda: bool,
+        num_channels: int,
+        num_residual_layers: int
+    ):
+        self.lr = lr
+        self.dropout = dropout
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.cuda = cuda
+        self.num_channels = num_channels
+
+        self.num_residual_layers = num_residual_layers
+        """ Not needed in all games. """

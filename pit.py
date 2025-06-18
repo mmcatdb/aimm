@@ -6,7 +6,7 @@ from othello.pytorch.NNet import NNetWrapper as NNet
 
 
 import numpy as np
-from utils import *
+from utils import dotdict
 
 """
 use this script to play any two agents against each other, or play manually with

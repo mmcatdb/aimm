@@ -1,3 +1,4 @@
+.vscode
 *.pyc
 .DS_Store
 
@@ -8,6 +9,5 @@
 # checkpoint
 checkpoints/
 
-# For PyCharm users
-.idea/
-
+# Python venv
+.venv

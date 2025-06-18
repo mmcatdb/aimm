@@ -2,6 +2,9 @@ import logging
 import math
 
 import numpy as np
+from Game import Game
+from NeuralNet import NeuralNet
+from Config import Config
 
 EPS = 1e-8
 
@@ -13,7 +16,7 @@ class MCTS():
     This class handles the MCTS tree.
     """
 
-    def __init__(self, game, nnet, args):
+    def __init__(self, game: Game, nnet: NeuralNet, args: Config):
         self.game = game
         self.nnet = nnet
         self.args = args
@@ -27,12 +30,10 @@ class MCTS():
 
     def getActionProb(self, canonicalBoard, temp=1):
         """
-        This function performs numMCTSSims simulations of MCTS starting from
-        canonicalBoard.
+        This function performs numMCTSSims simulations of MCTS starting from canonicalBoard.
 
         Returns:
-            probs: a policy vector where the probability of the ith action is
-                   proportional to Nsa[(s,a)]**(1./temp)
+            probs: a policy vector where the probability of the ith action is proportional to Nsa[(s,a)]**(1./temp)
         """
         for i in range(self.args.numMCTSSims):
             self.search(canonicalBoard)
