@@ -60,7 +60,6 @@ class NNetConfig:
         batch_size: int,
         cuda: bool,
         num_channels: int,
-        num_residual_layers: int
     ):
         self.lr = lr
         self.dropout = dropout
@@ -68,6 +67,3 @@ class NNetConfig:
         self.batch_size = batch_size
         self.cuda = cuda
         self.num_channels = num_channels
-
-        self.num_residual_layers = num_residual_layers
-        """ Not needed in all games. """

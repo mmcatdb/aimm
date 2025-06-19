@@ -3,8 +3,8 @@ import logging
 import coloredlogs
 
 from Coach import Coach
-from games.othello.OthelloGame import OthelloGame as Game
-from games.othello.pytorch.NNet import NNetWrapper
+from othello.OthelloGame import OthelloGame as Game
+from othello.pytorch.NNet import NNetWrapper
 from Config import Config
 
 log = logging.getLogger(__name__)
