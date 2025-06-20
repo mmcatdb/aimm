@@ -1,22 +1,24 @@
 import numpy as np
+from othello.OthelloGame import OthelloGame
+from othello.OthelloBoard import OthelloBoard
 
 class RandomPlayer():
-    def __init__(self, game):
+    def __init__(self, game: OthelloGame):
         self.game = game
 
-    def play(self, board):
+    def play(self, board: OthelloBoard):
         a = np.random.randint(self.game.getActionSize())
         valids = self.game.getValidMoves(board)
         while valids[a] != 1:
             a = np.random.randint(self.game.getActionSize())
+
         return a
 
-
 class HumanOthelloPlayer():
-    def __init__(self, game):
+    def __init__(self, game: OthelloGame):
         self.game = game
 
-    def play(self, board):
+    def play(self, board: OthelloBoard):
         # display(board)
         valid = self.game.getValidMoves(board)
         for i in range(len(valid)):
@@ -36,14 +38,14 @@ class HumanOthelloPlayer():
                     # Input needs to be an integer
                     'Invalid integer'
             print('Invalid move')
+
         return a
 
-
 class GreedyOthelloPlayer():
-    def __init__(self, game):
+    def __init__(self, game: OthelloGame):
         self.game = game
 
-    def play(self, board):
+    def play(self, board: OthelloBoard):
         valids = self.game.getValidMoves(board)
         candidates = []
         for a in range(self.game.getActionSize()):
@@ -53,4 +55,5 @@ class GreedyOthelloPlayer():
             score = self.game.getScore(nextBoard)
             candidates += [(-score, a)]
         candidates.sort()
+
         return candidates[0][1]

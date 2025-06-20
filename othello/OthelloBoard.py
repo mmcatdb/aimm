@@ -1,4 +1,5 @@
 from typing import Any, Generator, TypeAlias
+import numpy as np
 
 Position: TypeAlias = tuple[int, int]  # A position on the board is represented as a tuple of (x, y) coordinates.
 
@@ -19,15 +20,24 @@ class OthelloBoard():
 
         self.n = n
         # Create the empty board array.
-        self.pieces: list[list[int]] = [None] * self.n
+        pieces: list[list[int]] = [None] * self.n
         for i in range(self.n):
-            self.pieces[i] = [0] * self.n
+            pieces[i] = [0] * self.n
 
         # Set up the initial 4 pieces.
-        self.pieces[int(self.n / 2) - 1][int(self.n / 2)] = 1
-        self.pieces[int(self.n / 2)][int(self.n / 2)-1] = 1
-        self.pieces[int(self.n / 2) - 1][int(self.n / 2)-1] = -1
-        self.pieces[int(self.n / 2)][int(self.n / 2)] = -1
+        pieces[int(self.n / 2) - 1][int(self.n / 2)] = 1
+        pieces[int(self.n / 2)][int(self.n / 2)-1] = 1
+        pieces[int(self.n / 2) - 1][int(self.n / 2)-1] = -1
+        pieces[int(self.n / 2)][int(self.n / 2)] = -1
+
+        self.pieces = np.array(pieces)
+
+    @staticmethod
+    def copy(board: 'OthelloBoard') -> 'OthelloBoard':
+        """ Returns a copy of the given board. """
+        newBoard = OthelloBoard(board.n)
+        newBoard.pieces = np.copy(board.pieces)
+        return newBoard
 
     # add [][] indexer syntax to the Board
     def __getitem__(self, index: int) -> list[int]:
@@ -43,7 +53,7 @@ class OthelloBoard():
 
         return count
 
-    def get_legal_moves(self) -> list[Position]:
+    def getLegalMoves(self) -> list[Position]:
         """ Returns all the legal moves for the given color. """
         moves = set()  # stores the legal moves.
 
@@ -51,8 +61,8 @@ class OthelloBoard():
         for y in range(self.n):
             for x in range(self.n):
                 if self[x][y] == 1:
-                    newmoves = self.get_moves_for_square((x, y))
-                    moves.update(newmoves)
+                    newMoves = self.get_moves_for_square((x, y))
+                    moves.update(newMoves)
 
         return list(moves)
 
@@ -60,8 +70,8 @@ class OthelloBoard():
         for y in range(self.n):
             for x in range(self.n):
                 if self[x][y] == 1:
-                    newmoves = self.get_moves_for_square((x, y))
-                    if len(newmoves) > 0:
+                    newMoves = self.get_moves_for_square((x, y))
+                    if len(newMoves) > 0:
                         return True
 
         return False
@@ -158,3 +168,7 @@ class OthelloBoard():
             move = list(map(sum, zip(move, direction)))
             #move = (move[0] + direction[0], move[1] + direction[1])
 
+    def getStringRepresentation(self) -> str:
+        """ Returns a string representation of the board. """
+        return self.pieces.tostring()
+    

@@ -64,7 +64,7 @@ class Game():
         """
         pass
 
-    def stringRepresentation(self, board) -> str:
+    def getStringRepresentation(self, board) -> str:
         """
         Input:
             board: current board

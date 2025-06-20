@@ -1,6 +1,5 @@
 import logging
 import math
-
 import numpy as np
 from numpy.typing import NDArray
 from Game import Game
@@ -8,7 +7,7 @@ from NeuralNet import NeuralNet
 from Config import Config
 from typing import Dict, TypeAlias
 
-EPS = 1e-8
+EPSILON = 1e-8
 
 log = logging.getLogger(__name__)
 
@@ -19,10 +18,10 @@ class MCTS():
     This class handles the MCTS tree.
     """
 
-    def __init__(self, game: Game, nnet: NeuralNet, args: Config):
+    def __init__(self, game: Game, nnet: NeuralNet, config: Config):
         self.game = game
         self.nnet = nnet
-        self.args = args
+        self.config = config
         self.Qsa: Dict[StateAction, float] = {}
         """ Q values for (s, a) (as defined in the paper). """
         self.Nsa: Dict[StateAction, int] = {}
@@ -35,17 +34,17 @@ class MCTS():
         self.Es: list[float] = {}  # stores game.getGameEnded ended for board s
         self.Vs = {}  # stores game.getValidMoves for board s
 
-    def getActionProb(self, board, temp: int) -> list[float]:
+    def getActionProbabilities(self, board, temp: int) -> list[float]:
         """
         This function performs numMCTSSims simulations of MCTS starting from board.
 
         Returns:
             probs: a policy vector where the probability of the ith action is proportional to Nsa[(s, a)] ** (1. / temp)
         """
-        for i in range(self.args.numMCTSSims):
+        for i in range(self.config.numMCTSSims):
             self.search(board)
 
-        s = self.game.stringRepresentation(board)
+        s = self.game.getStringRepresentation(board)
         counts = [self.Nsa[(s, a)] if (s, a) in self.Nsa else 0 for a in range(self.game.getActionSize())]
 
         if temp == 0:
@@ -80,7 +79,7 @@ class MCTS():
             v: the negative of the value of the current board
         """
 
-        s = self.game.stringRepresentation(board)
+        s = self.game.getStringRepresentation(board)
 
         if s not in self.Es:
             self.Es[s] = self.game.getGameEnded(board)
@@ -117,10 +116,10 @@ class MCTS():
         for a in range(self.game.getActionSize()):
             if valids[a]:
                 if (s, a) in self.Qsa:
-                    u = self.Qsa[(s, a)] + self.args.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s]) / (
+                    u = self.Qsa[(s, a)] + self.config.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s]) / (
                             1 + self.Nsa[(s, a)])
                 else:
-                    u = self.args.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s] + EPS)  # Q = 0 ?
+                    u = self.config.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s] + EPSILON)  # Q = 0 ?
 
                 if u > cur_best:
                     cur_best = u

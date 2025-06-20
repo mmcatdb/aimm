@@ -1,5 +1,4 @@
 import logging
-
 from typing import Callable
 from tqdm import tqdm
 from Game import Game
@@ -35,11 +34,11 @@ class Arena():
 
         score = 0
         for _ in tqdm(range(iterations), desc = "Arena.testAgent (1)"):
-            score += arena.testOnce()
+            score += arena.__testOnce()
 
         return score / iterations
 
-    def testOnce(self) -> float:
+    def __testOnce(self) -> float:
         """
         Executes one episode of a game. Returns the final score (0 < x < infinity).
         """
