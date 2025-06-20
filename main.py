@@ -9,7 +9,7 @@ from Config import Config
 
 log = logging.getLogger(__name__)
 
-coloredlogs.install(level='INFO')  # Change this to DEBUG to see more info.
+coloredlogs.install(level = 'INFO')  # Change this to DEBUG to see more info.
 
 args = Config(
     numIters = 1000,

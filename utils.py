@@ -10,7 +10,7 @@ class AverageMeter(object):
     def __repr__(self):
         return f'{self.avg:.2e}'
 
-    def update(self, val, n=1):
+    def update(self, val, n = 1):
         self.val = val
         self.sum += val * n
         self.count += n

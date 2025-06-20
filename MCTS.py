@@ -2,14 +2,17 @@ import logging
 import math
 
 import numpy as np
+from numpy.typing import NDArray
 from Game import Game
 from NeuralNet import NeuralNet
 from Config import Config
+from typing import Dict, TypeAlias
 
 EPS = 1e-8
 
 log = logging.getLogger(__name__)
 
+StateAction: TypeAlias = tuple[str, int]  # (state, action)
 
 class MCTS():
     """
@@ -20,25 +23,29 @@ class MCTS():
         self.game = game
         self.nnet = nnet
         self.args = args
-        self.Qsa = {}  # stores Q values for s,a (as defined in the paper)
-        self.Nsa = {}  # stores #times edge s,a was visited
-        self.Ns = {}  # stores #times board s was visited
-        self.Ps = {}  # stores initial policy (returned by neural net)
+        self.Qsa: Dict[StateAction, float] = {}
+        """ Q values for (s, a) (as defined in the paper). """
+        self.Nsa: Dict[StateAction, int] = {}
+        """ How many times the edge (s, a) was visited. """
+        self.Ns: Dict[str, int] = {}
+        """ How many times the state s was visited. """
+        self.Ps: Dict[str, NDArray[np.float64]] = {}
+        """ Initial policy vector for state s, as returned by the neural network. """
 
-        self.Es = {}  # stores game.getGameEnded ended for board s
+        self.Es: list[float] = {}  # stores game.getGameEnded ended for board s
         self.Vs = {}  # stores game.getValidMoves for board s
 
-    def getActionProb(self, canonicalBoard, temp=1):
+    def getActionProb(self, board, temp: int) -> list[float]:
         """
-        This function performs numMCTSSims simulations of MCTS starting from canonicalBoard.
+        This function performs numMCTSSims simulations of MCTS starting from board.
 
         Returns:
-            probs: a policy vector where the probability of the ith action is proportional to Nsa[(s,a)]**(1./temp)
+            probs: a policy vector where the probability of the ith action is proportional to Nsa[(s, a)] ** (1. / temp)
         """
         for i in range(self.args.numMCTSSims):
-            self.search(canonicalBoard)
+            self.search(board)
 
-        s = self.game.stringRepresentation(canonicalBoard)
+        s = self.game.stringRepresentation(board)
         counts = [self.Nsa[(s, a)] if (s, a) in self.Nsa else 0 for a in range(self.game.getActionSize())]
 
         if temp == 0:
@@ -53,7 +60,7 @@ class MCTS():
         probs = [x / counts_sum for x in counts]
         return probs
 
-    def search(self, canonicalBoard):
+    def search(self, board) -> float:
         """
         This function performs one iteration of MCTS. It is recursively called
         till a leaf node is found. The action chosen at each node is one that
@@ -66,25 +73,25 @@ class MCTS():
         updated.
 
         NOTE: the return values are the negative of the value of the current
-        state. This is done since v is in [-1,1] and if v is the value of a
+        state. This is done since v is in [-1, 1] and if v is the value of a
         state for the current player, then its value is -v for the other player.
 
         Returns:
-            v: the negative of the value of the current canonicalBoard
+            v: the negative of the value of the current board
         """
 
-        s = self.game.stringRepresentation(canonicalBoard)
+        s = self.game.stringRepresentation(board)
 
         if s not in self.Es:
-            self.Es[s] = self.game.getGameEnded(canonicalBoard, 1)
+            self.Es[s] = self.game.getGameEnded(board)
         if self.Es[s] != 0:
             # terminal node
             return -self.Es[s]
 
         if s not in self.Ps:
             # leaf node
-            self.Ps[s], v = self.nnet.predict(canonicalBoard)
-            valids = self.game.getValidMoves(canonicalBoard, 1)
+            self.Ps[s], v = self.nnet.predict(board)
+            valids = self.game.getValidMoves(board)
             self.Ps[s] = self.Ps[s] * valids  # masking invalid moves
             sum_Ps_s = np.sum(self.Ps[s])
             if sum_Ps_s > 0:
@@ -120,8 +127,7 @@ class MCTS():
                     best_act = a
 
         a = best_act
-        next_s, next_player = self.game.getNextState(canonicalBoard, 1, a)
-        next_s = self.game.getCanonicalForm(next_s, next_player)
+        next_s = self.game.getNextState(board, a)
 
         v = self.search(next_s)
 

@@ -1,3 +1,5 @@
+import numpy as np
+from numpy.typing import NDArray
 from Game import Game
 
 class NeuralNet():
@@ -13,7 +15,7 @@ class NeuralNet():
     def __init__(self, game: Game):
         pass
 
-    def train(self, examples):
+    def train(self, examples) -> None:
         """
         This function trains the neural network with examples obtained from
         self-play.
@@ -26,26 +28,25 @@ class NeuralNet():
         """
         pass
 
-    def predict(self, board):
+    def predict(self, board) -> tuple[NDArray[np.float64], float]:
         """
         Input:
             board: current board in its canonical form.
 
         Returns:
-            pi: a policy vector for the current board- a numpy array of length
-                game.getActionSize
-            v: a float in [-1,1] that gives the value of the current board
+            pi: a policy vector for the current board- a numpy array of length game.getActionSize
+            v: a float in [-1, 1] that gives the value of the current board
         """
         pass
 
-    def save_checkpoint(self, folder: str, filename: str):
+    def save_checkpoint(self, folder: str, filename: str) -> None:
         """
         Saves the current neural network (with its parameters) in
         folder/filename
         """
         pass
 
-    def load_checkpoint(self, folder: str, filename: str):
+    def load_checkpoint(self, folder: str, filename: str) -> None:
         """
         Loads parameters of the neural network from folder/filename
         """

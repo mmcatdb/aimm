@@ -1,14 +1,11 @@
 import os
-import shutil
 import time
-import random
 import numpy as np
-import math
 import sys
 sys.path.append('../..')
 from NeuralNet import NeuralNet, NNetConfig
 
-from .OthelloNNet import OthelloNNet as onnet
+from .OthelloNNet import OthelloNNet
 from Game import Game
 
 args = NNetConfig(
@@ -22,7 +19,7 @@ args = NNetConfig(
 
 class NNetWrapper(NeuralNet):
     def __init__(self, game: Game):
-        self.nnet = onnet(game, args)
+        self.nnet = OthelloNNet(game, args)
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
 
@@ -47,12 +44,12 @@ class NNetWrapper(NeuralNet):
         board = board[np.newaxis, :, :]
 
         # run
-        pi, v = self.nnet.model.predict(board, verbose=False)
+        pi, v = self.nnet.model.predict(board, verbose = False)
 
-        #print('PREDICTION TIME TAKEN : {0:03f}'.format(time.time()-start))
+        #print('PREDICTION TIME TAKEN : {0:03f}'.format(time.time() - start))
         return pi[0], v[0]
 
-    def save_checkpoint(self, folder='checkpoint', filename='checkpoint.pth.tar'):
+    def save_checkpoint(self, folder = 'checkpoint', filename = 'checkpoint.pth.tar'):
         # change extension
         filename = filename.split(".")[0] + ".h5"
 
@@ -64,7 +61,7 @@ class NNetWrapper(NeuralNet):
             print("Checkpoint Directory exists! ")
         self.nnet.model.save_weights(filepath)
 
-    def load_checkpoint(self, folder='checkpoint', filename='checkpoint.pth.tar'):
+    def load_checkpoint(self, folder = 'checkpoint', filename = 'checkpoint.pth.tar'):
         # change extension
         filename = filename.split(".")[0] + ".h5"
 
