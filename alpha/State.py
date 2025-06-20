@@ -1,25 +1,25 @@
 from typing import Any, Generator, TypeAlias
 import numpy as np
 
-Position: TypeAlias = tuple[int, int]  # A position on the board is represented as a tuple of (x, y) coordinates.
+Position: TypeAlias = tuple[int, int]  # A position on the state is represented as a tuple of (x, y) coordinates.
 
-class OthelloBoard():
+class State():
     """
     first dim is column , 2nd is row:
         pieces[1][7] is the square in column 2,
-        at the opposite end of the board in row 8.
+        at the opposite end of the state in row 8.
     Squares are stored and manipulated as (x, y) tuples.
     x is the column, y is the row.
     """
 
-    # list of all 8 directions on the board, as (x, y) offsets
+    # list of all 8 directions on the state, as (x, y) offsets
     __directions = [ (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1) ]
 
     def __init__(self, n):
-        "Set up initial board configuration."
+        "Set up initial state configuration."
 
         self.n = n
-        # Create the empty board array.
+        # Create the empty state array.
         pieces: list[list[int]] = [None] * self.n
         for i in range(self.n):
             pieces[i] = [0] * self.n
@@ -33,13 +33,13 @@ class OthelloBoard():
         self.pieces = np.array(pieces)
 
     @staticmethod
-    def copy(board: 'OthelloBoard') -> 'OthelloBoard':
-        """ Returns a copy of the given board. """
-        newBoard = OthelloBoard(board.n)
-        newBoard.pieces = np.copy(board.pieces)
-        return newBoard
+    def copy(state: 'State') -> 'State':
+        """ Returns a copy of the given state. """
+        newState = State(state.n)
+        newState.pieces = np.copy(state.pieces)
+        return newState
 
-    # add [][] indexer syntax to the Board
+    # add [][] indexer syntax to the state
     def __getitem__(self, index: int) -> list[int]:
         return self.pieces[index]
 
@@ -104,7 +104,7 @@ class OthelloBoard():
         return moves
 
     def execute_move(self, move: Position) -> None:
-        """Perform the given move on the board; flips pieces as necessary.
+        """Perform the given move on the state; flips pieces as necessary.
         color gives the color pf the piece to play (1 = white, -1 = black)
         """
 
@@ -126,7 +126,7 @@ class OthelloBoard():
         color = self[x][y]
         flips = []
 
-        for x, y in OthelloBoard._increment_move(origin, direction, self.n):
+        for x, y in State._increment_move(origin, direction, self.n):
             if self[x][y] == 0:
                 if flips:
                     # print("Found", x, y)
@@ -144,7 +144,7 @@ class OthelloBoard():
         #initialize variables
         flips = [origin]
 
-        for x, y in OthelloBoard._increment_move(origin, direction, self.n):
+        for x, y in State._increment_move(origin, direction, self.n):
             #print(x, y)
             if self[x][y] == 0:
                 return []
@@ -169,6 +169,6 @@ class OthelloBoard():
             #move = (move[0] + direction[0], move[1] + direction[1])
 
     def getStringRepresentation(self) -> str:
-        """ Returns a string representation of the board. """
+        """ Returns a string representation of the state. """
         return self.pieces.tostring()
     

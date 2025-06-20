@@ -1,10 +1,8 @@
 import logging
 import coloredlogs
 from Coach import Coach
-from othello.OthelloGame import OthelloGame
-from othello.pytorch.NNet import NNetWrapper
 from Config import Config
-from othello.OthelloBoard import OthelloBoard
+import alpha as impl
 
 log = logging.getLogger(__name__)
 
@@ -27,20 +25,20 @@ config = Config(
 )
 
 def main():
-    log.info('Loading %s...', OthelloGame.__name__)
-    g = OthelloGame(6)
+    log.info('Loading %s...', impl.Game.__name__)
+    g = impl.Game(6)
 
-    log.info('Loading %s...', NNetWrapper.__name__)
-    nnet = NNetWrapper(g)
+    log.info('Loading %s...', impl.NeuralNet.__name__)
+    net = impl.NeuralNet(g)
 
     if config.load_model:
         log.info('Loading checkpoint "%s/%s"...', config.load_folder_file[0], config.load_folder_file[1])
-        nnet.loadCheckpoint(config.load_folder_file[0], config.load_folder_file[1])
+        net.loadCheckpoint(config.load_folder_file[0], config.load_folder_file[1])
     else:
         log.warning('Not loading a checkpoint!')
 
     log.info('Loading the Coach...')
-    c = Coach[OthelloBoard](g, nnet, config)
+    c = Coach[impl.State](g, net, config)
 
     if config.load_model:
         log.info("Loading 'trainExamples' from file...")

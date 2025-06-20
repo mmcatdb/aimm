@@ -9,8 +9,8 @@ import numpy as np
 from tqdm import tqdm
 from Arena import Arena
 from MCTS import MCTS
-from Game import Game, TState
-from NeuralNet import NeuralNet
+from IGame import IGame, TState
+from INeuralNet import INeuralNet
 from Config import Config
 
 log = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class Coach(Generic[TState]):
     This class executes the self-play + learning. It uses the functions defined in Game and NeuralNet.
     """
 
-    def __init__(self, game: Game[TState], net: NeuralNet[TState], config: Config):
+    def __init__(self, game: IGame[TState], net: INeuralNet[TState], config: Config):
         self.game = game
         self.net = net
         self.prevNet = self.net.__class__(self.game)  # the competitor network
@@ -97,25 +97,25 @@ class Coach(Generic[TState]):
         uses temp = 0.
 
         Returns:
-            trainExamples: a list of examples of the form (board, pi, v)
-                           pi is the MCTS informed policy vector, v is +1 if the player eventually won the game, else -1.
+            trainExamples: a list of examples of the form (state, pi, v)
+                           pi is the MCTS informed policy vector, v is +1 if the agent eventually won the game, else -1.
         """
-        board = self.game.getInitState()
+        state = self.game.getInitState()
         episodeStep = 0
 
         while True:
             episodeStep += 1
             temp = int(episodeStep < self.config.tempThreshold)
 
-            pi = self.mcts.getActionProbabilities(board, temp = temp)
+            pi = self.mcts.getActionProbabilities(state, temp = temp)
 
             action = np.random.choice(len(pi), p = pi)
-            board = self.game.getNextState(board, action)
+            state = self.game.getNextState(state, action)
 
-            r = self.game.getGameEnded(board)
+            r = self.game.getGameEnded(state)
 
             if r != 0:
-                return (board, pi, r)
+                return (state, pi, r)
 
     def __saveTrainExamples(self, iteration: int) -> None:
         folder = self.config.checkpoint

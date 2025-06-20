@@ -3,8 +3,8 @@ import logging
 import math
 import numpy as np
 from numpy.typing import NDArray
-from Game import Game, TState
-from NeuralNet import NeuralNet
+from IGame import IGame, TState
+from INeuralNet import INeuralNet
 from Config import Config
 
 EPSILON = 1e-8
@@ -18,9 +18,9 @@ class MCTS(Generic[TState]):
     This class handles the MCTS tree.
     """
 
-    def __init__(self, game: Game[TState], nnet: NeuralNet, config: Config):
+    def __init__(self, game: IGame[TState], net: INeuralNet, config: Config):
         self.game = game
-        self.nnet = nnet
+        self.net = net
         self.config = config
         self.Qsa: Dict[StateAction, float] = {}
         """ Q values for (s, a) (as defined in the paper). """
@@ -31,20 +31,20 @@ class MCTS(Generic[TState]):
         self.Ps: Dict[str, NDArray[np.float64]] = {}
         """ Initial policy vector for state s, as returned by the neural network. """
 
-        self.Es: list[float] = {}  # stores game.getGameEnded ended for board s
-        self.Vs = {}  # stores game.getValidMoves for board s
+        self.Es: list[float] = {}  # stores game.getGameEnded ended for state s
+        self.Vs = {}  # stores game.getValidMoves for state s
 
-    def getActionProbabilities(self, board: TState, temp: int) -> list[float]:
+    def getActionProbabilities(self, state: TState, temp: int) -> list[float]:
         """
-        This function performs numMCTSSims simulations of MCTS starting from board.
+        This function performs numMCTSSims simulations of MCTS starting from state.
 
         Returns:
             probs: a policy vector where the probability of the ith action is proportional to Nsa[(s, a)] ** (1. / temp)
         """
         for i in range(self.config.numMCTSSims):
-            self.search(board)
+            self.search(state)
 
-        s = self.game.getStringRepresentation(board)
+        s = self.game.getStringRepresentation(state)
         counts = [self.Nsa[(s, a)] if (s, a) in self.Nsa else 0 for a in range(self.game.getActionSize())]
 
         if temp == 0:
@@ -59,7 +59,7 @@ class MCTS(Generic[TState]):
         probs = [x / counts_sum for x in counts]
         return probs
 
-    def search(self, board: TState) -> float:
+    def search(self, state: TState) -> float:
         """
         This function performs one iteration of MCTS. It is recursively called
         till a leaf node is found. The action chosen at each node is one that
@@ -71,26 +71,22 @@ class MCTS(Generic[TState]):
         outcome is propagated up the search path. The values of Ns, Nsa, Qsa are
         updated.
 
-        NOTE: the return values are the negative of the value of the current
-        state. This is done since v is in [-1, 1] and if v is the value of a
-        state for the current player, then its value is -v for the other player.
-
         Returns:
-            v: the negative of the value of the current board
+            v: the negative of the value of the current state
         """
 
-        s = self.game.getStringRepresentation(board)
+        s = self.game.getStringRepresentation(state)
 
         if s not in self.Es:
-            self.Es[s] = self.game.getGameEnded(board)
+            self.Es[s] = self.game.getGameEnded(state)
         if self.Es[s] != 0:
             # terminal node
             return -self.Es[s]
 
         if s not in self.Ps:
             # leaf node
-            self.Ps[s], v = self.nnet.predict(board)
-            valids = self.game.getValidMoves(board)
+            self.Ps[s], v = self.net.predict(state)
+            valids = self.game.getValidMoves(state)
             self.Ps[s] = self.Ps[s] * valids  # masking invalid moves
             sum_Ps_s = np.sum(self.Ps[s])
             if sum_Ps_s > 0:
@@ -98,8 +94,8 @@ class MCTS(Generic[TState]):
             else:
                 # if all valid moves were masked make all valid moves equally probable
 
-                # NB! All valid moves may be masked if either your NNet architecture is insufficient or you've get overfitting or something else.
-                # If you have got dozens or hundreds of these messages you should pay attention to your NNet and/or training process.   
+                # NB! All valid moves may be masked if either your NeuralNet architecture is insufficient or you've get overfitting or something else.
+                # If you have got dozens or hundreds of these messages you should pay attention to your NeuralNet and/or training process.   
                 log.error("All valid moves were masked, doing a workaround.")
                 self.Ps[s] = self.Ps[s] + valids
                 self.Ps[s] /= np.sum(self.Ps[s])
@@ -126,7 +122,7 @@ class MCTS(Generic[TState]):
                     best_act = a
 
         a = best_act
-        next_s = self.game.getNextState(board, a)
+        next_s = self.game.getNextState(state, a)
 
         v = self.search(next_s)
 

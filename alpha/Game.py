@@ -1,13 +1,13 @@
-from Game import Game
-from othello.OthelloBoard import OthelloBoard
 import numpy as np
 from numpy.typing import NDArray
+from IGame import IGame
+from State import State
 
-class OthelloGame(Game[OthelloBoard]):
+class Game(IGame[State]):
     def __init__(self, n):
         self.n = n
 
-    def getBoardSize(self) -> tuple[int, int]:
+    def getStateSize(self) -> tuple[int, int]:
         # (a, b) tuple
         return (self.n, self.n)
 
@@ -15,26 +15,26 @@ class OthelloGame(Game[OthelloBoard]):
         # return number of actions
         return self.n * self.n + 1
     
-    def getInitState(self) -> OthelloBoard:
-        return OthelloBoard(self.n)
+    def getInitState(self) -> State:
+        return State(self.n)
 
-    def getNextState(self, board: OthelloBoard, action: int) -> OthelloBoard:
-        # if player takes action on board, return next board
+    def getNextState(self, state: State, action: int) -> State:
+        # if agent takes action on state, return next state
         # action must be a valid move
         if action == self.n * self.n:
-            return board
+            return state
         
-        newBoard = OthelloBoard.copy(board)
+        newState = State.copy(state)
         move = (int(action / self.n), action % self.n)
-        newBoard.execute_move(move)
+        newState.execute_move(move)
 
-        return newBoard
+        return newState
 
-    def getValidMoves(self, board: OthelloBoard) -> NDArray[np.int32]:
+    def getValidMoves(self, state: State) -> NDArray[np.int32]:
         # return a fixed size binary vector
         valids = [0] * self.getActionSize()
 
-        legalMoves = board.getLegalMoves()
+        legalMoves = state.getLegalMoves()
         if len(legalMoves) == 0:
             valids[-1] = 1
             return np.array(valids)
@@ -44,33 +44,33 @@ class OthelloGame(Game[OthelloBoard]):
 
         return np.array(valids)
 
-    def getGameEnded(self, board: OthelloBoard) -> float:
+    def getGameEnded(self, state: State) -> float:
         # TODO
-        if isTerminal(board):  # e.g., max depth, or no valid moves
-            reward = evaluateBoard(board)  # your framework’s score
-            cost = getTotalActionCost(board)
+        if isTerminal(state):  # e.g., max depth, or no valid moves
+            reward = evaluatState(state)  # your framework’s score
+            cost = getTotalActionCost(state)
             finalScore = reward - cost
             return finalScore
         
         return 0
 
-        # b = Board(self.n)
-        # b.pieces = np.copy(board)
+        # b = State(self.n)
+        # b.pieces = np.copy(state)
         # if b.has_legal_moves():
         #     return 0
         # if b.countDiff() > 0:
         #     return 1
         # return -1
 
-    def getScore(self, board: OthelloBoard) -> int:
-        return board.countDiff()
+    def getScore(self, state: State) -> int:
+        return state.countDiff()
     
-    def getStringRepresentation(self, board: OthelloBoard) -> str:
-        return board.getStringRepresentation()
+    def getStringRepresentation(self, state: State) -> str:
+        return state.getStringRepresentation()
 
     @staticmethod
-    def display(board: OthelloBoard) -> None:
-        n = board.pieces.shape[0]
+    def display(state: State) -> None:
+        n = state.pieces.shape[0]
         print("   ", end = "")
         for y in range(n):
             print(y, end = " ")
@@ -79,8 +79,8 @@ class OthelloGame(Game[OthelloBoard]):
         for y in range(n):
             print(y, "|", end = "")    # print the row #
             for x in range(n):
-                piece = board[y][x]    # get the piece to print
-                print(OthelloGame.squareContent[piece], end = " ")
+                piece = state[y][x]    # get the piece to print
+                print(Game.squareContent[piece], end = " ")
             print("|")
 
         print("-----------------------")

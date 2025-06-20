@@ -1,26 +1,25 @@
 import numpy as np
-from othello.OthelloGame import OthelloGame
-from othello.OthelloBoard import OthelloBoard
+from Game import Game
+from State import State
 
-class RandomPlayer():
-    def __init__(self, game: OthelloGame):
+class RandomAgent():
+    def __init__(self, game: Game):
         self.game = game
 
-    def play(self, board: OthelloBoard):
+    def play(self, state: State):
         a = np.random.randint(self.game.getActionSize())
-        valids = self.game.getValidMoves(board)
+        valids = self.game.getValidMoves(state)
         while valids[a] != 1:
             a = np.random.randint(self.game.getActionSize())
 
         return a
 
-class HumanOthelloPlayer():
-    def __init__(self, game: OthelloGame):
+class HumanAgent():
+    def __init__(self, game: Game):
         self.game = game
 
-    def play(self, board: OthelloBoard):
-        # display(board)
-        valid = self.game.getValidMoves(board)
+    def play(self, state: State):
+        valid = self.game.getValidMoves(state)
         for i in range(len(valid)):
             if valid[i]:
                 print("[", int(i / self.game.n), int(i % self.game.n), end = "] ")
@@ -41,18 +40,18 @@ class HumanOthelloPlayer():
 
         return a
 
-class GreedyOthelloPlayer():
-    def __init__(self, game: OthelloGame):
+class GreedyAgent():
+    def __init__(self, game: Game):
         self.game = game
 
-    def play(self, board: OthelloBoard):
-        valids = self.game.getValidMoves(board)
+    def play(self, state: State):
+        valids = self.game.getValidMoves(state)
         candidates = []
         for a in range(self.game.getActionSize()):
             if valids[a] == 0:
                 continue
-            nextBoard = self.game.getNextState(board, a)
-            score = self.game.getScore(nextBoard)
+            nextState = self.game.getNextState(state, a)
+            score = self.game.getScore(nextState)
             candidates += [(-score, a)]
         candidates.sort()
 

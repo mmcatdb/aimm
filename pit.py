@@ -1,33 +1,34 @@
+import numpy as np
 from Arena import Arena
 from MCTS import MCTS
-from othello.OthelloGame import OthelloGame
-from othello.OthelloPlayers import *
-from othello.pytorch.NNet import NNetWrapper as NNet
-import numpy as np
+import alpha as impl
 from Config import Config
 
 """
 use this script to play any two agents against each other, or play manually with any agent.
 """
 
-miniOthello = False  # Play in 6x6 instead of the normal 8x8.
+isMini = False  # Play in 6x6 instead of the normal 8x8.
 
-if miniOthello:
-    game = OthelloGame(6)
+if isMini:
+    game = impl.Game(6)
 else:
-    game = OthelloGame(8)
+    game = impl.Game(8)
 
-# all players
-rp = RandomPlayer(game).play
-gp = GreedyOthelloPlayer(game).play
-hp = HumanOthelloPlayer(game).play
+# all agents
+rp = impl.RandomAgent(game).play
+gp = impl.GreedyAgent(game).play
+hp = impl.HumanAgent(game).play
 
-# nnet players
-net = NNet(game)
-if miniOthello:
+# nnet agent
+net = impl.NeuralNet(game)
+
+"""
+if isMini:
     net.loadCheckpoint('./pretrained_models/othello/pytorch/', '6x100x25_best.pth.tar')
 else:
     net.loadCheckpoint('./pretrained_models/othello/pytorch/', '8x8_100checkpoints_best.pth.tar')
+"""
 
 config = Config(
     numIters = 1000,
@@ -45,8 +46,8 @@ config = Config(
     numItersForTrainExamplesHistory = 20
 )
 
-mcts = MCTS[OthelloBoard](game, net, config)
+mcts = MCTS[impl.State](game, net, config)
 
-arena = Arena(lambda x: np.argmax(mcts.getActionProbabilities(x, temp = 0)), game, display = OthelloGame.display)
+arena = Arena(lambda x: np.argmax(mcts.getActionProbabilities(x, temp = 0)), game)
 
 print(arena.playGames(2, verbose = True))
