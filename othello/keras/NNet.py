@@ -1,9 +1,9 @@
 import os
-import time
 import numpy as np
 from NeuralNet import NeuralNet, NNetConfig
 from OthelloNNet import OthelloNNet
 from Game import Game
+from OthelloBoard import OthelloBoard
 
 config = NNetConfig(
     lr = 0.001,
@@ -15,12 +15,12 @@ config = NNetConfig(
 )
 
 class NNetWrapper(NeuralNet):
-    def __init__(self, game: Game):
+    def __init__(self, game: Game[OthelloBoard]):
         self.nnet = OthelloNNet(game, config)
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
 
-    def train(self, examples):
+    def train(self, examples: tuple[OthelloBoard, list[float], float]):
         """
         examples: list of examples, each example is of form (board, pi, v)
         """
@@ -30,21 +30,20 @@ class NNetWrapper(NeuralNet):
         target_vs = np.asarray(target_vs)
         self.nnet.model.fit(x = input_boards, y = [target_pis, target_vs], batch_size = config.batch_size, epochs = config.epochs)
 
-    # TODO This need fixing (board is a class now).
-    def predict(self, board):
+    def predict(self, board: OthelloBoard):
         """
         board: np array with board
         """
         # preparing input
-        board = board[np.newaxis, :, :]
+        pieces = board.pieces[np.newaxis, :, :]
 
         # run
-        pi, v = self.nnet.model.predict(board, verbose = False)
+        pi, v = self.nnet.model.predict(pieces, verbose = False)
 
         #print('PREDICTION TIME TAKEN : {0:03f}'.format(time.time() - start))
         return pi[0], v[0]
 
-    def saveCheckpoint(self, folder = 'checkpoint', filename = 'checkpoint.pth.tar'):
+    def saveCheckpoint(self, folder: str, filename: str):
         # change extension
         filename = filename.split(".")[0] + ".h5"
 
@@ -56,7 +55,7 @@ class NNetWrapper(NeuralNet):
             print("Checkpoint Directory exists! ")
         self.nnet.model.save_weights(filepath)
 
-    def loadCheckpoint(self, folder = 'checkpoint', filename = 'checkpoint.pth.tar'):
+    def loadCheckpoint(self, folder: str, filename: str):
         # change extension
         filename = filename.split(".")[0] + ".h5"
 

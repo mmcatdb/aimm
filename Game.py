@@ -1,7 +1,10 @@
+from typing import Generic, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
-class Game():
+TState = TypeVar('TState')
+
+class Game(Generic[TState]):
     """
     This class specifies the base Game class. To define your own game, subclass this class and implement the functions below.
     This works when the game is one-player and turn-based.
@@ -11,7 +14,7 @@ class Game():
     def __init__(self):
         pass
 
-    def getInitState(self):
+    def getInitState(self) -> TState:
         """
         Returns:
             startBoard: a representation of the board (ideally this is the form that will be the input to your neural network)
@@ -32,7 +35,7 @@ class Game():
         """
         pass
 
-    def getNextState(self, board, action):
+    def getNextState(self, board: TState, action: int) -> TState:
         """
         Input:
             board: current board
@@ -43,7 +46,7 @@ class Game():
         """
         pass
 
-    def getValidMoves(self, board) -> NDArray[np.int32]:
+    def getValidMoves(self, board: TState) -> NDArray[np.int32]:
         """
         Input:
             board: current board
@@ -55,7 +58,7 @@ class Game():
         """
         pass
 
-    def getGameEnded(self, board) -> float:
+    def getGameEnded(self, board: TState) -> float:
         """
         Input:
             board: current board
@@ -64,7 +67,7 @@ class Game():
         """
         pass
 
-    def getStringRepresentation(self, board) -> str:
+    def getStringRepresentation(self, board: TState) -> str:
         """
         Input:
             board: current board

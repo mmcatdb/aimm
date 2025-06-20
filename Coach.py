@@ -1,3 +1,4 @@
+from typing import Generic
 import logging
 import os
 import sys
@@ -8,24 +9,23 @@ import numpy as np
 from tqdm import tqdm
 from Arena import Arena
 from MCTS import MCTS
-from Game import Game
+from Game import Game, TState
 from NeuralNet import NeuralNet
 from Config import Config
-from typing import Any
 
 log = logging.getLogger(__name__)
 
-class Coach():
+class Coach(Generic[TState]):
     """
     This class executes the self-play + learning. It uses the functions defined in Game and NeuralNet.
     """
 
-    def __init__(self, game: Game, net: NeuralNet, config: Config):
+    def __init__(self, game: Game[TState], net: NeuralNet[TState], config: Config):
         self.game = game
         self.net = net
         self.prevNet = self.net.__class__(self.game)  # the competitor network
         self.config = config
-        self.mcts = MCTS(self.game, self.net, self.config)
+        self.mcts = MCTS[TState](self.game, self.net, self.config)
         self.trainExamplesHistory = []  # history of examples from config.numItersForTrainExamplesHistory latest iterations
         self.skipFirstSelfPlay = False  # can be overriden in loadTrainExamples()
 
@@ -46,7 +46,7 @@ class Coach():
                 iterationTrainExamples = deque([], maxlen = self.config.maxlenOfQueue)
 
                 for _ in tqdm(range(self.config.numEps), desc = "Self Play"):
-                    self.mcts = MCTS(self.game, self.net, self.config)  # reset search tree
+                    self.mcts = MCTS[TState](self.game, self.net, self.config)  # reset search tree
                     iterationTrainExamples.append(self.__executeEpisode())
 
                 # save the iteration examples to the history 
@@ -69,14 +69,14 @@ class Coach():
             # training new network, keeping a copy of the old one
             self.net.saveCheckpoint(folder = self.config.checkpoint, filename = 'temp.pth.tar')
             self.prevNet.loadCheckpoint(folder = self.config.checkpoint, filename = 'temp.pth.tar')
-            prevMcts = MCTS(self.game, self.prevNet, self.config)
+            prevMcts = MCTS[TState](self.game, self.prevNet, self.config)
 
             self.net.train(trainExamples)
-            mcts = MCTS(self.game, self.net, self.config)
+            mcts = MCTS[TState](self.game, self.net, self.config)
 
             log.info('PITTING AGAINST PREVIOUS VERSION')
-            prevScore = Arena.testAgent(lambda x: np.argmax(prevMcts.getActionProbabilities(x, temp = 0), self.game), self.config.arenaCompare)
-            score = Arena.testAgent(lambda x: np.argmax(mcts.getActionProbabilities(x, temp = 0), self.game), self.config.arenaCompare)
+            prevScore = Arena.testAgent(lambda x: np.argmax(prevMcts.getActionProbabilities(x, temp = 0)), self.game, self.config.arenaCompare)
+            score = Arena.testAgent(lambda x: np.argmax(mcts.getActionProbabilities(x, temp = 0)), self.game, self.config.arenaCompare)
                              
             log.info('NEW/PREV SCORE : %f / %f' % (score, prevScore))
             if score / prevScore > self.config.updateThreshold:
@@ -84,10 +84,10 @@ class Coach():
                 self.net.loadCheckpoint(folder = self.config.checkpoint, filename='temp.pth.tar')
             else:
                 log.info('ACCEPTING NEW MODEL')
-                self.net.saveCheckpoint(folder = self.config.checkpoint, filename=self.__getCheckpointFile(i))
-                self.net.saveCheckpoint(folder = self.config.checkpoint, filename='best.pth.tar')
+                self.net.saveCheckpoint(folder = self.config.checkpoint, filename = self.__getCheckpointFile(i))
+                self.net.saveCheckpoint(folder = self.config.checkpoint, filename = 'best.pth.tar')
 
-    def __executeEpisode(self) -> tuple[Any, list[float], float]:
+    def __executeEpisode(self) -> tuple[TState, list[float], float]:
         """
         This function executes one episode of self-play.
         As the game is played, each turn is added as a training example to trainExamples.

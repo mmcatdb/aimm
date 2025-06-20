@@ -1,15 +1,11 @@
-from __future__ import print_function
 from Game import Game
 from othello.OthelloBoard import OthelloBoard
 import numpy as np
 from numpy.typing import NDArray
 
-class OthelloGame(Game):
+class OthelloGame(Game[OthelloBoard]):
     def __init__(self, n):
         self.n = n
-
-    def getInitState(self) -> OthelloBoard:
-        return OthelloBoard(self.n)
 
     def getBoardSize(self) -> tuple[int, int]:
         # (a, b) tuple
@@ -18,8 +14,11 @@ class OthelloGame(Game):
     def getActionSize(self) -> int:
         # return number of actions
         return self.n * self.n + 1
+    
+    def getInitState(self) -> OthelloBoard:
+        return OthelloBoard(self.n)
 
-    def getNextState(self, board: OthelloBoard, action) -> OthelloBoard:
+    def getNextState(self, board: OthelloBoard, action: int) -> OthelloBoard:
         # if player takes action on board, return next board
         # action must be a valid move
         if action == self.n * self.n:
@@ -81,12 +80,12 @@ class OthelloGame(Game):
             print(y, "|", end = "")    # print the row #
             for x in range(n):
                 piece = board[y][x]    # get the piece to print
-                print(OthelloGame.square_content[piece], end = " ")
+                print(OthelloGame.squareContent[piece], end = " ")
             print("|")
 
         print("-----------------------")
 
-    square_content = {
+    squareContent = {
         -1: "X",
         +0: "-",
         +1: "O"

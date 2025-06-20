@@ -1,11 +1,11 @@
+from typing import Dict, Generic, TypeAlias, TypeVar
 import logging
 import math
 import numpy as np
 from numpy.typing import NDArray
-from Game import Game
+from Game import Game, TState
 from NeuralNet import NeuralNet
 from Config import Config
-from typing import Dict, TypeAlias
 
 EPSILON = 1e-8
 
@@ -13,12 +13,12 @@ log = logging.getLogger(__name__)
 
 StateAction: TypeAlias = tuple[str, int]  # (state, action)
 
-class MCTS():
+class MCTS(Generic[TState]):
     """
     This class handles the MCTS tree.
     """
 
-    def __init__(self, game: Game, nnet: NeuralNet, config: Config):
+    def __init__(self, game: Game[TState], nnet: NeuralNet, config: Config):
         self.game = game
         self.nnet = nnet
         self.config = config
@@ -34,7 +34,7 @@ class MCTS():
         self.Es: list[float] = {}  # stores game.getGameEnded ended for board s
         self.Vs = {}  # stores game.getValidMoves for board s
 
-    def getActionProbabilities(self, board, temp: int) -> list[float]:
+    def getActionProbabilities(self, board: TState, temp: int) -> list[float]:
         """
         This function performs numMCTSSims simulations of MCTS starting from board.
 
@@ -59,7 +59,7 @@ class MCTS():
         probs = [x / counts_sum for x in counts]
         return probs
 
-    def search(self, board) -> float:
+    def search(self, board: TState) -> float:
         """
         This function performs one iteration of MCTS. It is recursively called
         till a leaf node is found. The action chosen at each node is one that

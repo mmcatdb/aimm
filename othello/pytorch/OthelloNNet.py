@@ -4,9 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from Game import Game
 from NeuralNet import NNetConfig
+from OthelloBoard import OthelloBoard
 
 class OthelloNNet(nn.Module):
-    def __init__(self, game: Game, config: NNetConfig):
+    def __init__(self, game: Game[OthelloBoard], config: NNetConfig):
         # game params
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()

@@ -45,7 +45,7 @@ config = Config(
     numItersForTrainExamplesHistory = 20
 )
 
-mcts = MCTS(game, net, config)
+mcts = MCTS[OthelloBoard](game, net, config)
 
 arena = Arena(lambda x: np.argmax(mcts.getActionProbabilities(x, temp = 0)), game, display = OthelloGame.display)
 

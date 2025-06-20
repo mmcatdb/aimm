@@ -1,16 +1,16 @@
 import logging
-from typing import Callable
+from typing import Callable, Generic
 from tqdm import tqdm
-from Game import Game
+from Game import Game, TState
 
 log = logging.getLogger(__name__)
 
-class Arena():
+class Arena(Generic[TState]):
     """
     An Arena class where an agent can be tested.
     """
 
-    def __init__(self, player: Callable, game: Game):
+    def __init__(self, player: Callable, game: Game[TState]):
         """
         Input:
             player: function that takes board as input and returns action
@@ -24,13 +24,12 @@ class Arena():
         self.game = game
 
     @staticmethod
-    def testAgent(agentFunction: Callable[[any], int], game: Game, iterations: int) -> float:
+    def testAgent(agentFunction: Callable[[TState], int], game: Game[TState], iterations: int) -> float:
         """
         Test the agent on the given amount of iterations.
         Returns the normalized score (total score divided by num).
         """
-
-        arena = Arena(agentFunction, game)
+        arena = Arena[TState](agentFunction, game)
 
         score = 0
         for _ in tqdm(range(iterations), desc = "Arena.testAgent (1)"):

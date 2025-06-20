@@ -1,8 +1,9 @@
+from typing import Generic, TypeVar
 import numpy as np
 from numpy.typing import NDArray
-from Game import Game
+from Game import Game, TState
 
-class NeuralNet():
+class NeuralNet(Generic[TState]):
     """
     This class specifies the base NeuralNet class. To define your own neural
     network, subclass this class and implement the functions below. The neural
@@ -12,10 +13,10 @@ class NeuralNet():
     See othello/NNet.py for an example implementation.
     """
 
-    def __init__(self, game: Game):
+    def __init__(self, game: Game[TState]):
         pass
 
-    def train(self, examples) -> None:
+    def train(self, examples: tuple[TState, list[float], float]) -> None:
         """
         This function trains the neural network with examples obtained from
         self-play.
@@ -28,7 +29,7 @@ class NeuralNet():
         """
         pass
 
-    def predict(self, board) -> tuple[NDArray[np.float64], float]:
+    def predict(self, board: TState) -> tuple[NDArray[np.float64], float]:
         """
         Input:
             board: current board in its canonical form.

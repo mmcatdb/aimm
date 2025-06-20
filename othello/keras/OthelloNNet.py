@@ -2,10 +2,11 @@ from tensorflow.keras.models import *
 from tensorflow.keras.layers import *
 from tensorflow.keras.optimizers import *
 from Game import Game
+from OthelloBoard import OthelloBoard
 from NeuralNet import NNetConfig
 
 class OthelloNNet():
-    def __init__(self, game: Game, config: NNetConfig):
+    def __init__(self, game: Game[OthelloBoard], config: NNetConfig):
         # game params
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()

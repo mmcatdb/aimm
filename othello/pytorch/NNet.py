@@ -7,6 +7,7 @@ import torch
 from torch import Tensor, FloatTensor
 import torch.optim as optim
 from OthelloNNet import OthelloNNet
+from OthelloBoard import OthelloBoard
 from Game import Game
 
 config = NNetConfig(
@@ -18,8 +19,8 @@ config = NNetConfig(
     num_channels = 512,
 )
 
-class NNetWrapper(NeuralNet):
-    def __init__(self, game: Game):
+class NNetWrapper(NeuralNet[OthelloBoard]):
+    def __init__(self, game: Game[OthelloBoard]):
         self.nnet = OthelloNNet(game, config)
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
@@ -27,7 +28,7 @@ class NNetWrapper(NeuralNet):
         if config.cuda:
             self.nnet.cuda()
 
-    def train(self, examples) -> None:
+    def train(self, examples: tuple[OthelloBoard, list[float], float]) -> None:
         """
         examples: list of examples, each example is of form (board, pi, v)
         """
@@ -70,28 +71,30 @@ class NNetWrapper(NeuralNet):
                 total_loss.backward()
                 optimizer.step()
 
-    def predict(self, board) -> tuple[NDArray[np.float64], float]:
+    def predict(self, board: OthelloBoard) -> tuple[NDArray[np.float64], float]:
         """
         board: np array with board
         """
         # preparing input
-        board = FloatTensor(board.astype(np.float64))
-        if config.cuda: board = board.contiguous().cuda()
-        board = board.view(1, self.board_x, self.board_y)
+        pieces = board.pieces
+        pieces = FloatTensor(pieces.astype(np.float64))
+        if config.cuda:
+            pieces = pieces.contiguous().cuda()
+        pieces = pieces.view(1, self.board_x, self.board_y)
         self.nnet.eval()
         with torch.no_grad():
-            pi, v = self.nnet(board)
+            pi, v = self.nnet(pieces)
 
         # print('PREDICTION TIME TAKEN : {0:03f}'.format(time.time() - start))
         return torch.exp(pi).data.cpu().numpy()[0], v.data.cpu().numpy()[0]
 
-    def __lossPi(self, targets: Tensor | FloatTensor, outputs) -> Tensor:
+    def __lossPi(self, targets: Tensor | FloatTensor, outputs: Tensor | FloatTensor) -> Tensor:
         return -torch.sum(targets * outputs) / targets.size()[0]
 
-    def __lossV(self, targets: Tensor | FloatTensor, outputs) -> Tensor:
+    def __lossV(self, targets: Tensor | FloatTensor, outputs: Tensor | FloatTensor) -> Tensor:
         return torch.sum((targets - outputs.view(-1)) ** 2) / targets.size()[0]
 
-    def saveCheckpoint(self, folder = 'checkpoint', filename = 'checkpoint.pth.tar') -> None:
+    def saveCheckpoint(self, folder: str, filename: str) -> None:
         filepath = os.path.join(folder, filename)
         if not os.path.exists(folder):
             print("Checkpoint Directory does not exist! Making directory {}".format(folder))
@@ -102,7 +105,7 @@ class NNetWrapper(NeuralNet):
             'state_dict': self.nnet.state_dict(),
         }, filepath)
 
-    def loadCheckpoint(self, folder = 'checkpoint', filename = 'checkpoint.pth.tar') -> None:
+    def loadCheckpoint(self, folder: str, filename: str) -> None:
         # https://github.com/pytorch/examples/blob/master/imagenet/main.py#L98
         filepath = os.path.join(folder, filename)
         if not os.path.exists(filepath):
