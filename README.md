@@ -1,7 +1,8 @@
-# Alpha Zero General (any game, any framework!)
+# Ai MM
 
 ## Installation
 
+- This doesn't work right now, but it *may* in the future.
 - Python version 3.10.18
 ```bash
 python -m venv .venv
@@ -10,15 +11,22 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Documentation
+
+- General algorithms, interfaces.
+- Specific implementations:
+    - `alpha` - currently in progress.
+    - Other implementations are not yet available.
+
 ### Citation
 
 If you found this work useful, feel free to cite it as
 
 ```
 @misc{thakoor2016learning,
-  title={Learning to play othello without human knowledge},
-  author={Thakoor, Shantanu and Nair, Surag and Jhunjhunwala, Megha},
-  year={2016},
-  publisher={Stanford University, Final Project Report}
+    title={Learning to play othello without human knowledge},
+    author={Thakoor, Shantanu and Nair, Surag and Jhunjhunwala, Megha},
+    year={2016},
+    publisher={Stanford University, Final Project Report}
 }
 ```
