@@ -112,8 +112,7 @@ class MCTS(Generic[TState]):
         for action in range(self.game.getActionSize()):
             if valids[action]:
                 if (stateString, action) in self.Qsa:
-                    u = self.Qsa[(stateString, action)] + self.config.cpuct * self.Ps[stateString][action] * math.sqrt(self.Ns[stateString]) / (
-                            1 + self.Nsa[(stateString, action)])
+                    u = self.Qsa[(stateString, action)] + self.config.cpuct * self.Ps[stateString][action] * math.sqrt(self.Ns[stateString]) / (1 + self.Nsa[(stateString, action)])
                 else:
                     u = self.config.cpuct * self.Ps[stateString][action] * math.sqrt(self.Ns[stateString] + EPSILON)  # Q = 0 ?
 
