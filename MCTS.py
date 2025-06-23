@@ -44,8 +44,8 @@ class MCTS(Generic[TState]):
         for i in range(self.config.numMCTSSims):
             self.search(state)
 
-        s = self.game.getStringRepresentation(state)
-        counts = [self.Nsa[(s, a)] if (s, a) in self.Nsa else 0 for a in range(self.game.getActionSize())]
+        stateString = self.game.getStringRepresentation(state)
+        counts = [self.Nsa[(stateString, action)] if (stateString, action) in self.Nsa else 0 for action in range(self.game.getActionSize())]
 
         if temp == 0:
             bestAs = np.array(np.argwhere(counts == np.max(counts))).flatten()
@@ -55,8 +55,8 @@ class MCTS(Generic[TState]):
             return probs
 
         counts = [x ** (1. / temp) for x in counts]
-        counts_sum = float(sum(counts))
-        probs = [x / counts_sum for x in counts]
+        countsSum = float(sum(counts))
+        probs = [x / countsSum for x in counts]
         return probs
 
     def search(self, state: TState) -> float:
@@ -75,64 +75,64 @@ class MCTS(Generic[TState]):
             v: the negative of the value of the current state
         """
 
-        s = self.game.getStringRepresentation(state)
+        stateString = self.game.getStringRepresentation(state)
 
-        if s not in self.Es:
-            self.Es[s] = self.game.getGameEnded(state)
-        if self.Es[s] != 0:
+        if stateString not in self.Es:
+            self.Es[stateString] = self.game.getGameEnded(state)
+        if self.Es[stateString] != 0:
             # terminal node
-            return -self.Es[s]
+            return -self.Es[stateString]
 
-        if s not in self.Ps:
+        if stateString not in self.Ps:
             # leaf node
-            self.Ps[s], v = self.net.predict(state)
+            self.Ps[stateString], v = self.net.predict(state)
             valids = self.game.getValidMoves(state)
-            self.Ps[s] = self.Ps[s] * valids  # masking invalid moves
-            sum_Ps_s = np.sum(self.Ps[s])
+            self.Ps[stateString] = self.Ps[stateString] * valids  # masking invalid moves
+            sum_Ps_s = np.sum(self.Ps[stateString])
             if sum_Ps_s > 0:
-                self.Ps[s] /= sum_Ps_s  # renormalize
+                self.Ps[stateString] /= sum_Ps_s  # renormalize
             else:
                 # if all valid moves were masked make all valid moves equally probable
 
                 # NB! All valid moves may be masked if either your NeuralNet architecture is insufficient or you've get overfitting or something else.
                 # If you have got dozens or hundreds of these messages you should pay attention to your NeuralNet and/or training process.   
                 log.error("All valid moves were masked, doing a workaround.")
-                self.Ps[s] = self.Ps[s] + valids
-                self.Ps[s] /= np.sum(self.Ps[s])
+                self.Ps[stateString] = self.Ps[stateString] + valids
+                self.Ps[stateString] /= np.sum(self.Ps[stateString])
 
-            self.Vs[s] = valids
-            self.Ns[s] = 0
+            self.Vs[stateString] = valids
+            self.Ns[stateString] = 0
             return -v
 
-        valids = self.Vs[s]
-        cur_best = -float('inf')
-        best_act = -1
+        valids = self.Vs[stateString]
+        currentBest = -float('inf')
+        bestAction = -1
 
         # pick the action with the highest upper confidence bound
-        for a in range(self.game.getActionSize()):
-            if valids[a]:
-                if (s, a) in self.Qsa:
-                    u = self.Qsa[(s, a)] + self.config.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s]) / (
-                            1 + self.Nsa[(s, a)])
+        for action in range(self.game.getActionSize()):
+            if valids[action]:
+                if (stateString, action) in self.Qsa:
+                    u = self.Qsa[(stateString, action)] + self.config.cpuct * self.Ps[stateString][action] * math.sqrt(self.Ns[stateString]) / (
+                            1 + self.Nsa[(stateString, action)])
                 else:
-                    u = self.config.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s] + EPSILON)  # Q = 0 ?
+                    u = self.config.cpuct * self.Ps[stateString][action] * math.sqrt(self.Ns[stateString] + EPSILON)  # Q = 0 ?
 
-                if u > cur_best:
-                    cur_best = u
-                    best_act = a
+                if u > currentBest:
+                    currentBest = u
+                    bestAction = action
 
-        a = best_act
-        next_s = self.game.getNextState(state, a)
+        action = bestAction
+        nextState = self.game.getNextState(state, action)
 
-        v = self.search(next_s)
+        v = self.search(nextState)
 
-        if (s, a) in self.Qsa:
-            self.Qsa[(s, a)] = (self.Nsa[(s, a)] * self.Qsa[(s, a)] + v) / (self.Nsa[(s, a)] + 1)
-            self.Nsa[(s, a)] += 1
+        if (stateString, action) in self.Qsa:
+            self.Qsa[(stateString, action)] = (self.Nsa[(stateString, action)] * self.Qsa[(stateString, action)] + v) / (self.Nsa[(stateString, action)] + 1)
+            self.Nsa[(stateString, action)] += 1
 
         else:
-            self.Qsa[(s, a)] = v
-            self.Nsa[(s, a)] = 1
+            self.Qsa[(stateString, action)] = v
+            self.Nsa[(stateString, action)] = 1
 
-        self.Ns[s] += 1
+        self.Ns[stateString] += 1
         return -v

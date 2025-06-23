@@ -26,7 +26,7 @@ class Game(IGame[State]):
         
         newState = State.copy(state)
         move = (int(action / self.n), action % self.n)
-        newState.execute_move(move)
+        newState.executeMove(move)
 
         return newState
 
@@ -56,7 +56,7 @@ class Game(IGame[State]):
 
         # b = State(self.n)
         # b.pieces = np.copy(state)
-        # if b.has_legal_moves():
+        # if b.hasLegalMoves():
         #     return 0
         # if b.countDiff() > 0:
         #     return 1

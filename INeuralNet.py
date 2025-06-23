@@ -57,13 +57,13 @@ class NeuralNetConfig:
         lr: float,
         dropout: float,
         epochs: int,
-        batch_size: int,
+        batchSize: int,
         cuda: bool,
-        num_channels: int,
+        numChannels: int,
     ):
         self.lr = lr
         self.dropout = dropout
         self.epochs = epochs
-        self.batch_size = batch_size
+        self.batchSize = batchSize
         self.cuda = cuda
-        self.num_channels = num_channels
+        self.numChannels = numChannels

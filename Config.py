@@ -11,8 +11,8 @@ class Config:
         cpuct: float,
 
         checkpoint: str,
-        load_model: bool,
-        load_folder_file: tuple,
+        loadModel: bool,
+        loadFolderFile: tuple,
         numItersForTrainExamplesHistory: int
     ):
         self.numIters = numIters
@@ -38,8 +38,8 @@ class Config:
 
         self.checkpoint = checkpoint
         
-        self.load_model = load_model
+        self.loadModel = loadModel
         
-        self.load_folder_file = load_folder_file
+        self.loadFolderFile = loadFolderFile
         
         self.numItersForTrainExamplesHistory = numItersForTrainExamplesHistory

@@ -127,10 +127,10 @@ class Coach(Generic[TState]):
         f.closed
     
     def __getCheckpointFile(self, iteration: int) -> str:
-        return 'checkpoint_' + str(iteration) + '.pth.tar'
+        return 'checkpoint-' + str(iteration) + '.pth.tar'
 
     def loadTrainExamples(self) -> None:
-        modelFile = os.path.join(self.config.load_folder_file[0], self.config.load_folder_file[1])
+        modelFile = os.path.join(self.config.loadFolderFile[0], self.config.loadFolderFile[1])
         examplesFile = modelFile + ".examples"
         if not os.path.isfile(examplesFile):
             log.warning(f'File "{examplesFile}" with trainExamples not found!')

@@ -14,9 +14,9 @@ config = NeuralNetConfig(
     lr = 0.001,
     dropout = 0.3,
     epochs = 10,
-    batch_size = 64,
+    batchSize = 64,
     cuda = torch.cuda.is_available(),
-    num_channels = 512,
+    numChannels = 512,
 )
 
 class NeuralNet(INeuralNet[State]):
@@ -37,38 +37,38 @@ class NeuralNet(INeuralNet[State]):
         for epoch in range(config.epochs):
             print('EPOCH ::: ' + str(epoch + 1))
             self.module.train()
-            pi_losses = AverageMeter()
-            v_losses = AverageMeter()
+            lossesPi = AverageMeter()
+            lossesV = AverageMeter()
 
-            batch_count = int(len(examples) / config.batch_size)
+            batchCount = int(len(examples) / config.batchSize)
 
-            t = tqdm(range(batch_count), desc = 'Training Net')
+            t = tqdm(range(batchCount), desc = 'Training Net')
             for _ in t:
-                sample_ids = np.random.randint(len(examples), size = config.batch_size)
-                states, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
+                sampleIds = np.random.randint(len(examples), size = config.batchSize)
+                states, pis, vs = list(zip(*[examples[i] for i in sampleIds]))
                 states = FloatTensor(np.array(states).astype(np.float64))
-                target_pis = FloatTensor(np.array(pis))
-                target_vs = FloatTensor(np.array(vs).astype(np.float64))
+                targetPis = FloatTensor(np.array(pis))
+                targetVs = FloatTensor(np.array(vs).astype(np.float64))
 
                 # predict
                 if config.cuda:
-                    states, target_pis, target_vs = states.contiguous().cuda(), target_pis.contiguous().cuda(), target_vs.contiguous().cuda()
+                    states, targetPis, targetVs = states.contiguous().cuda(), targetPis.contiguous().cuda(), targetVs.contiguous().cuda()
 
                 # compute output
-                out_pi, out_v = self.module(states)
-                l_pi = self.__lossPi(target_pis, out_pi)
-                l_v = self.__lossV(target_vs, out_v)
+                outPi, outV = self.module(states)
+                lossPi = self.__lossPi(targetPis, outPi)
+                lossV = self.__lossV(targetVs, outV)
                 # TODO Adapt this for regression instead of classification
-                total_loss = l_pi + l_v
+                totalLoss = lossPi + lossV
 
                 # record loss
-                pi_losses.update(l_pi.item(), states.size(0))
-                v_losses.update(l_v.item(), states.size(0))
-                t.set_postfix(Loss_pi = pi_losses, Loss_v = v_losses)
+                lossesPi.update(lossPi.item(), states.size(0))
+                lossesV.update(lossV.item(), states.size(0))
+                t.set_postfix(Loss_pi = lossesPi, Loss_v = lossesV)
 
                 # compute gradient and do SGD step
                 optimizer.zero_grad()
-                total_loss.backward()
+                totalLoss.backward()
                 optimizer.step()
 
     def predict(self, state: State) -> tuple[NDArray[np.float64], float]:
@@ -110,8 +110,8 @@ class NeuralNet(INeuralNet[State]):
         filepath = os.path.join(folder, filename)
         if not os.path.exists(filepath):
             raise ("No model in path {}".format(filepath))
-        map_location = None if config.cuda else 'cpu'
-        checkpoint = torch.load(filepath, map_location = map_location)
+        mapLocation = None if config.cuda else 'cpu'
+        checkpoint = torch.load(filepath, map_location = mapLocation)
         self.module.load_state_dict(checkpoint['state_dict'])
 
 class AverageMeter(object):

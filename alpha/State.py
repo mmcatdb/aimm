@@ -61,22 +61,22 @@ class State():
         for y in range(self.n):
             for x in range(self.n):
                 if self[x][y] == 1:
-                    newMoves = self.get_moves_for_square((x, y))
+                    newMoves = self.__getMovesForSquare((x, y))
                     moves.update(newMoves)
 
         return list(moves)
 
-    def has_legal_moves(self) -> bool:
+    def hasLegalMoves(self) -> bool:
         for y in range(self.n):
             for x in range(self.n):
                 if self[x][y] == 1:
-                    newMoves = self.get_moves_for_square((x, y))
+                    newMoves = self.__getMovesForSquare((x, y))
                     if len(newMoves) > 0:
                         return True
 
         return False
 
-    def get_moves_for_square(self, square: Position) -> list[Position]:
+    def __getMovesForSquare(self, square: Position) -> list[Position]:
         """Returns all the legal moves that use the given square as a base.
         That is, if the given square is (3, 4) and it contains a black piece,
         and (3, 5) and (3, 6) contain white pieces, and (3, 7) is empty, one
@@ -95,7 +95,7 @@ class State():
         # search all possible directions.
         moves = []
         for direction in self.__directions:
-            move = self._discover_move(square, direction)
+            move = self.__discoverMove(square, direction)
             if move:
                 # print(square, move, direction)
                 moves.append(move)
@@ -103,7 +103,7 @@ class State():
         # return the generated move list
         return moves
 
-    def execute_move(self, move: Position) -> None:
+    def executeMove(self, move: Position) -> None:
         """Perform the given move on the state; flips pieces as necessary.
         color gives the color pf the piece to play (1 = white, -1 = black)
         """
@@ -114,19 +114,19 @@ class State():
         # Add the piece to the empty square.
         # print(move)
         flips = [flip for direction in self.__directions
-                      for flip in self._get_flips(move, direction)]
+                      for flip in self.__getFlips(move, direction)]
         assert len(list(flips)) > 0
         for x, y in flips:
             #print(self[x][y], color)
             self[x][y] = 1
 
-    def _discover_move(self, origin: Position, direction: Position) -> Position:
+    def __discoverMove(self, origin: Position, direction: Position) -> Position:
         """ Returns the endpoint for a legal move, starting at the given origin, moving by the given increment. """
         x, y = origin
         color = self[x][y]
         flips = []
 
-        for x, y in State._increment_move(origin, direction, self.n):
+        for x, y in State.__incrementMove(origin, direction, self.n):
             if self[x][y] == 0:
                 if flips:
                     # print("Found", x, y)
@@ -139,12 +139,12 @@ class State():
                 # print("Flip", x, y)
                 flips.append((x, y))
 
-    def _get_flips(self, origin: Position, direction: Position) -> list[Position]:
-        """ Gets the list of flips for a vertex and direction to use with the execute_move function. """
+    def __getFlips(self, origin: Position, direction: Position) -> list[Position]:
+        """ Gets the list of flips for a vertex and direction to use with the executeMove function. """
         #initialize variables
         flips = [origin]
 
-        for x, y in State._increment_move(origin, direction, self.n):
+        for x, y in State.__incrementMove(origin, direction, self.n):
             #print(x, y)
             if self[x][y] == 0:
                 return []
@@ -157,7 +157,7 @@ class State():
         return []
 
     @staticmethod
-    def _increment_move(move: Position, direction: Position, n: int) -> Generator[Position, Any, None]:
+    def __incrementMove(move: Position, direction: Position, n: int) -> Generator[Position, Any, None]:
         # print(move)
         """ Generator expression for incrementing moves """
         move = list(map(sum, zip(move, direction)))
