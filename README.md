@@ -1,4 +1,6 @@
-# Ai MM
+# AI MM
+
+*An AI optimizer for multi-model data storage.*
 
 ## Installation
 
