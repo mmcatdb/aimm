@@ -1,0 +1,124 @@
+import csv
+
+import yaml
+# from daos.mongo_dao import MongoDAO
+# from daos.neo4j_dao import Neo4jDAO
+from daos.postgres_dao import PostgresDAO
+
+
+class Populator:
+    def __init__(self, config_path='config.yaml'):
+        with open(config_path, 'r') as f:
+            self.config = yaml.safe_load(f)
+        
+        self.schema_mapping = self.config['schema_mapping']
+        self.daos = {
+            'postgres': PostgresDAO(self.config['postgres']),
+            # 'mongodb': MongoDAO(self.config['mongodb']),
+            # 'neo4j': Neo4jDAO(self.config['neo4j'])
+        }
+
+    def get_dao_for_entity(self, entity_name):
+        db_type = self.schema_mapping.get(entity_name)
+        if not db_type:
+            raise ValueError(f"Entity '{entity_name}' not found in schema mapping.")
+        return self.daos[db_type]
+
+    def populate_from_tbl(self, entity_name, file_path, schema):
+        dao = self.get_dao_for_entity(entity_name)
+        with open(file_path, 'r') as f:
+            reader = csv.reader(f, delimiter='|')
+            for row in reader:
+                # Skip empty rows
+                if not row: continue
+                
+                data = {column['name']: row[i] for i, column in enumerate(schema)}
+                dao.insert(entity_name, data)
+                
+        print(f"Finished populating '{entity_name}' from '{file_path}'")
+        
+        
+    def delete_entity(self, entity_name):
+        dao = self.get_dao_for_entity(entity_name)
+        dao.delete_all_from(entity_name)
+        dao.drop_entity(entity_name)
+        
+
+    def disconnect_all(self):
+        for dao in self.daos.values():
+            dao.disconnect()
+            
+
+def main():
+    populator = Populator()
+
+    try:
+        customer_schema = [
+            {'name': 'c_custkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'c_name', 'type': 'VARCHAR(25)'},
+            {'name': 'c_address', 'type': 'VARCHAR(40)'},
+            {'name': 'c_nationkey', 'type': 'INTEGER'},
+            {'name': 'c_phone', 'type': 'CHAR(15)'},
+            {'name': 'c_acctbal', 'type': 'DECIMAL(15,2)'},
+            {'name': 'c_mktsegment', 'type': 'CHAR(10)'},
+            {'name': 'c_comment', 'type': 'VARCHAR(117)'}
+        ]
+        
+        orders_schema = [
+            {'name': 'o_orderkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'o_custkey', 'type': 'INTEGER'},
+            {'name': 'o_orderstatus', 'type': 'CHAR(1)'},
+            {'name': 'o_totalprice', 'type': 'DECIMAL(15,2)'},
+            {'name': 'o_orderdate', 'type': 'DATE'},
+            {'name': 'o_orderpriority', 'type': 'CHAR(15)'},
+            {'name': 'o_clerk', 'type': 'CHAR(15)'},
+            {'name': 'o_shippriority', 'type': 'INTEGER'},
+            {'name': 'o_comment', 'type': 'VARCHAR(79)'}
+        ]
+
+        lineitem_schema = [
+            {'name': 'l_orderkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'l_partkey', 'type': 'INTEGER'},
+            {'name': 'l_suppkey', 'type': 'INTEGER'},
+            {'name': 'l_linenumber', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'l_quantity', 'type': 'DECIMAL(15,2)'},
+            {'name': 'l_extendedprice', 'type': 'DECIMAL(15,2)'},
+            {'name': 'l_discount', 'type': 'DECIMAL(15,2)'},
+            {'name': 'l_tax', 'type': 'DECIMAL(15,2)'},
+            {'name': 'l_returnflag', 'type': 'CHAR(1)'},
+            {'name': 'l_linestatus', 'type': 'CHAR(1)'},
+            {'name': 'l_shipdate', 'type': 'DATE'},
+            {'name': 'l_commitdate', 'type': 'DATE'},
+            {'name': 'l_receiptdate', 'type': 'DATE'},
+            {'name': 'l_shipinstruct', 'type': 'CHAR(25)'},
+            {'name': 'l_shipmode', 'type': 'CHAR(10)'},
+            {'name': 'l_comment', 'type': 'VARCHAR(44)'}
+        ]
+
+        populator.delete_entity('customer')
+        populator.delete_entity('orders')
+        populator.delete_entity('lineitem')
+        
+        create_schemas(populator, customer_schema, orders_schema, lineitem_schema)
+
+        populator.populate_from_tbl('customer', 'data/customer.tbl', customer_schema)
+        populator.populate_from_tbl('orders', 'data/orders.tbl', orders_schema)
+        populator.populate_from_tbl('lineitem', 'data/lineitem.tbl', lineitem_schema)
+
+    finally:
+        populator.disconnect_all()
+        print("\nDisconnected from all databases.")
+
+def create_schemas(populator, customer_schema, orders_schema, lineitem_schema):
+    schemas = {
+        'customer': customer_schema,
+        'orders': orders_schema,
+        'lineitem': lineitem_schema
+    }
+
+    for entity_name, schema in schemas.items():
+        dao = populator.get_dao_for_entity(entity_name)
+        dao.create_schema(entity_name, schema)
+
+if __name__ == "__main__":
+    main()
