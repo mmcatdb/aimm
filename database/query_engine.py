@@ -1,8 +1,8 @@
 import yaml
 # from daos.mongo_dao import MongoDAO
-# from daos.neo4j_dao import Neo4jDAO
+from daos.neo4j_dao import Neo4jDAO
 from daos.postgres_dao import PostgresDAO
-
+import time
 
 class QueryEngine:
     def __init__(self, config_path='config.yaml'):
@@ -13,7 +13,7 @@ class QueryEngine:
         self.daos = {
             'postgres': PostgresDAO(self.config['postgres']),
             # 'mongodb': MongoDAO(self.config['mongodb']),
-            # 'neo4j': Neo4jDAO(self.config['neo4j'])
+            'neo4j': Neo4jDAO(self.config['neo4j'])
         }
 
     def get_dao_for_entity(self, entity_name):
@@ -27,35 +27,101 @@ class QueryEngine:
         dao = self.get_dao_for_entity(entity_name)
         return dao.find(entity_name, query_params)
 
-
+    
     def find_lineitems_for_customer(self, customer_name):
-        print(f"Searching for lineitems for customer: {customer_name}")
-
-        # Find customer
+        # Find the customer 
         customer_dao = self.get_dao_for_entity('customer')
         customers = customer_dao.find('customer', {'c_name': customer_name})
-        if not customers:
-            return []
+        if not customers: return []
         customer = customers[0]
-        print(f"Found customer: {customer}")
 
-        # Find orders for the customer
+        # Find all orders for the customer
         orders_dao = self.get_dao_for_entity('orders')
         orders = orders_dao.find('orders', {'o_custkey': customer['c_custkey']})
-        if not orders:
-            return []
-        print(f"Found {len(orders)} orders for the customer.")
+        if not orders: return []
 
+        # Get all order keys from the results
+        order_keys = [order['o_orderkey'] for order in orders]
 
-        # Find lineitems for the orders
+        # Find all lineitems for the given orders
         lineitem_dao = self.get_dao_for_entity('lineitem')
-        all_lineitems = []
-        for order in orders:
-            lineitems = lineitem_dao.find('lineitem', {'l_orderkey': order['o_orderkey']})
-            all_lineitems.extend(lineitems)
+        all_lineitems = lineitem_dao.find('lineitem', {'l_orderkey__in': order_keys})
         
-        print(f"Found {len(all_lineitems)} total lineitems.")
         return all_lineitems
+
+
+    def run_queries(self, customer_name):
+        # Queries from: https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/mysql/queries.md
+        
+        start = checkpoint = time.time()
+        
+        print(f"Customers stored in: {self.schema_mapping.get('customer')}")
+        print(f"Orders stored in: {self.schema_mapping.get('orders')}")
+        print(f"Lineitems stored in: {self.schema_mapping.get('lineitem')}")
+        print("-" * 50)
+        print("-" * 50)
+
+        lineitem_dao = self.get_dao_for_entity('lineitem')
+        customer_dao = self.get_dao_for_entity('customer')
+        order_dao = self.get_dao_for_entity('orders')
+        
+        
+        
+        # -----------  A1  ----------- 
+        lineitems = lineitem_dao.get_all_lineitems()
+        print(f"Found {len(lineitems)} lineitems.")
+        
+        print(f"Time taken for A1: {time.time() - start:.2f} seconds")
+        print("-" * 50)
+        checkpoint = time.time()
+
+        # -----------  A2  ----------- 
+        orders = order_dao.get_orders_by_daterange('1996-01-01', '1996-12-31')
+        print(f"Found {len(orders)} orders.")
+        print(f"Time taken for A2: {time.time() - checkpoint:.2f} seconds")
+        print("-" * 50)
+        checkpoint = time.time()
+        
+        
+        # -----------  A3  ----------- 
+        customers = customer_dao.get_all_customers()
+        print(f"Found {len(customers)} customers.")
+        print(f"Time taken for A3: {time.time() - checkpoint:.2f} seconds")
+        print("-" * 50)
+        checkpoint = time.time()
+
+
+        # -----------  A4  ----------- 
+        orders = order_dao.get_orders_by_keyrange("1000", "50000")
+        print(f"Found {len(orders)} orders.")
+        print(f"Time taken for A4: {time.time() - checkpoint:.2f} seconds")
+        print("-" * 50)
+        checkpoint = time.time()
+        
+        
+        # -----------  B1  ----------- 
+        orders_by_month = order_dao.count_orders_by_month()
+        print(f"Found orders by month. Total number of months: {len(orders_by_month)}")
+        print(f"Time taken for B1: {time.time() - checkpoint:.2f} seconds")
+        print("-" * 50)
+        checkpoint = time.time()
+
+        # -----------  B2  ----------- 
+        max_price = lineitem_dao.get_max_price_by_ship_month()
+        print(f"Found max price by ship month. Total number of months: {len(max_price)}")
+        print(f"Time taken for B2: {time.time() - checkpoint:.2f} seconds")
+        print("-" * 50)
+        checkpoint = time.time()
+
+        # -----------  Join  ---------
+        lineitems = self.find_lineitems_for_customer(customer_name)
+        print(f"Found {len(lineitems)} lineitems for customer: {customer_name}")
+        print(f"Time taken for Join: {time.time() - checkpoint:.2f} seconds")
+        print("-" * 50)
+
+
+        print(f"Finished. Total time taken: {time.time() - start:.2f} seconds")
+
 
 
     def disconnect_all(self):

@@ -1,4 +1,5 @@
 import psycopg2
+from psycopg2.extras import RealDictCursor
 
 from .base_dao import BaseDAO
 
@@ -14,7 +15,6 @@ class PostgresDAO(BaseDAO):
     def disconnect(self):
         if self.conn:
             self.conn.close()
-            
 
     def find(self, entity_name, query_params):
         if not self.conn:
@@ -26,9 +26,13 @@ class PostgresDAO(BaseDAO):
         conditions = []
         params = []
         for key, value in query_params.items():
-            conditions.append(f"{key} = %s")
-            params.append(value)
-        
+            if key.endswith("__in"):
+                conditions.append(f"{key[:-4]} IN %s")
+                params.append(tuple(value))
+            else:
+                conditions.append(f"{key} = %s")
+                params.append(value)
+
         query += " AND ".join(conditions)
         
         cursor.execute(query, tuple(params))
@@ -38,7 +42,57 @@ class PostgresDAO(BaseDAO):
         
         cursor.close()
         return results
-    
+
+    def _execute_query(self, query, params=None):
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            if cur.description:
+                results = cur.fetchall()
+                return results
+
+            # In case of non-select statements return None
+            return None
+
+
+    # A1) Non-Indexed Columns
+    def get_all_lineitems(self):
+        return self._execute_query("SELECT * FROM lineitem;")
+
+    # A2) Non-Indexed Columns — Range Query
+    def get_orders_by_daterange(self, start_date, end_date):
+        query = "SELECT * FROM orders WHERE o_orderdate BETWEEN %s AND %s;"
+        return self._execute_query(query, (start_date, end_date))
+
+    # A3) Indexed Columns
+    def get_all_customers(self):
+        return self._execute_query("SELECT * FROM customer;")
+
+    # A4) Indexed Columns — Range Query
+    def get_orders_by_keyrange(self, start_key, end_key):
+        query = "SELECT * FROM orders WHERE o_orderkey BETWEEN %s AND %s;"
+        return self._execute_query(query, (start_key, end_key))
+
+    # B1) COUNT
+    def count_orders_by_month(self):
+        """Counts orders grouped by month."""
+        query = """
+            SELECT COUNT(o_orderkey) AS order_count, 
+                   TO_CHAR(o_orderdate, 'YYYY-MM') AS order_month
+            FROM orders
+            GROUP BY order_month;
+        """
+        return self._execute_query(query)
+
+    # B2) MAX
+    def get_max_price_by_ship_month(self):
+        """Finds max extended price grouped by shipping month."""
+        query = """
+            SELECT TO_CHAR(l_shipdate, 'YYYY-MM') AS ship_month,
+                   MAX(l_extendedprice) AS max_price
+            FROM lineitem
+            GROUP BY ship_month;
+        """
+        return self._execute_query(query)
 
     def insert(self, entity_name, data):
         with self.conn.cursor() as cur:
@@ -48,7 +102,6 @@ class PostgresDAO(BaseDAO):
             query = f"INSERT INTO {entity_name} ({columns}) VALUES ({placeholders})"
             cur.execute(query, list(data.values()))
             self.conn.commit()
- 
 
     def create_schema(self, entity_name, schema):
         with self.conn.cursor() as cur:
