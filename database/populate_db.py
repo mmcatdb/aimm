@@ -2,7 +2,7 @@ import csv
 
 import yaml
 # from daos.mongo_dao import MongoDAO
-# from daos.neo4j_dao import Neo4jDAO
+from daos.neo4j_dao import Neo4jDAO
 from daos.postgres_dao import PostgresDAO
 
 
@@ -15,7 +15,7 @@ class Populator:
         self.daos = {
             'postgres': PostgresDAO(self.config['postgres']),
             # 'mongodb': MongoDAO(self.config['mongodb']),
-            # 'neo4j': Neo4jDAO(self.config['neo4j'])
+            'neo4j': Neo4jDAO(self.config['neo4j'])
         }
 
     def get_dao_for_entity(self, entity_name):
