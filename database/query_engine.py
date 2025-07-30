@@ -1,5 +1,5 @@
 import yaml
-# from daos.mongo_dao import MongoDAO
+from daos.mongo_dao import MongoDAO
 from daos.neo4j_dao import Neo4jDAO
 from daos.postgres_dao import PostgresDAO
 import time
@@ -12,7 +12,7 @@ class QueryEngine:
         self.schema_mapping = self.config['schema_mapping']
         self.daos = {
             'postgres': PostgresDAO(self.config['postgres']),
-            # 'mongodb': MongoDAO(self.config['mongodb']),
+            'mongodb': MongoDAO(self.config['mongodb']),
             'neo4j': Neo4jDAO(self.config['neo4j'])
         }
 
