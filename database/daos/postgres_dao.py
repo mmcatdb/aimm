@@ -54,27 +54,21 @@ class PostgresDAO(BaseDAO):
             return None
 
 
-    # A1) Non-Indexed Columns
     def get_all_lineitems(self):
         return self._execute_query("SELECT * FROM lineitem;")
 
-    # A2) Non-Indexed Columns — Range Query
     def get_orders_by_daterange(self, start_date, end_date):
         query = "SELECT * FROM orders WHERE o_orderdate BETWEEN %s AND %s;"
         return self._execute_query(query, (start_date, end_date))
 
-    # A3) Indexed Columns
     def get_all_customers(self):
         return self._execute_query("SELECT * FROM customer;")
 
-    # A4) Indexed Columns — Range Query
     def get_orders_by_keyrange(self, start_key, end_key):
         query = "SELECT * FROM orders WHERE o_orderkey BETWEEN %s AND %s;"
         return self._execute_query(query, (start_key, end_key))
 
-    # B1) COUNT
     def count_orders_by_month(self):
-        """Counts orders grouped by month."""
         query = """
             SELECT COUNT(o_orderkey) AS order_count, 
                    TO_CHAR(o_orderdate, 'YYYY-MM') AS order_month
@@ -83,9 +77,7 @@ class PostgresDAO(BaseDAO):
         """
         return self._execute_query(query)
 
-    # B2) MAX
     def get_max_price_by_ship_month(self):
-        """Finds max extended price grouped by shipping month."""
         query = """
             SELECT TO_CHAR(l_shipdate, 'YYYY-MM') AS ship_month,
                    MAX(l_extendedprice) AS max_price

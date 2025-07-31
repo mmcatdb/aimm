@@ -55,27 +55,21 @@ class Neo4jDAO(BaseDAO):
         print(f"All nodes with label '{entity_name}' have been dropped in Neo4j.")
 
 
-    # A1) Non-Indexed Columns
     def get_all_lineitems(self):
         return self._execute_query("MATCH (l:lineitem) RETURN l")
 
-    # A2) Non-Indexed Columns — Range Query
     def get_orders_by_daterange(self, start_date, end_date):
         query = "MATCH (o:orders) WHERE o.o_orderdate >= $start_date AND o.o_orderdate <= $end_date RETURN o"
         return self._execute_query(query, {'start_date': start_date, 'end_date': end_date})
 
-    # A3) Indexed Columns
     def get_all_customers(self):
         return self._execute_query("MATCH (c:customer) RETURN c")
 
-    # A4) Indexed Columns — Range Query
     def get_orders_by_keyrange(self, start_key, end_key):
         query = "MATCH (o:orders) WHERE o.o_orderkey >= $start_key AND o.o_orderkey <= $end_key RETURN o"
         return self._execute_query(query, {'start_key': start_key, 'end_key': end_key})
 
-    # B1) COUNT
     def count_orders_by_month(self):
-        """Counts orders grouped by month."""
         query = """
             MATCH (o:orders)
             RETURN count(o.o_orderkey) AS order_count, 
@@ -84,9 +78,7 @@ class Neo4jDAO(BaseDAO):
         """
         return self._execute_query(query)
 
-    # B2) MAX
     def get_max_price_by_ship_month(self):
-        """Finds max extended price grouped by shipping month."""
         query = """
             MATCH (l:lineitem)
             RETURN substring(l.l_shipdate, 0, 7) AS ship_month,

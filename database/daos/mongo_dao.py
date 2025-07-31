@@ -55,11 +55,9 @@ class MongoDAO(BaseDAO):
         self.db.drop_collection(entity_name)
         print(f"Collection '{entity_name}' has been dropped in MongoDB.")
 
-    # A1) Non-Indexed Columns
     def get_all_lineitems(self):
         return list(self.db.lineitem.find({}, {'_id': 0}))
 
-    # A2) Non-Indexed Columns - Range Query
     def get_orders_by_daterange(self, start_date, end_date):
         query = {
             "o_orderdate": {
@@ -69,11 +67,9 @@ class MongoDAO(BaseDAO):
         }
         return list(self.db.orders.find(query, {'_id': 0}))
 
-    # A3) Indexed Columns
     def get_all_customers(self):
         return list(self.db.customer.find({}, {'_id': 0}))
 
-    # A4) Indexed Columns - Range Query
     def get_orders_by_keyrange(self, start_key, end_key):
         query = {
             "o_orderkey": {
@@ -83,7 +79,6 @@ class MongoDAO(BaseDAO):
         }
         return list(self.db.orders.find(query, {'_id': 0}))
 
-    # B1) COUNT
     def count_orders_by_month(self):
         pipeline = [
             {
@@ -104,7 +99,6 @@ class MongoDAO(BaseDAO):
         
         return list(self.db.orders.aggregate(pipeline))
 
-    # B2) MAX
     def get_max_price_by_ship_month(self):
         pipeline = [
             {
