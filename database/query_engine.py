@@ -5,11 +5,13 @@ from daos.postgres_dao import PostgresDAO
 import time
 
 class QueryEngine:
-    def __init__(self, config_path='config.yaml'):
+    def __init__(self, config_path='config.yaml', schema_mapping=None):
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
+
+        self.schema_mapping = schema_mapping or self.config['schema_mapping']
+        print(self.schema_mapping)
         
-        self.schema_mapping = self.config['schema_mapping']
         self.daos = {
             'postgres': PostgresDAO(self.config['postgres']),
             'mongodb': MongoDAO(self.config['mongodb']),
@@ -50,16 +52,16 @@ class QueryEngine:
         return all_lineitems
 
 
-    def run_queries(self, customer_name):
+    def run_queries(self, customer_name="Customer#000000007", verbose=True):
         # Queries from: https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/mysql/queries.md
         
         start = checkpoint = time.time()
         
-        print(f"Customers stored in: {self.schema_mapping.get('customer')}")
-        print(f"Orders stored in: {self.schema_mapping.get('orders')}")
-        print(f"Lineitems stored in: {self.schema_mapping.get('lineitem')}")
-        print("-" * 50)
-        print("-" * 50)
+        if verbose:
+            print(f"Customers stored in: {self.schema_mapping.get('customer')}")
+            print(f"Orders stored in: {self.schema_mapping.get('orders')}")
+            print(f"Lineitems stored in: {self.schema_mapping.get('lineitem')}")
+            print("=" * 50)
 
         lineitem_dao = self.get_dao_for_entity('lineitem')
         customer_dao = self.get_dao_for_entity('customer')
@@ -69,58 +71,66 @@ class QueryEngine:
         
         # -----------  A1  ----------- 
         lineitems = lineitem_dao.get_all_lineitems()
-        print(f"Found {len(lineitems)} lineitems.")
-        
-        print(f"Time taken for A1: {time.time() - start:.2f} seconds")
-        print("-" * 50)
+        if verbose:
+            print(f"Found {len(lineitems)} lineitems.")
+            print(f"Time taken for A1: {time.time() - start:.2f} seconds")
+            print("-" * 50)
         checkpoint = time.time()
 
         # -----------  A2  ----------- 
         orders = order_dao.get_orders_by_daterange('1996-01-01', '1996-12-31')
-        print(f"Found {len(orders)} orders.")
-        print(f"Time taken for A2: {time.time() - checkpoint:.2f} seconds")
-        print("-" * 50)
+        if verbose:
+            print(f"Found {len(orders)} orders.")
+            print(f"Time taken for A2: {time.time() - checkpoint:.2f} seconds")
+            print("-" * 50)
         checkpoint = time.time()
         
         
         # -----------  A3  ----------- 
         customers = customer_dao.get_all_customers()
-        print(f"Found {len(customers)} customers.")
-        print(f"Time taken for A3: {time.time() - checkpoint:.2f} seconds")
-        print("-" * 50)
+        if verbose:
+            print(f"Found {len(customers)} customers.")
+            print(f"Time taken for A3: {time.time() - checkpoint:.2f} seconds")
+            print("-" * 50)
         checkpoint = time.time()
 
 
         # -----------  A4  ----------- 
         orders = order_dao.get_orders_by_keyrange("1000", "50000")
-        print(f"Found {len(orders)} orders.")
-        print(f"Time taken for A4: {time.time() - checkpoint:.2f} seconds")
-        print("-" * 50)
+        if verbose:
+            print(f"Found {len(orders)} orders.")
+            print(f"Time taken for A4: {time.time() - checkpoint:.2f} seconds")
+            print("-" * 50)
         checkpoint = time.time()
         
         
         # -----------  B1  ----------- 
         orders_by_month = order_dao.count_orders_by_month()
-        print(f"Found orders by month. Total number of months: {len(orders_by_month)}")
-        print(f"Time taken for B1: {time.time() - checkpoint:.2f} seconds")
-        print("-" * 50)
+        if verbose:
+            print(f"Found orders by month. Total number of months: {len(orders_by_month)}")
+            print(f"Time taken for B1: {time.time() - checkpoint:.2f} seconds")
+            print("-" * 50)
         checkpoint = time.time()
 
         # -----------  B2  ----------- 
         max_price = lineitem_dao.get_max_price_by_ship_month()
-        print(f"Found max price by ship month. Total number of months: {len(max_price)}")
-        print(f"Time taken for B2: {time.time() - checkpoint:.2f} seconds")
-        print("-" * 50)
+        if verbose:
+            print(f"Found max price by ship month. Total number of months: {len(max_price)}")
+            print(f"Time taken for B2: {time.time() - checkpoint:.2f} seconds")
+            print("-" * 50)
         checkpoint = time.time()
 
         # -----------  Join  ---------
         lineitems = self.find_lineitems_for_customer(customer_name)
-        print(f"Found {len(lineitems)} lineitems for customer: {customer_name}")
-        print(f"Time taken for Join: {time.time() - checkpoint:.2f} seconds")
-        print("-" * 50)
+        if verbose:
+            print(f"Found {len(lineitems)} lineitems for customer: {customer_name}")
+            print(f"Time taken for Join: {time.time() - checkpoint:.2f} seconds")
+            print("-" * 50)
 
-
-        print(f"Finished. Total time taken: {time.time() - start:.2f} seconds")
+        if verbose:
+            print(f"Finished. Total time taken: {time.time() - start:.2f} seconds")
+        
+        return round(time.time() - start, 2)
 
 
 
