@@ -1,134 +1,149 @@
-import math
 import random
-from collections import defaultdict
 from query_engine import QueryEngine
+import math
+
 
 class MCTSNode:
-    def __init__(self, state=None, parent=None, action=None):
-        self.state = state or {}  # Partial mapping of tables to DB types
-        self.parent = parent
-        self.action = action      # (table, db_type) that led to this state
+    def __init__(self, state, parent, previous_states): 
+        self.state = state                              # e.g. ('postgres', 'neo4j', 'postgres')
         self.children = []
-        self.visits = 0
+        self.parent = parent
+        self.previous_states = previous_states or set() # A set of states. Set is used for O(1) membership check
         self.value = 0
-        self.untried_actions = None  # will be populated when expanded
+        self.visits = 0
+        self.actions_left = self.get_viable_actions()
 
+    @staticmethod
+    def get_updated_state(state, action):
+        index, new_db = action
+        new_state = list(state)
+        new_state[index] = new_db
+        return tuple(new_state)
+
+    def get_viable_actions(self):
+        actions = []
+        for i, current_db in enumerate(self.state):
+            for db in MCTS.ALL_DBS:
+                if db == current_db: continue
+
+                action = (i, db)
+                new_state = MCTSNode.get_updated_state(self.state, action)
+
+                is_reverting_action = new_state in self.previous_states
+                if not is_reverting_action:
+                    actions.append(action)
+
+        return actions
+    
     def is_fully_expanded(self):
-        return self.untried_actions is not None and len(self.untried_actions) == 0
-    
-    def is_terminal(self):
-        # A node is terminal if all tables have been assigned
-        return len(self.state) == len(ALL_TABLES)
-    
-    def expand(self, all_tables, db_options):
-        if self.untried_actions is None:
-            # Generate all possible actions from this state
-            self.untried_actions = []
-            for table in all_tables:
-                if table not in self.state:
-                    for db_type in db_options:
-                        self.untried_actions.append((table, db_type))
-                        
-            print(f"Expanding node with state: {self.state}, untried actions: {self.untried_actions}")
-            print("number of untried actions:", len(self.untried_actions))
+        return len(self.actions_left) == 0
 
-        if not self.untried_actions:
-            return None
-            
-        # Choose a random untried action
-        action = random.choice(self.untried_actions)
-        self.untried_actions.remove(action)
+    def expand(self):
+        if len(self.actions_left) == 0: raise RuntimeError("ERROR: Trying to expand node with no actions left")
         
-        # Create new state by applying the action
-        table, db_type = action
-        new_state = dict(self.state)
-        new_state[table] = db_type
-        
-        # Create child node
-        child = MCTSNode(state=new_state, parent=self, action=action)
-        self.children.append(child)
-        return child
-    
-    def best_child(self, exploration_weight=1.0):
-        if not self.children:
-            return None
-            
-        def ucb1(child):
-            exploitation = child.value / child.visits if child.visits > 0 else 0
-            exploration = math.sqrt(2 * math.log(self.visits) / child.visits) if child.visits > 0 else float('inf')
-            return exploitation + exploration_weight * exploration
-            
-        return max(self.children, key=ucb1)
+        action = random.choice(self.actions_left)
+        self.actions_left.remove(action)
+
+        new_state = MCTSNode.get_updated_state(self.state, action)
+        new_previous_states = self.previous_states | {self.state}
+        new_node = MCTSNode(state=new_state, parent=self, previous_states=new_previous_states)
+
+        self.children.append(new_node)
+
+        return new_node
 
     def backpropagate(self, reward):
         self.visits += 1
         self.value += reward
+
+        # TODO multiple parents
         if self.parent:
             self.parent.backpropagate(reward)
 
+    def get_best_child(self, exploration_weight=1.414):
+        if not self.children:
+            return None
+        
+        total_visits_in_children = sum(child.visits for child in self.children)
+            
+        def ucb1(child):
+            exploitation = child.value / child.visits if child.visits > 0 else 0
 
-def test_mapping_performance(mapping):
-    query_engine = QueryEngine(schema_mapping=mapping)
-    execution_time = query_engine.run_queries(verbose=False)
-    reward = 1.0 / (execution_time + 0.001) 
-    return execution_time, reward
+            # Standard exploration formula
+            # exploration = math.sqrt(math.log(self.visits) / child.visits) if child.visits > 0 else float('inf')
+
+            # Generalized formula for DAGs. For trees, it has the same effect as the above formula
+            exploration = math.sqrt(math.log(1 + total_visits_in_children) / child.visits) if child.visits > 0 else float('inf')
+            return exploitation + exploration_weight*exploration
+            
+        return max(self.children, key=ucb1)
 
 
-def complete_random_mapping(partial_mapping, all_tables, db_options):
-    """Complete a partial mapping with random assignments"""
-    complete_mapping = dict(partial_mapping)
-    for table in all_tables:
-        if table not in complete_mapping:
-            complete_mapping[table] = random.choice(db_options)
-    return complete_mapping
+
+class MCTS:
+    ALL_TABLES = ('customer', 'orders', 'lineitem')
+    ALL_DBS = ('postgres', 'mongodb', 'neo4j') 
+
+    @staticmethod
+    def perform_simulation(mapping):
+        query_engine = QueryEngine(schema_mapping=mapping)
+        execution_time = query_engine.run_queries(verbose=False)
+        reward = 1.0 / (execution_time + 0.001) 
+        return reward, execution_time
+
+    @staticmethod
+    def state_to_mapping(state):
+        return {
+            'customer': state[0],
+            'orders': state[1],
+            'lineitem': state[2]
+        }
+
+    @staticmethod
+    def run_mcts(cur_state, iterations=20):
+        # TODO initialize best time and best mapping with cur_state
+        best_time = float("inf")
+        best_mapping = MCTS.state_to_mapping(cur_state)
 
 
-def mcts_search(all_tables, db_options, iterations=20, exploration_weight=1.0):
-    print("Starting MCTS search...")
-    initial_state = {'customer': 'mongodb', 'orders': 'neo4j', 'lineitem': 'mongodb'}
-    root = MCTSNode(state=initial_state)
-    best_mapping = None
-    best_time = float('inf')
+        root = MCTSNode(state=cur_state, parent=None, previous_states=None)
+
+        for i in range(iterations):
+            print(f'Iteration {i+1}')
+
+            node = root
+
+            # 1. Selection
+            while node.is_fully_expanded():
+                node = node.get_best_child()
+
+            print(f"Selected node to expand with state: {node.state}")
+
+            # 2. Expansion
+            node = node.expand()
+
+            # 3. Simulation
+            schema_mapping = MCTS.state_to_mapping(node.state) 
+            reward, exec_time = MCTS.perform_simulation(schema_mapping)
+
+            print(f"Time: {exec_time}s with state: {node.state}")
+
+            if exec_time < best_time:
+                best_time = exec_time
+                best_mapping = schema_mapping
+
+
+            # 4. Backpropagation
+            node.backpropagate(reward)
+
+
+        return best_mapping, best_time
     
-    for _ in range(iterations):
-        print(f"Iteration {_ + 1}/{iterations}")
-        
-        
-        # Selection
-        node = root
-        while not node.is_terminal() and node.is_fully_expanded():
-            node = node.best_child(exploration_weight)
-        
-        # Expansion
-        if not node.is_terminal():
-            node = node.expand(all_tables, db_options)
-            if node is None:  # No more actions to try
-                continue
-        
-        # Simulation
-        simulation_mapping = complete_random_mapping(node.state, all_tables, db_options)
-        execution_time, reward = test_mapping_performance(simulation_mapping)
-        
-        if execution_time < best_time:
-            best_time = execution_time
-            best_mapping = simulation_mapping
-            print(f"New best time: {best_time} with mapping: {best_mapping}")
-        
-        # Backpropagation
-        node.backpropagate(reward)
-    
-    return best_mapping, best_time
 
 
 def main():
-    global ALL_TABLES
-    ALL_TABLES = ['customer','orders', 'lineitem']
-    db_options = ['postgres', 'mongodb', 'neo4j']
-    
-    best_mapping, best_time = mcts_search(ALL_TABLES, db_options, iterations=20)
-    
-    print(f"Final best time: {best_time} with mapping: {best_mapping}")
-
+    best_mapping, best_time = MCTS.run_mcts(("postgres", "postgres", "postgres"))
+    print(f"Final best mapping: {best_mapping} with time {best_time}s")
 
 
 if __name__ == "__main__":
