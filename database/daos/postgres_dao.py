@@ -55,7 +55,7 @@ class PostgresDAO(BaseDAO):
 
 
     def get_all_lineitems(self):
-        return self._execute_query("SELECT * FROM lineitem;")
+        return self._execute_query("EXPLAIN SELECT * FROM lineitem;")
 
     def get_orders_by_daterange(self, start_date, end_date):
         query = "SELECT * FROM orders WHERE o_orderdate BETWEEN %s AND %s;"
@@ -86,9 +86,55 @@ class PostgresDAO(BaseDAO):
         """
         return self._execute_query(query)
 
+    # --- Part / Supplier / PartSupp ---
+    def get_all_parts(self):
+        return self._execute_query("SELECT * FROM part;")
+
+    def get_parts_by_size_range(self, min_size, max_size):
+        return self._execute_query("SELECT * FROM part WHERE p_size BETWEEN %s AND %s;", (min_size, max_size))
+
+    def get_all_suppliers(self):
+        return self._execute_query("SELECT * FROM supplier;")
+
+    def get_suppliers_by_nation(self, nation_key):
+        return self._execute_query("SELECT * FROM supplier WHERE s_nationkey = %s;", (nation_key,))
+
+    def get_partsupp_for_part(self, partkey):
+        return self._execute_query("SELECT * FROM partsupp WHERE ps_partkey = %s;", (partkey,))
+
+    def get_lowest_cost_supplier_for_part(self, partkey):
+        query = """
+            SELECT ps.*, s.s_name, s.s_acctbal
+            FROM partsupp ps
+            JOIN supplier s ON ps.ps_suppkey = s.s_suppkey
+            WHERE ps.ps_partkey = %s
+            ORDER BY ps.ps_supplycost ASC
+            LIMIT 1;
+        """
+        res = self._execute_query(query, (partkey,))
+        return res[0] if res else None
+
+    def count_suppliers_per_part(self):
+        query = """
+            SELECT ps_partkey AS partkey, COUNT(*) AS supplier_count
+            FROM partsupp
+            GROUP BY ps_partkey
+            ORDER BY ps_partkey;
+        """
+        return self._execute_query(query)
+
+    def avg_supplycost_by_part_size(self):
+        query = """
+            SELECT p.p_size, AVG(ps.ps_supplycost) AS avg_supplycost
+            FROM part p
+            JOIN partsupp ps ON p.p_partkey = ps.ps_partkey
+            GROUP BY p.p_size
+            ORDER BY p.p_size;
+        """
+        return self._execute_query(query)
+
     def insert(self, entity_name, data):
         with self.conn.cursor() as cur:
-            # Prepare the insert statement
             columns = ', '.join(data.keys())
             placeholders = ', '.join(['%s'] * len(data))
             query = f"INSERT INTO {entity_name} ({columns}) VALUES ({placeholders})"
@@ -115,11 +161,14 @@ class PostgresDAO(BaseDAO):
 
     def delete_all_from(self, entity_name):
         with self.conn.cursor() as cur:
-            query = f"TRUNCATE TABLE {entity_name} RESTART IDENTITY"
-            cur.execute(query)
-            self.conn.commit()
-            print(f"All data from '{entity_name}' has been deleted in PostgreSQL.")
-
+            try:
+                query = f"TRUNCATE TABLE {entity_name} RESTART IDENTITY"
+                cur.execute(query)
+                self.conn.commit()
+                print(f"All data from '{entity_name}' has been deleted in PostgreSQL.")
+            except psycopg2.errors.UndefinedTable:
+                self.conn.rollback()
+                print(f"Table '{entity_name}' does not exist, skipping TRUNCATE.")
 
     def drop_entity(self, entity_name):
         with self.conn.cursor() as cur:

@@ -117,4 +117,44 @@ class BaseDAO(ABC):
         """
         pass
 
-    #endregion
+
+
+    @abstractmethod
+    def get_all_parts(self):
+        """P1) List all parts."""
+        pass
+
+    @abstractmethod
+    def get_parts_by_size_range(self, min_size, max_size):
+        """P2) Range filter on p_size."""
+        pass
+
+    @abstractmethod
+    def get_all_suppliers(self):
+        """S1) List all suppliers."""
+        pass
+
+    @abstractmethod
+    def get_suppliers_by_nation(self, nation_key):
+        """S2) Filter suppliers by nation key."""
+        pass
+
+    @abstractmethod
+    def get_partsupp_for_part(self, partkey):
+        """PS1) All supplier rows for a given part."""
+        pass
+
+    @abstractmethod
+    def get_lowest_cost_supplier_for_part(self, partkey):
+        """PS2) Cheapest supplier for a part."""
+        pass
+
+    @abstractmethod
+    def count_suppliers_per_part(self):
+        """AGG1) Number of suppliers per part (cardinality of part->supplier)."""
+        pass
+
+    @abstractmethod
+    def avg_supplycost_by_part_size(self):
+        """AGG2) Average supply cost grouped by part size (join part + partsupp)."""
+        pass

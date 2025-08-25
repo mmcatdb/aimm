@@ -30,9 +30,11 @@ class Neo4jDAO(BaseDAO):
                 conditions.append(f"n.{prop} = ${prop}")
                 params[prop] = value
         
-        where_clause = " AND ".join(conditions)
-        query = f"MATCH (n:{entity_name}) WHERE {where_clause} RETURN n"
         
+        where_clause = " AND ".join(conditions) 
+
+        query = f"MATCH (n:{entity_name}) WHERE {where_clause} RETURN n"
+
         results = self._execute_query(query, params)
         return [res['n'] for res in results]
 
@@ -56,7 +58,8 @@ class Neo4jDAO(BaseDAO):
 
 
     def get_all_lineitems(self):
-        return self._execute_query("MATCH (l:lineitem) RETURN l")
+        # Neo4j really struggles with retrieving all lineitems, so limit it to 200k for testing purposes
+        return self._execute_query("MATCH (l:lineitem) RETURN l LIMIT 200000")
 
     def get_orders_by_daterange(self, start_date, end_date):
         query = "MATCH (o:orders) WHERE o.o_orderdate >= $start_date AND o.o_orderdate <= $end_date RETURN o"
@@ -84,5 +87,52 @@ class Neo4jDAO(BaseDAO):
             RETURN substring(l.l_shipdate, 0, 7) AS ship_month,
                    max(l.l_extendedprice) AS max_price
             ORDER BY ship_month
+        """
+        return self._execute_query(query)
+
+    # --- Part / Supplier / PartSupp ---
+    def get_all_parts(self):
+        return self._execute_query("MATCH (p:part) RETURN p")
+
+    def get_parts_by_size_range(self, min_size, max_size):
+        query = "MATCH (p:part) WHERE toInteger(p.p_size) >= $min AND toInteger(p.p_size) <= $max RETURN p"
+        return self._execute_query(query, {'min': int(min_size), 'max': int(max_size)})
+
+    def get_all_suppliers(self):
+        return self._execute_query("MATCH (s:supplier) RETURN s")
+
+    def get_suppliers_by_nation(self, nation_key):
+        query = "MATCH (s:supplier) WHERE s.s_nationkey = $nk RETURN s"
+        return self._execute_query(query, {'nk': str(nation_key)})
+
+    def get_partsupp_for_part(self, partkey):
+        query = "MATCH (ps:partsupp) WHERE ps.ps_partkey = $pk RETURN ps"
+        return self._execute_query(query, {'pk': str(partkey)})
+
+    def get_lowest_cost_supplier_for_part(self, partkey):
+        query = """
+            MATCH (ps:partsupp {ps_partkey: $pk})
+            WITH ps ORDER BY toFloat(ps.ps_supplycost) ASC LIMIT 1
+            MATCH (s:supplier {s_suppkey: ps.ps_suppkey})
+            RETURN ps, s.s_name AS s_name, s.s_acctbal AS s_acctbal
+        """
+        res = self._execute_query(query, {'pk': str(partkey)})
+        return res[0] if res else None
+
+    def count_suppliers_per_part(self):
+        query = """
+            MATCH (ps:partsupp)
+            WITH ps.ps_partkey AS partkey, count(ps) AS supplier_count
+            RETURN partkey, supplier_count
+            ORDER BY partkey
+        """
+        return self._execute_query(query)
+
+    def avg_supplycost_by_part_size(self):
+        query = """
+            MATCH (p:part)<-[:PART_REL]- (ps:partsupp)
+            WITH toInteger(p.p_size) AS p_size, avg(toFloat(ps.ps_supplycost)) AS avg_supplycost
+            RETURN p_size, avg_supplycost
+            ORDER BY p_size
         """
         return self._execute_query(query)
