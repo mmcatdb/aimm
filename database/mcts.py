@@ -111,7 +111,7 @@ class MCTSNode:
 
 
 class MCTS:
-    ALL_TABLES = ('customer', 'orders', 'lineitem')
+    ALL_TABLES = ('customer', 'orders', 'supplier', 'part', 'partsupp', 'lineitem')
     ALL_DBS = ('postgres', 'mongodb', 'neo4j')
     explored_states = set()
     state_to_node_map: Dict[Tuple[str,...], MCTSNode] = dict()
@@ -129,11 +129,12 @@ class MCTS:
         return dict(zip(MCTS.ALL_TABLES, state))
 
     @staticmethod
-    def run_mcts(cur_state, iterations=10):
+    def run_mcts(cur_state, iterations=100):
         MCTS.explored_states.clear()
         MCTS.state_to_node_map.clear()
 
         best_mapping = MCTS.state_to_mapping(cur_state)
+        print(best_mapping)
         _, exec_time = MCTS.perform_simulation(best_mapping)
         best_time = exec_time
 
@@ -192,7 +193,8 @@ class MCTS:
 
 
 def main():
-    best_mapping, best_time = MCTS.run_mcts(("postgres", "postgres", "postgres"))
+    initial_mapping = tuple(["postgres"] * len(MCTS.ALL_TABLES))
+    best_mapping, best_time = MCTS.run_mcts(initial_mapping, iterations=50)
     print(f"Final best mapping: {best_mapping} with time {best_time}s")
 
 
