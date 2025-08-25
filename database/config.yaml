@@ -24,13 +24,16 @@ neo4j:
 #   orders: neo4j
 #   lineitem: neo4j
 
-# schema_mapping:
-#   customer: mongodb
-#   orders: mongodb
-#   lineitem: mongodb
-
-
 schema_mapping:
-  customer: neo4j
+  customer: postgres
   orders: postgres
-  lineitem: mongodb
+  lineitem: postgres
+  part: postgres
+  supplier: postgres
+  partsupp: postgres
+
+
+# schema_mapping:
+#   customer: neo4j
+#   orders: postgres
+#   lineitem: mongodb
