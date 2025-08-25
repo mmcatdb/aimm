@@ -15,13 +15,13 @@ class Populator:
         self.daos = {
             'postgres': PostgresDAO(self.config['postgres']),
             'mongodb': MongoDAO(self.config['mongodb']),
-            'neo4j': Neo4jDAO(self.config['neo4j'])
+            'neo4j': Neo4jDAO(self.config['neo4j']),
         }
 
     def get_dao_for_entity(self, entity_name):
         db_type = self.schema_mapping.get(entity_name)
         if not db_type:
-            raise ValueError(f"Entity '{entity_name}' not found in schema mapping.")
+            raise ValueError(f"Entity '{entity_name}' not found in schema mapping. Add it to config.yaml under schema_mapping.")
         return self.daos[db_type]
 
     def populate_from_tbl(self, entity_name, file_path, schema):
@@ -29,12 +29,16 @@ class Populator:
         with open(file_path, 'r') as f:
             reader = csv.reader(f, delimiter='|')
             for row in reader:
-                # Skip empty rows
-                if not row: continue
-                
-                data = {column['name']: row[i] for i, column in enumerate(schema)}
-                dao.insert(entity_name, data)
-                
+                # Skip empty or malformed rows
+                if not row or all(col == '' for col in row): continue
+
+                data = {column['name']: row[i] for i, column in enumerate(schema) if i < len(row) and column['name']}
+
+                # Drop potential empty key from final delimiter
+                data = {k: v for k, v in data.items() if k}
+                if data:
+                    dao.insert(entity_name, data)
+        
         print(f"Finished populating '{entity_name}' from '{file_path}'")
         
         
@@ -95,30 +99,79 @@ def main():
             {'name': 'l_comment', 'type': 'VARCHAR(44)'}
         ]
 
-        populator.delete_entity('customer')
-        populator.delete_entity('orders')
-        populator.delete_entity('lineitem')
-        
-        create_schemas(populator, customer_schema, orders_schema, lineitem_schema)
+        part_schema = [
+            {'name': 'p_partkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'p_name', 'type': 'VARCHAR(55)'},
+            {'name': 'p_mfgr', 'type': 'CHAR(25)'},
+            {'name': 'p_brand', 'type': 'CHAR(10)'},
+            {'name': 'p_type', 'type': 'VARCHAR(25)'},
+            {'name': 'p_size', 'type': 'INTEGER'},
+            {'name': 'p_container', 'type': 'CHAR(10)'},
+            {'name': 'p_retailprice', 'type': 'DECIMAL(15,2)'},
+            {'name': 'p_comment', 'type': 'VARCHAR(23)'}
+        ]
 
-        populator.populate_from_tbl('customer', 'data/customer.tbl', customer_schema)
-        populator.populate_from_tbl('orders', 'data/orders.tbl', orders_schema)
-        populator.populate_from_tbl('lineitem', 'data/lineitem.tbl', lineitem_schema)
+        supplier_schema = [
+            {'name': 's_suppkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 's_name', 'type': 'CHAR(25)'},
+            {'name': 's_address', 'type': 'VARCHAR(40)'},
+            {'name': 's_nationkey', 'type': 'INTEGER'},
+            {'name': 's_phone', 'type': 'CHAR(15)'},
+            {'name': 's_acctbal', 'type': 'DECIMAL(15,2)'},
+            {'name': 's_comment', 'type': 'VARCHAR(101)'}
+        ]
+
+        partsupp_schema = [
+            {'name': 'ps_partkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'ps_suppkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'ps_availqty', 'type': 'INTEGER'},
+            {'name': 'ps_supplycost', 'type': 'DECIMAL(15,2)'},
+            {'name': 'ps_comment', 'type': 'VARCHAR(255)'}
+        ]
+
+        # Delete existing entities if present
+        for entity in ['lineitem', 'orders', 'customer', 'partsupp', 'supplier', 'part']:
+            if entity in populator.schema_mapping:
+                try:
+                    populator.delete_entity(entity)
+                except Exception as e:
+                    print(f"Skip delete for {entity}: {e}")
+
+        create_schemas(populator, {
+            'customer': customer_schema,
+            'orders': orders_schema,
+            'lineitem': lineitem_schema,
+            'part': part_schema,
+            'supplier': supplier_schema,
+            'partsupp': partsupp_schema
+        })
+
+        populate_plan = [
+            ('part', 'data/part.tbl', part_schema),
+            ('supplier', 'data/supplier.tbl', supplier_schema),
+            ('partsupp', 'data/partsupp.tbl', partsupp_schema),
+            ('customer', 'data/customer.tbl', customer_schema),
+            ('orders', 'data/orders.tbl', orders_schema),
+            ('lineitem', 'data/lineitem.tbl', lineitem_schema)
+        ]
+
+        for entity, path, schema in populate_plan:
+            if entity in populator.schema_mapping:
+                populator.populate_from_tbl(entity, path, schema)
+            else:
+                print(f"Skipping {entity}; add to schema_mapping to populate.")
 
     finally:
         populator.disconnect_all()
         print("\nDisconnected from all databases.")
 
-def create_schemas(populator, customer_schema, orders_schema, lineitem_schema):
-    schemas = {
-        'customer': customer_schema,
-        'orders': orders_schema,
-        'lineitem': lineitem_schema
-    }
-
-    for entity_name, schema in schemas.items():
-        dao = populator.get_dao_for_entity(entity_name)
-        dao.create_schema(entity_name, schema)
+def create_schemas(populator, schemas_dict):
+    for entity_name, schema in schemas_dict.items():
+        if entity_name in populator.schema_mapping:
+            dao = populator.get_dao_for_entity(entity_name)
+            dao.create_schema(entity_name, schema)
+        else:
+            print(f"Skipping schema creation for {entity_name}; not in schema_mapping.")
 
 if __name__ == "__main__":
     main()
