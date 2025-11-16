@@ -25,6 +25,8 @@ neo4j:
 #   lineitem: neo4j
 
 schema_mapping:
+  region: postgres
+  nation: postgres
   customer: postgres
   orders: postgres
   lineitem: postgres
