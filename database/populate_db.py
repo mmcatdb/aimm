@@ -57,6 +57,20 @@ def main():
     populator = Populator()
 
     try:
+        region_schema = [
+            {'name': 'r_regionkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'r_name', 'type': 'CHAR(25)'},
+            {'name': 'r_comment', 'type': 'VARCHAR(152)'}
+        ]
+
+        nation_schema = [
+            {'name': 'n_nationkey', 'type': 'INTEGER', 'primary_key': True},
+            {'name': 'n_name', 'type': 'CHAR(25)'},
+            {'name': 'n_regionkey', 'type': 'INTEGER'},
+            {'name': 'n_comment', 'type': 'VARCHAR(152)'}
+        ]
+
+
         customer_schema = [
             {'name': 'c_custkey', 'type': 'INTEGER', 'primary_key': True},
             {'name': 'c_name', 'type': 'VARCHAR(25)'},
@@ -130,7 +144,7 @@ def main():
         ]
 
         # Delete existing entities if present
-        for entity in ['lineitem', 'orders', 'customer', 'partsupp', 'supplier', 'part']:
+        for entity in ['lineitem', 'orders', 'customer', 'partsupp', 'supplier', 'part', 'nation', 'region']:
             if entity in populator.schema_mapping:
                 try:
                     populator.delete_entity(entity)
@@ -138,6 +152,8 @@ def main():
                     print(f"Skip delete for {entity}: {e}")
 
         create_schemas(populator, {
+            'region': region_schema,
+            'nation': nation_schema,
             'customer': customer_schema,
             'orders': orders_schema,
             'lineitem': lineitem_schema,
@@ -147,6 +163,8 @@ def main():
         })
 
         populate_plan = [
+            ('region', 'data/region.tbl', region_schema),
+            ('nation', 'data/nation.tbl', nation_schema),
             ('part', 'data/part.tbl', part_schema),
             ('supplier', 'data/supplier.tbl', supplier_schema),
             ('partsupp', 'data/partsupp.tbl', partsupp_schema),
