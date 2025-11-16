@@ -55,7 +55,7 @@ class PostgresDAO(BaseDAO):
 
 
     def get_all_lineitems(self):
-        return self._execute_query("EXPLAIN SELECT * FROM lineitem;")
+        return self._execute_query("SELECT * FROM lineitem;")
 
     def get_orders_by_daterange(self, start_date, end_date):
         query = "SELECT * FROM orders WHERE o_orderdate BETWEEN %s AND %s;"
