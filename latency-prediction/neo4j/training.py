@@ -204,15 +204,8 @@ class PlanStructuredTrainer:
     
     def compute_loss(self, batch: List[Dict]) -> torch.Tensor:
         """
-        Compute loss for a batch of query plans.
-        
-        For Neo4j: Loss = (predicted_total - actual_total)²
-        
-        Args:
-            batch: List of batch items with 'plan' and 'execution_time'
-            
-        Returns:
-            Loss tensor
+        Compute MSLE loss for a batch of query plans.
+        Loss = (log(predicted + 1) - log(actual + 1))²
         """
         predictions = []
         targets = []
@@ -238,8 +231,12 @@ class PlanStructuredTrainer:
         predictions = torch.cat(predictions, dim=0)
         targets = torch.cat(targets, dim=0)
         
-        # Compute MSE loss
-        loss = self.criterion(predictions, targets)
+        # Apply Log transformation before MSE
+        log_preds = torch.log1p(torch.abs(predictions)) 
+        log_targets = torch.log1p(targets)
+        
+        # Compute MSE on log values -> MSLE
+        loss = self.criterion(log_preds, log_targets)
         
         return loss
     
