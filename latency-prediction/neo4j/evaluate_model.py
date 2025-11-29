@@ -198,9 +198,9 @@ class ModelEvaluator:
             'plan': plan
         }
         
-        print(f"  Predicted: {pred_latency:.4f}s")
-        print(f"  Actual: {actual_latency:.4f}s (±{std_latency:.4f}s)")
-        print(f"  Absolute Error: {abs_error:.4f}s")
+        print(f"  Predicted: {pred_latency * 1000:.2f}ms")
+        print(f"  Actual: {actual_latency * 1000:.2f}ms (±{std_latency * 1000:.2f}ms)")
+        print(f"  Absolute Error: {abs_error * 1000:.2f}ms")
         print(f"  R-value: {r_value:.4f}")
         
         return result
@@ -249,10 +249,10 @@ class ModelEvaluator:
         # Compute statistics
         print(f"\nNumber of queries: {len(results)}")
         print(f"\nAbsolute Error:")
-        print(f"  Mean: {np.mean(abs_errors):.4f}s")
-        print(f"  Median: {np.median(abs_errors):.4f}s")
-        print(f"  Std: {np.std(abs_errors):.4f}s")
-        print(f"  Min/Max: {np.min(abs_errors):.4f}s / {np.max(abs_errors):.4f}s")
+        print(f"  Mean: {np.mean(abs_errors) * 1000:.2f}ms")
+        print(f"  Median: {np.median(abs_errors) * 1000:.2f}ms")
+        print(f"  Std: {np.std(abs_errors) * 1000:.2f}ms")
+        print(f"  Min/Max: {np.min(abs_errors) * 1000:.2f}ms / {np.max(abs_errors) * 1000:.2f}ms")
         
         
         if r_values:
@@ -268,9 +268,9 @@ class ModelEvaluator:
         for r in results:
             table_data.append([
                 r['query_name'][:30] if r['query_name'] else 'N/A',
-                f"{r['predicted_latency']:.4f}",
-                f"{r['actual_latency']:.4f}",
-                f"{r['absolute_error']:.4f}",
+                f"{r['predicted_latency'] * 1000:.2f}",
+                f"{r['actual_latency'] * 1000:.2f}",
+                f"{r['absolute_error'] * 1000:.2f}",
                 f"{r['r_value']:.4f}" if r['r_value'] != float('inf') else 'inf'
             ])
         
@@ -279,7 +279,7 @@ class ModelEvaluator:
         print("=" * 70)
         print(tabulate(
             table_data,
-            headers=['Query', 'Predicted (s)', 'Actual (s)', 'Abs Error (s)', 'R-value'],
+            headers=['Query', 'Predicted (ms)', 'Actual (ms)', 'Abs Error (ms)', 'R-value'],
             tablefmt='grid'
         ))
 
@@ -988,6 +988,10 @@ def main():
                        help='Number of layers in the neural units')
     parser.add_argument('--hidden-dim', type=int, default=128,
                        help='Hidden dimension size in the neural units')
+    parser.add_argument('--query', '-q', type=str, action='append', dest='queries',
+                       help='Additional Cypher query to evaluate (can be used multiple times)')
+    parser.add_argument('--query-only', '-qo', action='store_true',
+                       help='Only evaluate the provided --query arguments, skip built-in test queries')
     
     args = parser.parse_args()
     
@@ -1005,9 +1009,25 @@ def main():
     )
     
     try:
+        # Generate test queries based on arguments
         print("\nGenerating test queries...")
-        test_queries = generate_test_queries()
-        print(f"Generated {len(test_queries)} test queries")
+        if args.query_only:
+            test_queries = []
+        else:
+            test_queries = generate_test_queries()
+        
+        # Add user-provided queries
+        if args.queries:
+            for i, query in enumerate(args.queries, 1):
+                query_name = f"Custom Query {i}"
+                test_queries.append((query_name, query))
+            print(f"Added {len(args.queries)} custom query/queries")
+        
+        if not test_queries:
+            print("Error: No queries to evaluate. Provide queries with --query or remove --query-only flag.")
+            return
+        
+        print(f"Total queries to evaluate: {len(test_queries)}")
         
         results = evaluator.evaluate_multiple_queries(test_queries, args.num_runs)
         evaluator.print_summary(results)

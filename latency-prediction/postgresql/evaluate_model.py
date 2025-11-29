@@ -1099,6 +1099,10 @@ def main():
                        help='Path to save results JSON')
     parser.add_argument('--no-plots', action='store_true',
                        help='Skip generating plots')
+    parser.add_argument('--query', '-q', type=str, action='append', dest='queries',
+                       help='Additional SQL query to evaluate (can be used multiple times)')
+    parser.add_argument('--query-only', '-qo', action='store_true',
+                       help='Only evaluate the provided --query arguments, skip built-in test queries')
     
     args = parser.parse_args()
     
@@ -1111,8 +1115,23 @@ def main():
     
     # Generate test queries
     print("\nGenerating test queries...")
-    test_queries = generate_test_queries()
-    print(f"Generated {len(test_queries)} test queries")
+    if args.query_only:
+        test_queries = []
+    else:
+        test_queries = generate_test_queries()
+    
+    # Add user-provided queries
+    if args.queries:
+        for i, query in enumerate(args.queries, 1):
+            query_name = f"Custom Query {i}"
+            test_queries.append((query_name, query))
+        print(f"Added {len(args.queries)} custom query/queries")
+    
+    if not test_queries:
+        print("Error: No queries to evaluate. Provide queries with --query or remove --query-only flag.")
+        return
+    
+    print(f"Total queries to evaluate: {len(test_queries)}")
     
     # Run evaluation
     results = evaluator.evaluate_multiple_queries(
