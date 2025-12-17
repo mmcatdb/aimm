@@ -43,6 +43,15 @@ class PlanStructuredNetwork(nn.Module):
         
         # Store operator info for model saving/loading
         self.operator_info = {}
+    
+    def _normalize_node_type(self, node_type: str) -> str:
+        """
+        Normalize node type for neural unit lookup.
+        All scan types (Seq Scan, Index Scan, etc.) are unified to 'Scan'
+        """
+        if 'Scan' in node_type:
+            return 'Scan'
+        return node_type
         
     def get_operator_info(self) -> Dict[str, Dict[str, int]]:
         """
@@ -67,9 +76,11 @@ class PlanStructuredNetwork(nn.Module):
         def collect_operator_info(node):
             """Recursively collect operator types and their children counts."""
             node_type = node.get('Node Type', '')
+            # Normalize scan types to 'Scan' for unified neural unit
+            normalized_type = self._normalize_node_type(node_type)
             num_children = len(node.get('Plans', []))
             
-            operator_info_pairs.add((node_type, num_children))
+            operator_info_pairs.add((normalized_type, num_children))
             
             if 'Plans' in node:
                 for child in node['Plans']:
@@ -116,7 +127,6 @@ class PlanStructuredNetwork(nn.Module):
         """
         print(f"\nInitializing {len(operator_info)} neural units from saved operator info...")
         
-        # MODIFIED: Iterate using op_key
         for op_key, info in operator_info.items():
             node_type = info['node_type']
             feature_dim = info['feature_dim']
@@ -184,6 +194,7 @@ class PlanStructuredNetwork(nn.Module):
             return cache[node_id]
         
         node_type = node.get('Node Type', '')
+        normalized_type = self._normalize_node_type(node_type)
         
         
         # Process children (if any)
@@ -200,8 +211,8 @@ class PlanStructuredNetwork(nn.Module):
         device = next(self.parameters()).device
         node_features_tensor = torch.FloatTensor(node_features).unsqueeze(0).to(device)
         
-        # Get neural unit for this specific (type, num_children) combination
-        unit = self.get_unit(node_type, num_children)
+        # Get neural unit for this specific (normalized_type, num_children) combination
+        unit = self.get_unit(normalized_type, num_children)
         
         # Prepare input for neural unit
         if children_outputs:

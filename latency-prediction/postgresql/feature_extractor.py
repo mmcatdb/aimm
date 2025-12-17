@@ -19,6 +19,7 @@ class FeatureExtractor:
         # Vocabularies for one-hot encoding
         self.node_type_vocab = set()
         self.join_type_vocab = set()
+        self.scan_type_vocab = set()  # e.g. Seq Scan, Index Scan, etc.
         self.scan_relation_vocab = set()
         self.sort_method_vocab = set()
         self.index_name_vocab = set()
@@ -41,6 +42,9 @@ class FeatureExtractor:
             """Recursively traverse plan tree to collect features."""
             node_type = node.get('Node Type', '')
             self.node_type_vocab.add(node_type)
+            
+            if 'Scan' in node_type:
+                self.scan_type_vocab.add(node_type)
             
             # NOTE: I realize 'Startup Cost' isn't here, but for some reason the model's performance 
             #   completely craters if the feature is normalized.
@@ -94,6 +98,7 @@ class FeatureExtractor:
         
         print(f"Built vocabularies:")
         print(f"- Node types: {len(self.node_type_vocab)}")
+        print(f"- Scan types: {len(self.scan_type_vocab)}")
         print(f"- Join types: {len(self.join_type_vocab)}")
         print(f"- Relations: {len(self.scan_relation_vocab)}")
         print(f"- Sort Keys: {len(self.sort_key_vocab)}")
@@ -147,6 +152,10 @@ class FeatureExtractor:
         # Common features
         features.extend(self.extract_common_features(node))
         
+        node_type = node.get('Node Type', '')
+        scan_type_vec = self.encode_one_hot(node_type, self.scan_type_vocab)
+        features.extend(scan_type_vec)
+        
         # Relation name (one-hot)
         if 'Relation Name' in node:
             relation_vec = self.encode_one_hot(node['Relation Name'], self.scan_relation_vocab)
@@ -155,7 +164,6 @@ class FeatureExtractor:
         else:
             features.extend(np.zeros(len(self.scan_relation_vocab)))
         
-        # Index name (one-hot) - for index scans
         if 'Index Name' in node:
             index_vec = self.encode_one_hot(node['Index Name'], self.index_name_vocab)
             features.extend(index_vec)
@@ -320,6 +328,7 @@ class FeatureExtractor:
         }
         
         if 'Scan' in node_type:
+            dummy_node['Node Type'] = next(iter(self.scan_type_vocab)) if self.scan_type_vocab else node_type
             dummy_node['Relation Name'] = 'dummy'
             dummy_node['Index Name'] = 'dummy_idx'
         elif 'Join' in node_type:
