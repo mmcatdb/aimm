@@ -11,3 +11,5 @@ checkpoints/
 
 # Python venv
 .venv
+
+config.yaml
