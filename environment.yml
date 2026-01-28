@@ -1,0 +1,11 @@
+name: db-advisor
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13
+  - psycopg2            
+  - pymongo
+  - neo4j-python-driver
+  - pyyaml
+  - scikit-learn       
