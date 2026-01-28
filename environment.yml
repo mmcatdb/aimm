@@ -8,4 +8,5 @@ dependencies:
   - pymongo
   - neo4j-python-driver
   - pyyaml
-  - scikit-learn       
+  - scikit-learn
+  - pytorch       
