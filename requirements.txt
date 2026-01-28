@@ -3,3 +3,4 @@ pymongo
 neo4j
 pyyaml
 scikit-learn
+torch
