@@ -4,3 +4,5 @@ neo4j
 pyyaml
 scikit-learn
 torch
+tabulate
+matplotlib

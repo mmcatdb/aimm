@@ -9,4 +9,6 @@ dependencies:
   - neo4j-python-driver
   - pyyaml
   - scikit-learn
-  - pytorch       
+  - pytorch
+  - tabulate
+  - matplotlib       
