@@ -1,17 +1,9 @@
-from neo4j import GraphDatabase
 from .base_dao import BaseDAO
 
 class Neo4jDAO(BaseDAO):
     def __init__(self, config):
         self.config = config
         # self.driver = GraphDatabase.driver(config['uri'], auth=(config['user'], config['password'])) if config else None
-        self.connect()
-
-    def connect(self):
-        self.driver = GraphDatabase.driver(self.config['uri'], auth=(self.config['user'], self.config['password']))
-
-    def disconnect(self):
-        self.driver.close()
 
     def _execute_query(self, query, params=None):
         with self.driver.session() as session:
@@ -29,9 +21,9 @@ class Neo4jDAO(BaseDAO):
             else:
                 conditions.append(f"n.{prop} = ${prop}")
                 params[prop] = value
-        
-        
-        where_clause = " AND ".join(conditions) 
+
+
+        where_clause = " AND ".join(conditions)
 
         query = f"MATCH (n:{entity_name}) WHERE {where_clause} RETURN n"
 
@@ -75,7 +67,7 @@ class Neo4jDAO(BaseDAO):
     def count_orders_by_month(self):
         query = """
             MATCH (o:orders)
-            RETURN count(o.o_orderkey) AS order_count, 
+            RETURN count(o.o_orderkey) AS order_count,
                    substring(o.o_orderdate, 0, 7) AS order_month
             ORDER BY order_month
         """

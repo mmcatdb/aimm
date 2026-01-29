@@ -9,18 +9,16 @@ Key differences from PostgreSQL implementation:
 """
 import torch
 import torch.nn as nn
-from typing import Dict
-
 
 class NeuralUnit(nn.Module):
     """
     Base class for operator-level neural units.
-    
+
     For Neo4j, internal units output only data vectors.
     Only the root unit (ProduceResults) outputs latency prediction.
     """
-    
-    def __init__(self, input_dim: int, hidden_dim: int = 128, 
+
+    def __init__(self, input_dim: int, hidden_dim: int = 128,
                  data_vec_dim: int = 32, num_layers: int = 5,
                  is_root: bool = False):
         """
@@ -32,39 +30,39 @@ class NeuralUnit(nn.Module):
             is_root: Whether this is the root unit (ProduceResults) that predicts latency
         """
         super().__init__()
-        
+
         self.input_dim = input_dim
         self.data_vec_dim = data_vec_dim
         self.is_root = is_root
-        
+
         # Build hidden layers
         layers = []
         current_dim = input_dim
-        
+
         for i in range(num_layers):
             layers.append(nn.Linear(current_dim, hidden_dim))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(0.2))
             current_dim = hidden_dim
-        
+
         self.hidden_layers = nn.Sequential(*layers)
-        
+
         # Output layer: data vector for all units
         self.data_output = nn.Linear(hidden_dim, data_vec_dim)
-        
+
         # Latency output: only for root unit
         if is_root:
             self.latency_output = nn.Linear(hidden_dim, 1)
             # Use softplus to ensure positive latency predictions
             self.latency_activation = nn.Softplus()
-    
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """
         Forward pass through the neural unit.
-        
+
         Args:
             x: Input tensor [batch_size, input_dim]
-            
+
         Returns:
             Dictionary with:
                 - 'data': Data vector output [batch_size, data_vec_dim]
@@ -72,29 +70,29 @@ class NeuralUnit(nn.Module):
         """
         # Pass through hidden layers
         h = self.hidden_layers(x)
-        
+
         # Always output data vector
         data_vec = self.data_output(h)
-        
+
         result = {'data': data_vec}
-        
+
         # Only root unit predicts latency
         if self.is_root:
             latency = self.latency_activation(self.latency_output(h))
             result['latency'] = latency
-        
+
         return result
 
 
 class GenericUnit(NeuralUnit):
     """
     Generic neural unit for Neo4j operators.
-    
+
     Handles variable number of children by concatenating their data vectors
     with the operator's own features.
     """
-    
-    def __init__(self, input_dim: int, num_children: int = 0, 
+
+    def __init__(self, input_dim: int, num_children: int = 0,
                  data_vec_dim: int = 32, is_root: bool = False, **kwargs):
         """
         Args:
@@ -106,10 +104,10 @@ class GenericUnit(NeuralUnit):
         """
         # Total input = operator features + (data_vec_dim * num_children)
         total_input_dim = input_dim + (data_vec_dim * num_children)
-        
-        super().__init__(total_input_dim, data_vec_dim=data_vec_dim, 
+
+        super().__init__(total_input_dim, data_vec_dim=data_vec_dim,
                         is_root=is_root, **kwargs)
-        
+
         self.num_children = num_children
         self.operator_feature_dim = input_dim
 
@@ -118,10 +116,10 @@ def create_neural_unit(operator_type: str, input_dim: int, num_children: int = 0
                       data_vec_dim: int = 32, is_root: bool = False, **kwargs) -> NeuralUnit:
     """
     Factory function to create a neural unit for a given operator type.
-    
+
     For Neo4j, we use a generic unit for all operators.
     The root operator (ProduceResults) is special in that it predicts latency.
-    
+
     Args:
         operator_type: Neo4j operator type (e.g., 'ProduceResults', 'Filter', etc.)
         input_dim: Size of operator's feature vector
@@ -129,14 +127,14 @@ def create_neural_unit(operator_type: str, input_dim: int, num_children: int = 0
         data_vec_dim: Size of data vector
         is_root: Whether this is the root operator
         **kwargs: Additional arguments
-        
+
     Returns:
         Neural unit for the operator
     """
 
     # ProduceResults should always be the root
     is_root_op = (operator_type == 'ProduceResults')
-    
+
     return GenericUnit(
         input_dim=input_dim,
         num_children=num_children,

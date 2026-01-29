@@ -1,9 +1,9 @@
-postgres:
-  user: "myuser"
-  password: "mypassword"
-  host: "localhost"
-  port: "5432"
-  dbname: "postgres"
+# postgres:
+#   user: "myuser"
+#   password: "mypassword"
+#   host: "localhost"
+#   port: "5432"
+#   dbname: "postgres"
 
 mongodb:
   uri: "mongodb://localhost:27017/"

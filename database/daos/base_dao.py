@@ -1,23 +1,14 @@
 from abc import ABC, abstractmethod
 
-
 class BaseDAO(ABC):
     @abstractmethod
-    def connect(self):
-        pass
-
-    @abstractmethod
-    def disconnect(self):
-        pass
-
-    @abstractmethod
     def find(self, entity_name, query_params):
-        """ 
+        """
         Handles simple conditional queries
         Supports exact matches (key1 = val1 AND key2 = val2...), and IN clauses (key__in = [v1, v2,...])
         """
         pass
-    
+
     @abstractmethod
     def insert(self, entity_name, data):
         pass
@@ -35,7 +26,7 @@ class BaseDAO(ABC):
         pass
 
     #region A) Selection, Projection, Source (of data)
-    
+
     @abstractmethod
     def get_all_lineitems(self):
         """
@@ -72,7 +63,7 @@ class BaseDAO(ABC):
         ```
         """
         pass
-    
+
     @abstractmethod
     def get_orders_by_keyrange(self, start_key, end_key):
         """
@@ -85,10 +76,10 @@ class BaseDAO(ABC):
         ```
         """
         pass
-    
+
     #endregion
     #region B) Aggregation
-    
+
     @abstractmethod
     def count_orders_by_month(self):
         """
@@ -102,7 +93,7 @@ class BaseDAO(ABC):
         ```
         """
         pass
-    
+
     @abstractmethod
     def get_max_price_by_ship_month(self):
         """
@@ -116,8 +107,6 @@ class BaseDAO(ABC):
         ```
         """
         pass
-
-
 
     @abstractmethod
     def get_all_parts(self):
@@ -158,3 +147,5 @@ class BaseDAO(ABC):
     def avg_supplycost_by_part_size(self):
         """AGG2) Average supply cost grouped by part size (join part + partsupp)."""
         pass
+
+    #endregion

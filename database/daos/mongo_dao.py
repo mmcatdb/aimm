@@ -1,21 +1,12 @@
-from pymongo import MongoClient, ASCENDING
+from pymongo import ASCENDING
+
+from common.databases import Mongo
 from .base_dao import BaseDAO
 
 class MongoDAO(BaseDAO):
-    def __init__(self, config):
-        self.config = config
-        self.client = None
-        self.db = None
-        if config:
-            self.connect()
-
-    def connect(self):
-        self.client = MongoClient(self.config['uri'])
-        self.db = self.client[self.config['database']]
-
-    def disconnect(self):
-        if self.client:
-            self.client.close()
+    def __init__(self, mongo: Mongo):
+        self.mongo = mongo
+        self.db = mongo.database()
 
     def find(self, entity_name, query_params):
         collection = self.db[entity_name]
@@ -25,7 +16,7 @@ class MongoDAO(BaseDAO):
                 mongo_query[key[:-4]] = {"$in": value}
             else:
                 mongo_query[key] = value
-                
+
         return list(collection.find(mongo_query, {'_id': 0}))
 
     def insert(self, entity_name, data):
@@ -37,13 +28,13 @@ class MongoDAO(BaseDAO):
         if pk_cols:
             collection = self.db[entity_name]
             index_keys = [(key, ASCENDING) for key in pk_cols]
-            
+
             try:
                 collection.create_index(index_keys, unique=True)
                 print(f"Created unique index on {pk_cols} for collection '{entity_name}'")
             except Exception as e:
                 print(f"Could not create index on {entity_name}: {e}")
-                
+
         print(f"Collection '{entity_name}' is ready in MongoDB.")
 
 
@@ -96,7 +87,7 @@ class MongoDAO(BaseDAO):
             },
             { "$sort": { "order_month": 1 } }
         ]
-        
+
         return list(self.db.orders.aggregate(pipeline))
 
     def get_max_price_by_ship_month(self):

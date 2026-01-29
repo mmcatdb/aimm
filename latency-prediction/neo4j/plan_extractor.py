@@ -8,63 +8,62 @@ This module handles:
 """
 import yaml
 import time
-import datetime 
+import datetime
 import random
-from typing import List, Dict, Any, Tuple
+from typing import Any
 from neo4j import GraphDatabase
 import numpy as np
-
 
 class PlanExtractor:
     """
     Extracts query plans and execution times from Neo4j.
     Generates multiple query variants by substituting parameters.
     """
-    
+
     NUM_QUERY_TYPES = 32
-    
+
     def __init__(self, config_path: str = "config.yaml"):
         """
         Initialize connection to Neo4j database.
-        
+
         Args:
             config_path: Path to YAML config file with Neo4j credentials
         """
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         neo4j_config = config['neo4j']
         self.driver = GraphDatabase.driver(
             neo4j_config['uri'],
             auth=(neo4j_config['user'], neo4j_config['password'])
         )
-        
+
     def close(self):
         """Close database connection."""
         if self.driver:
             self.driver.close()
-    
-    def generate_workload_queries(self, num_queries: int = 350) -> List[str]:
+
+    def generate_workload_queries(self, num_queries: int = 350) -> list[str]:
         """
         Generate TPC-H query variants with random parameters.
         Similar to PostgreSQL implementation but for Cypher queries.
-        
+
         Args:
             num_queries: Total number of queries to generate
-            
+
         Returns:
             List of query strings
         """
         queries = []
         # This will now be smaller, distributing the total num_queries over all 32 types
         queries_per_type = num_queries // self.NUM_QUERY_TYPES
-        
+
         # --- Define constant lists for parameters (from PostgreSQL version) ---
         SHIPMODES_ALL = ['MAIL', 'SHIP', 'AIR', 'TRUCK', 'RAIL', 'FOB', 'REG AIR']
         REGION_CHOICES = ['ASIA', 'AMERICA', 'EUROPE', 'MIDDLE EAST', 'AFRICA']
         SEGMENT_CHOICES = ['AUTOMOBILE', 'BUILDING', 'FURNITURE', 'MACHINERY', 'HOUSEHOLD']
-        NATIONS = ["ALGERIA", "ARGENTINA", "BRAZIL", "CANADA", "EGYPT", "ETHIOPIA",  
-                       "FRANCE", "GERMANY", "INDIA", "INDONESIA", "IRAN", "IRAQ",  
+        NATIONS = ["ALGERIA", "ARGENTINA", "BRAZIL", "CANADA", "EGYPT", "ETHIOPIA",
+                       "FRANCE", "GERMANY", "INDIA", "INDONESIA", "IRAN", "IRAQ",
                        "JAPAN", "JORDAN", "KENYA", "MOROCCO", "MOZAMBIQUE", "PERU",
                        "CHINA", "ROMANIA", "SAUDI ARABIA", "VIETNAM", "RUSSIA", "UNITED KINGDOM", "UNITED STATES"]
         P_NAME_WORDS = [
@@ -90,14 +89,14 @@ class PlanExtractor:
             num_padding_zeroes = id_length - len(str(num))
             return f'{table_name}#{'0'*num_padding_zeroes}{num}'
 
-        
+
         # Q1: Pricing Summary Report
         for _ in range(queries_per_type):
             delta = random.randint(60, 120)
             base_date = datetime.date(1998, 12, 1)
             target_date = base_date - datetime.timedelta(days=delta)
             date_str = target_date.strftime('%Y-%m-%d')
-            
+
             queries.append(f"""
 MATCH (li:LineItem)
 WHERE li.l_shipdate <= date('{date_str}')
@@ -115,14 +114,14 @@ RETURN
   count(li) AS count_order
 ORDER BY returnflag, linestatus
 """)
-        
-        # Q5: Local Supplier Volume 
+
+        # Q5: Local Supplier Volume
         for _ in range(queries_per_type):
             region = random.choice(REGION_CHOICES)
-            year = random.randint(1993, 1997) 
+            year = random.randint(1993, 1997)
             start_date = f"{year}-01-01"
             end_date = f"{year+1}-01-01"
-            
+
             queries.append(f"""
 MATCH (r:Region {{r_name: '{region}'}})<-[:IS_IN_REGION]-(n:Nation)
 MATCH (n)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
@@ -134,17 +133,17 @@ WITH n.n_name AS nation_name,
 RETURN nation_name, revenue
 ORDER BY revenue DESC
 """)
-        
-        # Q6: Forecasting Revenue Change 
+
+        # Q6: Forecasting Revenue Change
         for _ in range(queries_per_type):
-            year = random.randint(1993, 1997) 
-            
+            year = random.randint(1993, 1997)
+
             discount_center = random.uniform(0.02, 0.09)
             discount_low = discount_center - 0.01
             discount_high = discount_center + 0.01
-            
-            quantity = random.randint(24, 25) 
-            
+
+            quantity = random.randint(24, 25)
+
             queries.append(f"""
 MATCH (li:LineItem)
 WHERE li.l_shipdate >= date('{year}-01-01')
@@ -154,14 +153,14 @@ WHERE li.l_shipdate >= date('{year}-01-01')
   AND li.l_quantity < {quantity}
 RETURN sum(li.l_extendedprice * li.l_discount) AS revenue
 """)
-        
+
         # Q10: Returned Item Reporting (Fix: Date generation)
         for _ in range(queries_per_type):
             random_month_offset = random.randint(0, 23)  # 24 possible months (Feb 1993 to Jan 1995)
             year = 1993 + ((random_month_offset + 1) // 12)
             month = ((random_month_offset + 1) % 12) + 1
             start_date = f"{year}-{month:02d}-01"
-            
+
             # Add 3 months
             end_month = month + 3
             end_year = year
@@ -169,7 +168,7 @@ RETURN sum(li.l_extendedprice * li.l_discount) AS revenue
                 end_month -= 12
                 end_year += 1
             end_date = f"{end_year}-{end_month:02d}-01"
-            
+
             queries.append(f"""
 MATCH (n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
 WHERE o.o_orderdate >= date('{start_date}')
@@ -188,12 +187,12 @@ RETURN
 ORDER BY revenue DESC
 LIMIT 20
 """)
-        
+
         # Q12: Shipping Modes and Order Priority (Fix: Shipmode generation)
         for _ in range(queries_per_type):
             shipmodes = random.sample(SHIPMODES_ALL, 2)
             year = random.randint(1993, 1997)
-            
+
             queries.append(f"""
 MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
 WHERE li.l_shipmode IN {shipmodes}
@@ -216,20 +215,20 @@ RETURN
   END) AS low_priority_count
 ORDER BY shipmode
 """)
-        
+
         # Q14: Promotion Effect (Fix: Month range and end date logic)
         for _ in range(queries_per_type):
             year = random.randint(1993, 1997)
             month = random.randint(1, 12)  # Fix: Was 1-11
             start_date = f"{year}-{month:02d}-01"
-            
+
             end_month = month + 1
             end_year = year
             if end_month > 12:
                 end_month = 1
                 end_year += 1
             end_date = f"{end_year}-{end_month:02d}-01"
-            
+
             queries.append(f"""
 MATCH (li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
 WHERE li.l_shipdate >= date('{start_date}')
@@ -244,17 +243,17 @@ WITH sum(
 sum(li.l_extendedprice * (1 - li.l_discount)) AS total_revenue
 RETURN 100.00 * promo_revenue / total_revenue AS promo_revenue_percentage
 """)
-        
+
         # Q19: Discounted Revenue (Fix: Brand generation)
         for _ in range(queries_per_type):
             brand1 = f"Brand#{random.randint(1, 5)}{random.randint(1, 5)}"
             brand2 = f"Brand#{random.randint(1, 5)}{random.randint(1, 5)}"
             brand3 = f"Brand#{random.randint(1, 5)}{random.randint(1, 5)}"
-            
+
             qty1 = random.randint(1, 10)
             qty2 = random.randint(10, 20)
             qty3 = random.randint(20, 30)
-            
+
             queries.append(f"""
 MATCH (li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
 WHERE li.l_shipinstruct = 'DELIVER IN PERSON'
@@ -302,7 +301,7 @@ RETURN sum(li.l_extendedprice * (1 - li.l_discount)) AS revenue
         for _ in range(queries_per_type):
             limit = random.randint(10, 50)
             queries.append(f"MATCH (o:Order) RETURN o.o_orderkey, o.o_totalprice ORDER BY o.o_totalprice DESC LIMIT {limit}")
-        
+
         # Custom Q6: Scan with IN list
         for _ in range(queries_per_type):
             containers = random.sample(CONTAINER_CHOICES_SM + CONTAINER_CHOICES_LG, 3)
@@ -365,8 +364,8 @@ RETURN sum(li.l_extendedprice * (1 - li.l_discount)) AS revenue
         for _ in range(queries_per_type):
             name = get_random_name('Customer', 30000)
             queries.append(f"""
-MATCH (c:Customer)-[:PLACED]->(o:Order) 
-WHERE c.c_name = '{name}' 
+MATCH (c:Customer)-[:PLACED]->(o:Order)
+WHERE c.c_name = '{name}'
 RETURN o.o_orderkey, o.o_orderdate, o.o_totalprice
 """)
 
@@ -374,8 +373,8 @@ RETURN o.o_orderkey, o.o_orderdate, o.o_totalprice
         for _ in range(queries_per_type):
             priority = random.choice(ORDER_PRIORITY_CHOICES[:2]) # '1-URGENT' or '2-HIGH'
             queries.append(f"""
-MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem) 
-WHERE o.o_orderpriority = '{priority}' 
+MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
+WHERE o.o_orderpriority = '{priority}'
 RETURN o.o_orderkey, count(li) AS items
 ORDER BY items DESC
 LIMIT 50
@@ -385,8 +384,8 @@ LIMIT 50
         for _ in range(queries_per_type):
             name = get_random_name('Customer', 30000)
             queries.append(f"""
-MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem) 
-WHERE c.c_name = '{name}' 
+MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
+WHERE c.c_name = '{name}'
 RETURN c.c_name, count(li) AS total_items
 """)
 
@@ -394,8 +393,8 @@ RETURN c.c_name, count(li) AS total_items
         for _ in range(queries_per_type):
             nation = random.choice(NATIONS)
             queries.append(f"""
-MATCH (n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order) 
-WHERE n.n_name = '{nation}' 
+MATCH (n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)
+WHERE n.n_name = '{nation}'
 RETURN n.n_name, count(o) AS orders_from_nation
 """)
 
@@ -403,8 +402,8 @@ RETURN n.n_name, count(o) AS orders_from_nation
         for _ in range(queries_per_type):
             name = get_random_name('Supplier', 2000)
             queries.append(f"""
-MATCH (s:Supplier)<-[:SUPPLIED_BY]-(:PartSupp)-[:IS_FOR_PART]->(p:Part) 
-WHERE s.s_name = '{name}' 
+MATCH (s:Supplier)<-[:SUPPLIED_BY]-(:PartSupp)-[:IS_FOR_PART]->(p:Part)
+WHERE s.s_name = '{name}'
 RETURN p.p_name, p.p_mfgr, p.p_retailprice
 LIMIT 100
 """)
@@ -413,8 +412,8 @@ LIMIT 100
         for _ in range(queries_per_type):
             region = random.choice(REGION_CHOICES)
             queries.append(f"""
-MATCH (r:Region)<-[:IS_IN_REGION]-(n:Nation)<-[:IS_IN_NATION]-(c:Customer) 
-WHERE r.r_name = '{region}' 
+MATCH (r:Region)<-[:IS_IN_REGION]-(n:Nation)<-[:IS_IN_NATION]-(c:Customer)
+WHERE r.r_name = '{region}'
 RETURN c.c_name, n.n_name
 LIMIT 200
 """)
@@ -423,9 +422,9 @@ LIMIT 200
         for _ in range(queries_per_type):
             key = random.randint(1, 15000) # Assuming 150k customers, SF=1
             queries.append(f"""
-MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part) 
-WHERE c.c_custkey = {key} 
-RETURN p.p_name, count(p) AS part_count 
+MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
+WHERE c.c_custkey = {key}
+RETURN p.p_name, count(p) AS part_count
 ORDER BY part_count DESC
 LIMIT 10
 """)
@@ -434,8 +433,8 @@ LIMIT 10
         for _ in range(queries_per_type):
             word = random.choice(P_NAME_WORDS)
             queries.append(f"""
-MATCH (p:Part)<-[:IS_FOR_PART]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(:LineItem)<-[:CONTAINS_ITEM]-(o:Order) 
-WHERE p.p_name CONTAINS '{word}' 
+MATCH (p:Part)<-[:IS_FOR_PART]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(:LineItem)<-[:CONTAINS_ITEM]-(o:Order)
+WHERE p.p_name CONTAINS '{word}'
 RETURN o.o_orderkey, o.o_orderdate, o.o_totalprice
 LIMIT 50
 """)
@@ -444,8 +443,8 @@ LIMIT 50
         for _ in range(queries_per_type):
             balance = random.randint(0, 1000)
             queries.append(f"""
-MATCH (s:Supplier)<-[:SUPPLIED_BY]-(ps:PartSupp) 
-WHERE s.s_acctbal < {balance} 
+MATCH (s:Supplier)<-[:SUPPLIED_BY]-(ps:PartSupp)
+WHERE s.s_acctbal < {balance}
 RETURN s.s_name, sum(ps.ps_supplycost * ps.ps_availqty) AS stock_value
 ORDER BY stock_value DESC
 LIMIT 20
@@ -457,8 +456,8 @@ LIMIT 20
             price = random.randint(1500, 2000)
             qty = random.randint(5000, 8000)
             queries.append(f"""
-MATCH (n:Nation {{n_name: '{nation}'}})<-[:IS_IN_NATION]-(s:Supplier)<-[:SUPPLIED_BY]-(ps:PartSupp)-[:IS_FOR_PART]->(p:Part) 
-WHERE p.p_retailprice > {price} AND ps.ps_availqty > {qty} 
+MATCH (n:Nation {{n_name: '{nation}'}})<-[:IS_IN_NATION]-(s:Supplier)<-[:SUPPLIED_BY]-(ps:PartSupp)-[:IS_FOR_PART]->(p:Part)
+WHERE p.p_retailprice > {price} AND ps.ps_availqty > {qty}
 RETURN s.s_name, p.p_name, ps.ps_supplycost, p.p_retailprice
 LIMIT 50
 """)
@@ -468,14 +467,14 @@ LIMIT 50
 
 
         return queries[:num_queries]
-    
-    def get_plan(self, query: str) -> Dict:
+
+    def get_plan(self, query: str) -> dict:
         """
         Get query execution plan using EXPLAIN (no execution).
-        
+
         Args:
             query: Cypher query string
-            
+
         Returns:
             Query plan as dictionary
         """
@@ -488,16 +487,16 @@ LIMIT 50
     def execute_query(self, query: str, num_runs: int = 1, show_details: bool = False) -> float:
         """
         Execute a query multiple times and return average execution time.
-        
+
         Args:
             query: Cypher query string
             num_runs: Number of executions for averaging
-            
+
         Returns:
             Average execution time in seconds
         """
         execution_times = []
-        
+
         with self.driver.session() as session:
             for _ in range(num_runs):
                 start_time = time.time()
@@ -513,102 +512,102 @@ LIMIT 50
                 result.consume()  # Ensure full execution
                 end_time = time.time()
                 execution_times.append(end_time - start_time)
-        
+
         return np.mean(execution_times)
 
-    def get_plan_and_execute(self, query: str, num_runs: int = 1, show_details: bool = False) -> Tuple[Dict, float]:
+    def get_plan_and_execute(self, query: str, num_runs: int = 1, show_details: bool = False) -> tuple[dict, float]:
         """
         Get query plan with EXPLAIN and measure actual execution time.
-        
+
         Args:
             query: Cypher query string
             num_runs: Number of times to execute for averaging
-            
+
         Returns:
             Tuple of (plan, average_execution_time_seconds)
         """
         plan = self.get_plan(query)
-        
+
         # Measure actual execution time
         execution_time = self.execute_query(query, num_runs, show_details=show_details)
 
         return plan, execution_time
-    
+
     def collect_workload(self, num_queries: int = 350,
-                         num_runs_per_query: int = 1, show_details: bool = False) -> Tuple[List[str], List[Dict], List[float]]:
+                         num_runs_per_query: int = 1, show_details: bool = False) -> tuple[list[str], list[dict], list[float]]:
         """
         Collect a workload of query plans and execution times.
-        
+
         Args:
             num_queries: Total number of queries to generate
             num_runs_per_query: Number of executions per query for averaging
-            
+
         Returns:
             Tuple of (queries, plans, execution_times)
         """
         # Generate queries
         queries = self.generate_workload_queries(num_queries)
-        
+
         print(f"\nExecuting {len(queries)} queries...")
         print(f"Each query will be executed {num_runs_per_query} times for averaging.\n")
-        
+
         all_plans = []
         all_times = []
-        
+
         for i, query in enumerate(queries):
             try:
                 # Get plan and execution time
                 plan, exec_time = self.get_plan_and_execute(query, num_runs_per_query, show_details=show_details)
-                
+
                 all_plans.append(plan)
                 all_times.append(exec_time)
-                
+
                 if i % 100 == 0 and i > 0:
                     print(f"Extracted {i} / {len(queries)} plans...")
-                
+
             except Exception as e:
                 print(f" ERROR: {str(e)}")
                 continue
-        
+
         print(f"\n{'='*60}")
         print(f"Workload collection complete!")
         print(f"  Total queries: {len(queries)}")
         print(f"  Average execution time: {np.mean(all_times):.4f}s")
         print(f"  Min/Max execution time: {np.min(all_times):.4f}s / {np.max(all_times):.4f}s")
         print(f"{'='*60}\n")
-        
+
         return queries, all_plans, all_times
-    
-    def get_plan_statistics(self, plans: List[Dict]) -> Dict[str, Any]:
+
+    def get_plan_statistics(self, plans: list[dict]) -> dict[str, Any]:
         """
         Compute statistics about the collected plans.
-        
+
         Args:
             plans: List of query plans
-            
+
         Returns:
             Dictionary with statistics
         """
         operator_counts = {}
         total_operators = 0
         max_depth = 0
-        
+
         def analyze_node(node, depth=0):
             nonlocal total_operators, max_depth
-            
+
             total_operators += 1
             max_depth = max(max_depth, depth)
-            
+
             op_type = node.get('operatorType', 'Unknown').replace('@neo4j', '')
             operator_counts[op_type] = operator_counts.get(op_type, 0) + 1
-            
+
             for child in node.get('children', []):
                 analyze_node(child, depth + 1)
-        
+
         for plan in plans:
             max_depth = 0  # Reset for each plan
             analyze_node(plan)
-        
+
         return {
             'total_operators': total_operators,
             'unique_operators': len(operator_counts),
