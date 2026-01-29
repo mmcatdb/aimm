@@ -1,73 +1,71 @@
 import json
 import time
 import random
-from typing import List, Dict, Any, Tuple
 from config import DatabaseConfig
-
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from PostgreSQL."""
-    
+
     def __init__(self, config: DatabaseConfig):
         self.config = config
-        
-    def execute_with_plan(self, query: str, clear_cache: bool = True) -> Tuple[Dict, float]:
+
+    def execute_with_plan(self, query: str, clear_cache: bool = True) -> tuple[dict, float]:
         """
         Execute a query and return its plan and actual execution time.
-        
+
         Args:
             query: SQL query to execute
             clear_cache: Whether to clear PostgreSQL cache before execution
-            
+
         Returns:
             Tuple of (plan_dict, execution_time_ms)
         """
         conn = self.config.get_connection()
-        
+
         try:
             # Set autocommit to avoid transaction block issues
             conn.autocommit = True
-            
-            with conn.cursor() as cur:
+
+            with conn.cursor() as cursor:
                 # Clear cache if requested (simulates cold cache)
                 if clear_cache:
                     try:
-                        cur.execute("DISCARD ALL;")
+                        cursor.execute("DISCARD ALL;")
                     except Exception as e:
                         # If DISCARD ALL fails, try alternative cache clearing
                         print(f"Warning: Could not clear cache: {e}")
                         pass
-                
+
                 # Get the plan with execution statistics
                 explain_query = f"EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}"
-                
-                cur.execute(explain_query)
-                result = cur.fetchone()
-                
+
+                cursor.execute(explain_query)
+                result = cursor.fetchone()
+
                 # Parse JSON plan
                 plan_json = result[0][0]  # EXPLAIN returns list of plans
-                
+
                 # Extract actual execution time from plan
                 execution_time = plan_json['Execution Time']  # in ms
-                
+
                 return plan_json, execution_time
-                
+
         finally:
             conn.close()
-    
-    def generate_tpch_queries(self, num_queries: int = 100, scale_factor: int = 1) -> List[str]:
+
+    def generate_tpch_queries(self, num_queries: int = 100, scale_factor: int = 1) -> list[str]:
         """
         Generate TPC-H style queries with parameter variations.
-        
+
         Args:
             num_queries: Number of queries to generate
             scale_factor: TPC-H scale factor (affects data size)
-            
+
         Returns:
             List of SQL query strings
         """
         queries = []
-        
+
         # TPC-H Query 1 variations
         for _ in range(num_queries // 6):
             delta = random.randint(60, 120)
@@ -88,7 +86,7 @@ class PlanExtractor:
                 GROUP BY l_returnflag, l_linestatus
                 ORDER BY l_returnflag, l_linestatus
             """)
-        
+
         # TPC-H Query 3 variations
         for _ in range(num_queries // 6):
             segment = random.choice(['BUILDING', 'AUTOMOBILE', 'MACHINERY', 'HOUSEHOLD', 'FURNITURE'])
@@ -109,7 +107,7 @@ class PlanExtractor:
                 ORDER BY revenue DESC, o_orderdate
                 LIMIT 10
             """)
-        
+
         # TPC-H Query 5 variations
         for _ in range(num_queries // 6):
             year = random.randint(1993, 1997)
@@ -126,7 +124,7 @@ class PlanExtractor:
                 GROUP BY c_nationkey
                 ORDER BY revenue DESC
             """)
-        
+
         # TPC-H Query 6 variations
         for _ in range(num_queries // 6):
             year = random.randint(1993, 1997)
@@ -141,7 +139,7 @@ class PlanExtractor:
                     AND l_discount BETWEEN {discount} - 0.01 AND {discount} + 0.01
                     AND l_quantity < {quantity}
             """)
-        
+
         # TPC-H Query 10 variations
         for _ in range(num_queries // 6):
             year = random.randint(1993, 1997)
@@ -165,7 +163,7 @@ class PlanExtractor:
                 ORDER BY revenue DESC
                 LIMIT 20
             """)
-        
+
         # TPC-H Query 12 variations
         for _ in range(num_queries // 6):
             year = random.randint(1993, 1997)
@@ -188,17 +186,17 @@ class PlanExtractor:
                 GROUP BY l_shipmode
                 ORDER BY l_shipmode
             """)
-        
+
         return queries[:num_queries]
-    
-    def collect_training_data(self, num_queries: int = 1000, clear_cache: bool = True) -> List[Dict]:
+
+    def collect_training_data(self, num_queries: int = 1000, clear_cache: bool = True) -> list[dict]:
         """
         Collect a dataset of query plans and execution times.
-        
+
         Args:
             num_queries: Number of queries to collect
             clear_cache: Whether to clear cache before each query (slower but more realistic)
-        
+
         Returns:
             List of dictionaries containing:
             - query: SQL query string
@@ -207,17 +205,17 @@ class PlanExtractor:
         """
         queries = self.generate_tpch_queries(num_queries)
         dataset = []
-        
+
         print(f"Collecting {len(queries)} query plans...")
 
         if not clear_cache:
             print("Note: Cache clearing is disabled for faster collection.")
             print("      Set clear_cache=True for cold-cache measurements.\n")
-        
+
         for i, query in enumerate(queries):
             if i % 50 == 0:
                 print(f"Progress: {i}/{len(queries)} ({100*i//len(queries)}%)")
-            
+
             try:
                 plan, exec_time = self.execute_with_plan(query, clear_cache=clear_cache)
                 dataset.append({
@@ -229,6 +227,6 @@ class PlanExtractor:
                 print(f"\nError executing query {i}: {e}")
                 print(f"Query preview: {query[:100]}...\n")
                 continue
-        
+
         print(f"\nCollected {len(dataset)} query plans successfully")
         return dataset

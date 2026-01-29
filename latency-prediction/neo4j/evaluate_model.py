@@ -13,18 +13,16 @@ import numpy as np
 import time
 import pickle
 import argparse
-from typing import List, Tuple, Dict
 from tabulate import tabulate
 
 from plan_extractor import PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
 
-
 class ModelEvaluator:
     """Evaluates a trained Neo4j QPP model."""
-    
-    def __init__(self, checkpoint_path: str, feature_extractor_path: str, 
+
+    def __init__(self, checkpoint_path: str, feature_extractor_path: str,
                  device: str = 'cpu', num_layers: int = 10, hidden_dim: int = 128):
         """
         Args:
@@ -37,16 +35,16 @@ class ModelEvaluator:
         self.device = device
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
-        
+
         # Load feature extractor
         print("Loading feature extractor...")
         with open(feature_extractor_path, 'rb') as f:
             self.feature_extractor = pickle.load(f)
-        
+
         # Load checkpoint first to get operator info
         print("Loading model checkpoint...")
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        
+
         # Create model
         print("Creating model architecture...")
         self.model = PlanStructuredNetwork(
@@ -55,12 +53,12 @@ class ModelEvaluator:
             num_layers=self.num_layers,
             data_vec_dim=32
         )
-        
+
         # Pre-create neural units based on the checkpoint's state dict keys
         # This ensures all units exist before loading weights
         print("Initializing neural units from checkpoint...")
         state_dict = checkpoint['model_state_dict']
-        
+
         # Extract unique unit keys from state dict
         unit_keys = set()
         for key in state_dict.keys():
@@ -69,7 +67,7 @@ class ModelEvaluator:
                 parts = key.split('.')
                 if len(parts) >= 2:
                     unit_keys.add(parts[1])
-        
+
         # Create each unit by parsing the key and getting exact dimensions from checkpoint
         for unit_key in unit_keys:
             # Parse operator_type and num_children from key (e.g., "ProduceResults_1")
@@ -77,19 +75,19 @@ class ModelEvaluator:
             if len(parts) == 2:
                 operator_type = parts[0]
                 num_children = int(parts[1])
-                
+
                 # Get the exact input dimension from the checkpoint
                 # The first hidden layer weight has shape [hidden_dim, input_dim]
                 weight_key = f'units.{unit_key}.hidden_layers.0.weight'
                 if weight_key in state_dict:
                     weight_shape = state_dict[weight_key].shape
                     input_dim = weight_shape[1]  # input_dim is the second dimension
-                    
+
                     # For operators with children, we need to figure out the operator feature dim
                     # input_dim = operator_feature_dim + (data_vec_dim * num_children)
                     data_vec_dim = 32
                     operator_feature_dim = input_dim - (data_vec_dim * num_children)
-                    
+
                     # Directly create the unit with the correct dimensions
                     # We bypass _ensure_unit_exists to create with exact dimensions
                     from neural_units import create_neural_unit
@@ -99,60 +97,60 @@ class ModelEvaluator:
                         num_children=num_children,
                         data_vec_dim=data_vec_dim,
                         hidden_dim=self.hidden_dim,
-                        num_layers=self.num_layers 
+                        num_layers=self.num_layers
                     )
                     # Add to model's units
                     key = self.model._get_unit_key(operator_type, num_children)
                     self.model.units[key] = unit
                     self.model.operator_types.add(operator_type)
-        
+
         print("Loading trained weights...")
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.to(device)
         self.model.eval()
-        
+
         print(f"  Trained for {checkpoint['epoch']} epochs")
         print(f"  Model has {self.model.count_parameters():,} parameters")
         print(f"  Number of neural units: {len(self.model.units)}")
-        
+
         # Connect to Neo4j
         self.extractor = PlanExtractor()
-    
+
     def close(self):
         """Close database connection."""
         self.extractor.close()
-    
-    def predict_latency(self, query: str) -> Tuple[float, Dict]:
+
+    def predict_latency(self, query: str) -> tuple[float, dict]:
         """
         Predict query latency using EXPLAIN
-        
+
         Args:
             query: Cypher query string
-            
+
         Returns:
             Tuple of (predicted_latency, plan)
         """
         # Get plan with EXPLAIN
         plan = self.extractor.get_plan(query)
-        
+
         with torch.no_grad():
             predicted_latency = self.model.forward(plan)
-        
+
         return predicted_latency.item(), plan
-    
-    def measure_actual_latency(self, query: str, num_runs: int = 3) -> Tuple[float, float]:
+
+    def measure_actual_latency(self, query: str, num_runs: int = 3) -> tuple[float, float]:
         """
         Measure actual query execution time.
-        
+
         Args:
             query: Cypher query string
             num_runs: Number of executions for averaging
-            
+
         Returns:
             Tuple of (mean_latency, std_latency)
         """
         execution_times = []
-        
+
         with self.extractor.driver.session() as session:
             for _ in range(num_runs):
                 start_time = time.time()
@@ -160,33 +158,33 @@ class ModelEvaluator:
                 result.consume()
                 end_time = time.time()
                 execution_times.append(end_time - start_time)
-        
+
         return np.mean(execution_times), np.std(execution_times)
-    
-    def evaluate_query(self, query: str, query_name: str = None, num_runs: int = 3) -> Dict:
+
+    def evaluate_query(self, query: str, query_name: str = None, num_runs: int = 3) -> dict:
         """
         Evaluate a single query.
-        
+
         Args:
             query: Cypher query string
             query_name: Optional name for the query
             num_runs: Number of executions for averaging
-            
+
         Returns:
             Dictionary with evaluation results
         """
         if query_name:
             print(f"\nEvaluating: {query_name}")
-        
+
         pred_latency, plan = self.predict_latency(query)
-        
+
         actual_latency, std_latency = self.measure_actual_latency(query, num_runs)
-        
+
         # Compute metrics
         abs_error = abs(pred_latency - actual_latency)
         r_value = max(pred_latency / actual_latency, actual_latency / pred_latency) \
                   if pred_latency > 0 and actual_latency > 0 else float('inf')
-        
+
         result = {
             'query_name': query_name,
             'query': query,
@@ -197,31 +195,30 @@ class ModelEvaluator:
             'r_value': r_value,
             'plan': plan
         }
-        
+
         print(f"  Predicted: {pred_latency * 1000:.2f}ms")
         print(f"  Actual: {actual_latency * 1000:.2f}ms (±{std_latency * 1000:.2f}ms)")
         print(f"  Absolute Error: {abs_error * 1000:.2f}ms")
         print(f"  R-value: {r_value:.4f}")
-        
+
         return result
-    
-    def evaluate_multiple_queries(self, queries: List[Tuple[str, str]], 
-                                  num_runs: int = 3) -> List[Dict]:
+
+    def evaluate_multiple_queries(self, queries: list[tuple[str, str]], num_runs: int = 3) -> list[dict]:
         """
         Evaluate multiple queries.
-        
+
         Args:
             queries: List of (query_name, query) tuples
             num_runs: Number of executions per query for averaging
-            
+
         Returns:
             List of evaluation result dictionaries
         """
         results = []
-        
+
         print(f"\nEvaluating {len(queries)} queries...")
         print("=" * 70)
-        
+
         for query_name, query in queries:
             try:
                 result = self.evaluate_query(query, query_name, num_runs)
@@ -229,23 +226,23 @@ class ModelEvaluator:
             except Exception as e:
                 print(f"  ✗ Error evaluating {query_name}: {str(e)}")
                 continue
-        
+
         return results
-    
-    def print_summary(self, results: List[Dict]):
+
+    def print_summary(self, results: list[dict]):
         """Print summary statistics of evaluation results."""
         if not results:
             print("\nNo results to summarize.")
             return
-        
+
         print("\n" + "=" * 70)
         print("Evaluation Summary")
         print("=" * 70)
-        
+
         # Extract metrics
         abs_errors = [r['absolute_error'] for r in results]
         r_values = [r['r_value'] for r in results if r['r_value'] != float('inf')]
-        
+
         # Compute statistics
         print(f"\nNumber of queries: {len(results)}")
         print(f"\nAbsolute Error:")
@@ -253,8 +250,8 @@ class ModelEvaluator:
         print(f"  Median: {np.median(abs_errors) * 1000:.2f}ms")
         print(f"  Std: {np.std(abs_errors) * 1000:.2f}ms")
         print(f"  Min/Max: {np.min(abs_errors) * 1000:.2f}ms / {np.max(abs_errors) * 1000:.2f}ms")
-        
-        
+
+
         if r_values:
             print(f"\nR-value:")
             print(f"  Mean: {np.mean(r_values):.4f}")
@@ -262,7 +259,7 @@ class ModelEvaluator:
             print(f"  90th percentile: {np.percentile(r_values, 90):.4f}")
             print(f"  95th percentile: {np.percentile(r_values, 95):.4f}")
             print(f"  Min/Max: {np.min(r_values):.4f} / {np.max(r_values):.4f}")
-        
+
         # Create results table
         table_data = []
         for r in results:
@@ -273,7 +270,7 @@ class ModelEvaluator:
                 f"{r['absolute_error'] * 1000:.2f}",
                 f"{r['r_value']:.4f}" if r['r_value'] != float('inf') else 'inf'
             ])
-        
+
         print("\n" + "=" * 70)
         print("Detailed Results")
         print("=" * 70)
@@ -293,13 +290,13 @@ class ModelEvaluator:
 
 
 
-def generate_test_queries() -> List[Tuple[str, str]]:
+def generate_test_queries() -> list[tuple[str, str]]:
     """
     Generate a diverse set of test queries for evaluation.
     These should be different from training queries.
     """
     queries = []
-    
+
     # Q1 variants (Original)
     queries.append(("Q1-Test-1", """
         MATCH (li:LineItem)
@@ -313,7 +310,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY returnflag, linestatus
         LIMIT 5
     """))
-    
+
     # Q5 variant (Original)
     queries.append(("Q5-Test-1", """
         MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
@@ -328,7 +325,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY revenue DESC
         LIMIT 3
     """))
-    
+
     # Q6 variant (Original)
     queries.append(("Q6-Test-1", """
         MATCH (li:LineItem)
@@ -339,7 +336,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
           AND li.l_quantity < 24
         RETURN sum(li.l_extendedprice * li.l_discount) AS revenue
     """))
-    
+
     # Q10 variant (Original)
     queries.append(("Q10-Test-1", """
         MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
@@ -357,14 +354,14 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY revenue DESC
         LIMIT 5
     """))
-    
+
     # Simple aggregation query (Original)
     queries.append(("Simple-Agg-1", """
         MATCH (li:LineItem)
         WHERE li.l_quantity > 30
         RETURN count(li) AS count, avg(li.l_extendedprice) AS avg_price
     """))
-    
+
     # Simple scan with limit (Original)
     queries.append(("Simple-Scan-1", """
         MATCH (c:Customer)
@@ -377,7 +374,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
     # ========================================================================
     # CATEGORY 1: Simple Aggregation Queries
     # ========================================================================
-    
+
     queries.append(("Simple Agg 1: Lineitem Summary", """
         MATCH (li:LineItem)
         WHERE li.l_shipdate <= date('1998-08-01')
@@ -388,7 +385,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             sum(li.l_extendedprice) AS total_price
         ORDER BY returnflag
     """))
-    
+
     queries.append(("Simple Agg 2: Order Statistics", """
         MATCH (o:Order)
         WHERE o.o_orderdate >= date('1996-01-01')
@@ -400,7 +397,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             max(o.o_totalprice) AS max_price
         ORDER BY orderpriority
     """))
-    
+
     queries.append(("Simple Agg 3: Customer Segments", """
         MATCH (c:Customer)
         WHERE c.c_acctbal > 0
@@ -416,7 +413,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             total_balance
         ORDER BY customer_count DESC
     """))
-    
+
     queries.append(("Simple Agg 4: Part Analysis", """
         MATCH (p:Part)
         WHERE p.p_size >= 10 AND p.p_size <= 30
@@ -433,7 +430,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             avg_price
         ORDER BY brand, type
     """))
-    
+
     queries.append(("Simple Agg 5: Supplier Stats", """
         MATCH (s:Supplier)-[:IS_IN_NATION]->(n:Nation)-[:IS_IN_REGION]->(r:Region)
         WHERE s.s_acctbal > 1000
@@ -451,7 +448,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             total_balance
         ORDER BY supplier_count DESC
     """))
-    
+
     queries.append(("Simple Agg 6: Discount Analysis", """
         MATCH (li:LineItem)
         WHERE li.l_shipdate >= date('1997-01-01') AND li.l_shipdate < date('1998-01-01')
@@ -462,11 +459,11 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             count(li) AS line_count
         ORDER BY linestatus
     """))
-    
+
     # ========================================================================
     # CATEGORY 2: Simple Join Queries
     # ========================================================================
-    
+
     queries.append(("Join 1: Customer Orders", """
         MATCH (c:Customer)-[:PLACED]->(o:Order)
         WHERE o.o_orderdate >= date('1995-01-01')
@@ -483,7 +480,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY total_spent DESC
         LIMIT 100
     """))
-    
+
     queries.append(("Join 2: Parts and Suppliers", """
         MATCH (ps:PartSupp)-[:IS_FOR_PART]->(p:Part)
         WHERE p.p_size > 20 AND ps.ps_supplycost < 100
@@ -495,7 +492,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY supplycost
         LIMIT 200
     """))
-    
+
     queries.append(("Join 3: Order Details", """
         MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
         WHERE o.o_orderdate >= date('1996-01-01') AND o.o_orderdate <= date('1996-03-31')
@@ -509,7 +506,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY orderdate, orderkey
         LIMIT 500
     """))
-    
+
     queries.append(("Join 4: Supplier Orders", """
         MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(ps:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)
         WHERE li.l_shipdate >= date('1996-01-01') AND li.l_shipdate < date('1997-01-01')
@@ -526,7 +523,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY revenue DESC
         LIMIT 50
     """))
-    
+
     queries.append(("Join 5: Customer Nation Analysis", """
         MATCH (r:Region)<-[:IS_IN_REGION]-(n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)
         WHERE o.o_orderdate >= date('1997-01-01')
@@ -544,7 +541,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             avg_order_value
         ORDER BY total_orders DESC
     """))
-    
+
     queries.append(("Join 6: Part Lineitem Summary", """
         MATCH (p:Part)<-[:IS_FOR_PART]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(li:LineItem)
         WHERE li.l_shipdate >= date('1995-01-01') AND p.p_size < 15
@@ -563,11 +560,11 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             total_value
         ORDER BY brand, container
     """))
-    
+
     # ========================================================================
     # CATEGORY 3: Complex Multi-table Joins
     # ========================================================================
-    
+
     queries.append(("Complex Join 1: Customer Segment Revenue", """
         MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
         WHERE li.l_shipdate >= date('1995-06-01')
@@ -579,7 +576,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             sum(li.l_extendedprice * (1 - li.l_discount)) AS total_revenue,
             count(DISTINCT c) AS customer_count
     """))
-    
+
     queries.append(("Complex Join 2: Supplier Revenue Analysis", """
         MATCH (r:Region)<-[:IS_IN_REGION]-(cn:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
               (li)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)-[:IS_IN_NATION]->(sn:Nation)-[:IS_IN_REGION]->(r)
@@ -596,7 +593,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY revenue DESC
         LIMIT 100
     """))
-    
+
     queries.append(("Complex Join 3: Part Supplier Customer Chain", """
         MATCH (p:Part)<-[:IS_FOR_PART]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(li:LineItem)<-[:CONTAINS_ITEM]-(o:Order)<-[:PLACED]-(c:Customer)
         WHERE p.p_type CONTAINS 'BRASS'
@@ -616,7 +613,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             avg_discount
         ORDER BY order_count DESC
     """))
-    
+
     queries.append(("Complex Join 4: Multi-way with Partsupp", """
         MATCH (p:Part)<-[:IS_FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s:Supplier),
               (li:LineItem)-[:IS_PRODUCT_SUPPLY]->(ps)
@@ -637,7 +634,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY partkey, name
         LIMIT 100
     """))
-    
+
     queries.append(("Complex Join 5: Full Chain Analysis", """
         MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
         WHERE o.o_orderdate >= date('1997-01-01')
@@ -656,7 +653,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             avg_net_price
         ORDER BY mktsegment, brand
     """))
-    
+
     queries.append(("Complex Join 6: Regional Supply Chain", """
         MATCH (r:Region)<-[:IS_IN_REGION]-(cn:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
               (li)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)-[:IS_IN_NATION]->(sn:Nation)-[:IS_IN_REGION]->(r)
@@ -678,11 +675,11 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY revenue DESC
         LIMIT 50
     """))
-    
+
     # ========================================================================
     # CATEGORY 4: Selective Scans with Filters
     # ========================================================================
-    
+
     queries.append(("Selective 1: Discount Range", """
         MATCH (li:LineItem)
         WHERE li.l_discount >= 0.05 AND li.l_discount <= 0.07
@@ -699,7 +696,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY discount_revenue DESC
         LIMIT 100
     """))
-    
+
     queries.append(("Selective 2: High Value Orders", """
         MATCH (o:Order)
         WHERE o.o_totalprice > 300000
@@ -713,7 +710,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY totalprice DESC
         LIMIT 50
     """))
-    
+
     queries.append(("Selective 3: Premium Customers", """
         MATCH (c:Customer)
         WHERE c.c_acctbal > 8000
@@ -726,7 +723,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY acctbal DESC
         LIMIT 100
     """))
-    
+
     queries.append(("Selective 4: Specific Part Types", """
         MATCH (p:Part)
         WHERE p.p_brand = 'Brand#23'
@@ -739,7 +736,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             p.p_retailprice AS retailprice
         ORDER BY retailprice DESC
     """))
-    
+
     queries.append(("Selective 5: Late Shipments", """
         MATCH (li:LineItem)
         WHERE li.l_shipdate > li.l_commitdate
@@ -754,7 +751,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY shipdate
         LIMIT 200
     """))
-    
+
     queries.append(("Selective 6: Low Supply Cost", """
         MATCH (ps:PartSupp)
         WHERE ps.ps_supplycost < 50
@@ -767,11 +764,11 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY supplycost, availqty DESC
         LIMIT 150
     """))
-    
+
     # ========================================================================
     # CATEGORY 5: Large Scans with Sorting
     # ========================================================================
-    
+
     queries.append(("Large Scan 1: Sorted Lineitem by Price", """
         MATCH (li:LineItem)
         WHERE li.l_shipdate >= date('1997-01-01')
@@ -785,7 +782,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY extendedprice DESC
         LIMIT 200
     """))
-    
+
     queries.append(("Large Scan 2: Orders by Date", """
         MATCH (o:Order)
         WHERE o.o_orderdate >= date('1996-01-01')
@@ -799,7 +796,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY orderdate DESC, totalprice DESC
         LIMIT 500
     """))
-    
+
     queries.append(("Large Scan 3: Parts by Price", """
         MATCH (p:Part)
         WHERE p.p_retailprice > 1000
@@ -812,7 +809,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY retailprice DESC, partkey
         LIMIT 300
     """))
-    
+
     queries.append(("Large Scan 4: Customer Balance Ranking", """
         MATCH (c:Customer)-[:IS_IN_NATION]->(n:Nation)-[:IS_IN_REGION]->(r:Region)
         WHERE c.c_acctbal > 0
@@ -826,7 +823,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY acctbal DESC, name
         LIMIT 400
     """))
-    
+
     queries.append(("Large Scan 5: Lineitem Quantity Sort", """
         MATCH (li:LineItem)
         WHERE li.l_shipdate >= date('1996-06-01')
@@ -841,7 +838,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY quantity DESC, extendedprice DESC
         LIMIT 250
     """))
-    
+
     queries.append(("Large Scan 6: Recent Shipments", """
         MATCH (li:LineItem)
         WHERE li.l_shipdate >= date('1998-06-01')
@@ -855,11 +852,11 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY shipdate DESC, net_price DESC
         LIMIT 300
     """))
-    
+
     # ========================================================================
     # CATEGORY 6: Aggregation with HAVING
     # ========================================================================
-    
+
     queries.append(("Having 1: Large Order Aggregates", """
         MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
         WITH
@@ -876,7 +873,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY total_price DESC
         LIMIT 100
     """))
-    
+
     queries.append(("Having 2: High Volume Customers", """
         MATCH (c:Customer)-[:PLACED]->(o:Order)
         WHERE o.o_orderdate >= date('1996-01-01')
@@ -894,7 +891,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY total_spent DESC
         LIMIT 50
     """))
-    
+
     queries.append(("Having 3: Popular Parts by Brand", """
         MATCH (p:Part)
         WITH
@@ -912,7 +909,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             max_price
         ORDER BY avg_price DESC
     """))
-    
+
     queries.append(("Having 4: High Revenue Suppliers", """
         MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)
         WHERE li.l_shipdate >= date('1997-01-01')
@@ -930,7 +927,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY total_revenue DESC
         LIMIT 75
     """))
-    
+
     queries.append(("Having 5: Part Categories with High Sales", """
         MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
         WHERE li.l_shipdate >= date('1996-01-01')
@@ -949,7 +946,7 @@ def generate_test_queries() -> List[Tuple[str, str]]:
         ORDER BY total_quantity DESC
         LIMIT 25
     """))
-    
+
     queries.append(("Having 6: Customer Segments with Volume", """
         MATCH (c:Customer)-[:PLACED]->(o:Order)
         WHERE o.o_orderdate >= date('1997-01-01')
@@ -966,48 +963,36 @@ def generate_test_queries() -> List[Tuple[str, str]]:
             avg_order_price
         ORDER BY total_orders DESC
     """))
-    
-    
-    return queries
 
+
+    return queries
 
 def main():
     parser = argparse.ArgumentParser(description='Evaluate trained Neo4j QPP model')
-    parser.add_argument('--checkpoint', type=str, 
-                       default='data/neo4j_qpp_checkpoint_best.pt',
-                       help='Path to model checkpoint')
-    parser.add_argument('--feature-extractor', type=str,
-                       default='data/neo4j_qpp_checkpoint_feature_extractor.pkl',
-                       help='Path to feature extractor')
-    parser.add_argument('--num-runs', type=int, default=3,
-                       help='Number of executions per query for averaging')
-    parser.add_argument('--device', type=str, default='cpu',
-                       choices=['cpu', 'cuda'],
-                       help='Device to use for inference')
-    parser.add_argument('--num-layers', type=int, default=10,
-                       help='Number of layers in the neural units')
-    parser.add_argument('--hidden-dim', type=int, default=128,
-                       help='Hidden dimension size in the neural units')
-    parser.add_argument('--query', '-q', type=str, action='append', dest='queries',
-                       help='Additional Cypher query to evaluate (can be used multiple times)')
-    parser.add_argument('--query-only', '-qo', action='store_true',
-                       help='Only evaluate the provided --query arguments, skip built-in test queries')
-    
+    parser.add_argument('--checkpoint', type=str, default='data/neo4j_qpp_checkpoint_best.pt', help='Path to model checkpoint')
+    parser.add_argument('--feature-extractor', type=str, default='data/neo4j_qpp_checkpoint_feature_extractor.pkl', help='Path to feature extractor')
+    parser.add_argument('--num-runs', type=int, default=3, help='Number of executions per query for averaging')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'], help='Device to use for inference')
+    parser.add_argument('--num-layers', type=int, default=10, help='Number of layers in the neural units')
+    parser.add_argument('--hidden-dim', type=int, default=128, help='Hidden dimension size in the neural units')
+    parser.add_argument('--query', '-q', type=str, action='append', dest='queries', help='Additional Cypher query to evaluate (can be used multiple times)')
+    parser.add_argument('--query-only', '-qo', action='store_true', help='Only evaluate the provided --query arguments, skip built-in test queries')
+
     args = parser.parse_args()
-    
+
     print("=" * 70)
     print("Neo4j Query Performance Predictor - Evaluation")
     print("=" * 70)
-    
+
     # Load model
     evaluator = ModelEvaluator(
         checkpoint_path=args.checkpoint,
         feature_extractor_path=args.feature_extractor,
         device=args.device,
-        num_layers=args.num_layers, 
+        num_layers=args.num_layers,
         hidden_dim=args.hidden_dim
     )
-    
+
     try:
         # Generate test queries based on arguments
         print("\nGenerating test queries...")
@@ -1015,27 +1000,26 @@ def main():
             test_queries = []
         else:
             test_queries = generate_test_queries()
-        
+
         # Add user-provided queries
         if args.queries:
             for i, query in enumerate(args.queries, 1):
                 query_name = f"Custom Query {i}"
                 test_queries.append((query_name, query))
             print(f"Added {len(args.queries)} custom query/queries")
-        
+
         if not test_queries:
             print("Error: No queries to evaluate. Provide queries with --query or remove --query-only flag.")
             return
-        
+
         print(f"Total queries to evaluate: {len(test_queries)}")
-        
+
         results = evaluator.evaluate_multiple_queries(test_queries, args.num_runs)
         evaluator.print_summary(results)
-        
-        
+
+
     finally:
         evaluator.close()
-
 
 if __name__ == '__main__':
     main()

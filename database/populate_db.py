@@ -1,20 +1,19 @@
 import csv
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
-
-import yaml
-from daos.mongo_dao import MongoDAO
-from daos.neo4j_dao import Neo4jDAO
-from daos.postgres_dao import PostgresDAO
-
+from common.database_provider import DatabaseProvider
+from database.daos.mongo_dao import MongoDAO
+from database.daos.neo4j_dao import Neo4jDAO
+from database.daos.postgres_dao import PostgresDAO
+from common.config import Config
 
 def convert_value(value, data_type):
     """Convert a string value to the appropriate Python type based on schema type."""
     if value is None or value == '':
         return None
-    
+
     data_type_upper = data_type.upper()
-    
+
     try:
         if data_type_upper == 'INTEGER':
             return int(value)
@@ -33,27 +32,24 @@ def convert_value(value, data_type):
 
 
 class Populator:
-    def __init__(self, config_path='config.yaml'):
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
-        
-        self.schema_mapping = self.config['schema_mapping']
+    def __init__(self, dbs: DatabaseProvider, schema_mapping: dict[str, str]):
+        self.schema_mapping = schema_mapping
         self.daos = {
-            'postgres': PostgresDAO(self.config['postgres']),
-            'mongodb': MongoDAO(self.config['mongodb']),
-            'neo4j': Neo4jDAO(self.config['neo4j']),
+            'postgres': PostgresDAO(dbs.get('postgres')),
+            'mongo': MongoDAO(dbs.get('mongo')),
+            'neo4j': Neo4jDAO(dbs.get('neo4j')),
         }
 
     def get_dao_for_entity(self, entity_name):
-        db_type = self.schema_mapping.get(entity_name)
+        db_type = self.schema_mapping[entity_name]
         if not db_type:
             raise ValueError(f"Entity '{entity_name}' not found in schema mapping. Add it to config.yaml under schema_mapping.")
         return self.daos[db_type]
 
     def populate_from_tbl(self, entity_name, file_path, schema):
         dao = self.get_dao_for_entity(entity_name)
-        db_type = self.schema_mapping.get(entity_name)
-        
+        db_type = self.schema_mapping[entity_name]
+
         with open(file_path, 'r') as f:
             reader = csv.reader(f, delimiter='|')
             for row in reader:
@@ -73,23 +69,29 @@ class Populator:
                 data = {k: v for k, v in data.items() if k}
                 if data:
                     dao.insert(entity_name, data)
-        
+
         print(f"Finished populating '{entity_name}' from '{file_path}'")
-        
-        
+
     def delete_entity(self, entity_name):
         dao = self.get_dao_for_entity(entity_name)
         dao.delete_all_from(entity_name)
         dao.drop_entity(entity_name)
-        
-
-    def disconnect_all(self):
-        for dao in self.daos.values():
-            dao.disconnect()
-            
 
 def main():
-    populator = Populator()
+    config = Config.load()
+    dbs = DatabaseProvider.default(config)
+    # TODO
+    schema_mapping = {
+        'region': 'postgres',
+        'nation': 'postgres',
+        'customer': 'postgres',
+        'orders': 'postgres',
+        'lineitem': 'postgres',
+        'part': 'postgres',
+        'supplier': 'postgres',
+        'partsupp': 'postgres',
+    }
+    populator = Populator(dbs, schema_mapping)
 
     try:
         region_schema = [
@@ -116,7 +118,7 @@ def main():
             {'name': 'c_mktsegment', 'type': 'CHAR(10)'},
             {'name': 'c_comment', 'type': 'VARCHAR(117)'}
         ]
-        
+
         orders_schema = [
             {'name': 'o_orderkey', 'type': 'INTEGER', 'primary_key': True},
             {'name': 'o_custkey', 'type': 'INTEGER'},
@@ -215,7 +217,6 @@ def main():
                 print(f"Skipping {entity}; add to schema_mapping to populate.")
 
     finally:
-        populator.disconnect_all()
         print("\nDisconnected from all databases.")
 
 def create_schemas(populator, schemas_dict):

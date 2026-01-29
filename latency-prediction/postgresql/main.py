@@ -20,7 +20,6 @@ from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
 from training import QueryPlanDataset, PlanStructuredTrainer
 
-
 def main():
     print("=" * 80)
     print("Plan-Structured Neural Network for Query Performance Prediction")
@@ -192,7 +191,6 @@ def main():
     print(f"\nFinal Test MAE: {test_metrics['mae']:.2f} ms")
     print(f"Final Test Relative Error: {test_metrics['relative_error']:.4f}")
     print(f"Predictions within factor of 1.5: {test_metrics['r_within_1.5']*100:.1f}%")
-
 
 if __name__ == '__main__':
     main()

@@ -2,47 +2,37 @@ import argparse
 import os
 import shutil
 import yaml
-from neo4j import GraphDatabase
+from common.config import Config
+from common.databases import Neo4j
 
 class TpchLoader:
     """
     A class to load TPC-H data into a Neo4j database.
     """
-    def __init__(self, uri, user, password):
-        """
-        Initializes the loader and connects to the Neo4j database.
-        """
+    def __init__(self, neo4j: Neo4j):
         try:
-            self.driver = GraphDatabase.driver(uri, auth=(user, password))
-            self.driver.verify_connectivity()
+            self._neo4j = neo4j
+            neo4j.verify()
             print("Successfully connected to Neo4j.")
         except Exception as e:
             print(f"Failed to connect to Neo4j: {e}")
             raise
 
-    def close(self):
-        """
-        Closes the database connection.
-        """
-        if self.driver:
-            self.driver.close()
-            print("Neo4j connection closed.")
-
-    def run_query(self, query, database="neo4j", parameters=None):
+    def run_query(self, query, parameters=None):
         """
         Executes a Cypher query that doesn't need to return data.
         Ensures the result is fully consumed within the session.
         """
-        with self.driver.session(database=database) as session:
+        with self._neo4j.session() as session:
             result = session.run(query, parameters or {})
             result.consume()
 
-    def run_scalar(self, query, database="neo4j", parameters=None, key=None):
+    def run_scalar(self, query, parameters=None, key=None):
         """
         Executes a Cypher query expected to return a single record.
         Returns the value for 'key' or the first value in the record.
         """
-        with self.driver.session(database=database) as session:
+        with self._neo4j.session() as session:
             rec = session.run(query, parameters or {}).single()
             if rec is None:
                 return None
@@ -59,7 +49,7 @@ class TpchLoader:
 
         def get_constraint_names():
             query = "SHOW CONSTRAINTS YIELD name"
-            with self.driver.session() as session:
+            with self._neo4j.session() as session:
                 result = session.run(query)
                 return [record["name"] for record in result]
 
@@ -137,15 +127,15 @@ class TpchLoader:
         # Load nodes and relationships for many-to-many tables
         self.load_partsupp()
         self.load_lineitems()
-        
+
         # Create relationships for simple foreign keys
         self.create_nation_region_relationships()
         self.create_customer_nation_relationships()
         self.create_supplier_nation_relationships()
         self.create_order_customer_relationships()
-        
+
         print("\n--- Data Loading Complete ---")
-    
+
     # --- Individual Loading Functions ---
 
     def load_regions(self):
@@ -153,8 +143,8 @@ class TpchLoader:
         query = """
         LOAD CSV FROM 'file:///region.tbl' AS row FIELDTERMINATOR '|'
         CREATE (:Region {
-            r_regionkey: toInteger(row[0]), 
-            r_name: row[1], 
+            r_regionkey: toInteger(row[0]),
+            r_name: row[1],
             r_comment: row[2]
         });
         """
@@ -165,9 +155,9 @@ class TpchLoader:
         query = """
         LOAD CSV FROM 'file:///nation.tbl' AS row FIELDTERMINATOR '|'
         CREATE (:Nation {
-            n_nationkey: toInteger(row[0]), 
-            n_name: row[1], 
-            n_regionkey: toInteger(row[2]), 
+            n_nationkey: toInteger(row[0]),
+            n_name: row[1],
+            n_regionkey: toInteger(row[2]),
             n_comment: row[3]
         });
         """
@@ -179,14 +169,14 @@ class TpchLoader:
         LOAD CSV FROM 'file:///part.tbl' AS row FIELDTERMINATOR '|'
         CALL (row) {
             CREATE (:Part {
-                p_partkey: toInteger(row[0]), 
-                p_name: row[1], 
-                p_mfgr: row[2], 
-                p_brand: row[3], 
-                p_type: row[4], 
-                p_size: toInteger(row[5]), 
-                p_container: row[6], 
-                p_retailprice: toFloat(row[7]), 
+                p_partkey: toInteger(row[0]),
+                p_name: row[1],
+                p_mfgr: row[2],
+                p_brand: row[3],
+                p_type: row[4],
+                p_size: toInteger(row[5]),
+                p_container: row[6],
+                p_retailprice: toFloat(row[7]),
                 p_comment: row[8]
             })
         } IN TRANSACTIONS OF 500 ROWS
@@ -199,12 +189,12 @@ class TpchLoader:
         LOAD CSV FROM 'file:///supplier.tbl' AS row FIELDTERMINATOR '|'
         CALL (row) {
             CREATE (:Supplier {
-                s_suppkey: toInteger(row[0]), 
-                s_name: row[1], 
-                s_address: row[2], 
-                s_nationkey: toInteger(row[3]), 
-                s_phone: row[4], 
-                s_acctbal: toFloat(row[5]), 
+                s_suppkey: toInteger(row[0]),
+                s_name: row[1],
+                s_address: row[2],
+                s_nationkey: toInteger(row[3]),
+                s_phone: row[4],
+                s_acctbal: toFloat(row[5]),
                 s_comment: row[6]
             })
         } IN TRANSACTIONS OF 500 ROWS
@@ -217,13 +207,13 @@ class TpchLoader:
         LOAD CSV FROM 'file:///customer.tbl' AS row FIELDTERMINATOR '|'
         CALL (row) {
             CREATE (:Customer {
-                c_custkey: toInteger(row[0]), 
-                c_name: row[1], 
-                c_address: row[2], 
-                c_nationkey: toInteger(row[3]), 
-                c_phone: row[4], 
-                c_acctbal: toFloat(row[5]), 
-                c_mktsegment: row[6], 
+                c_custkey: toInteger(row[0]),
+                c_name: row[1],
+                c_address: row[2],
+                c_nationkey: toInteger(row[3]),
+                c_phone: row[4],
+                c_acctbal: toFloat(row[5]),
+                c_mktsegment: row[6],
                 c_comment: row[7]
             })
         } IN TRANSACTIONS OF 500 ROWS
@@ -236,14 +226,14 @@ class TpchLoader:
         LOAD CSV FROM 'file:///orders.tbl' AS row FIELDTERMINATOR '|'
         CALL (row) {
             CREATE (:Order {
-                o_orderkey: toInteger(row[0]), 
-                o_custkey: toInteger(row[1]), 
-                o_orderstatus: row[2], 
-                o_totalprice: toFloat(row[3]), 
-                o_orderdate: date(row[4]), 
-                o_orderpriority: row[5], 
-                o_clerk: row[6], 
-                o_shippriority: toInteger(row[7]), 
+                o_orderkey: toInteger(row[0]),
+                o_custkey: toInteger(row[1]),
+                o_orderstatus: row[2],
+                o_totalprice: toFloat(row[3]),
+                o_orderdate: date(row[4]),
+                o_orderpriority: row[5],
+                o_clerk: row[6],
+                o_shippriority: toInteger(row[7]),
                 o_comment: row[8]
             })
         } IN TRANSACTIONS OF 500 ROWS
@@ -258,8 +248,8 @@ class TpchLoader:
             MATCH (p:Part {p_partkey: toInteger(row[0])})
             MATCH (s:Supplier {s_suppkey: toInteger(row[1])})
             CREATE (p)<-[:IS_FOR_PART]-(ps:PartSupp {
-                ps_availqty: toInteger(row[2]), 
-                ps_supplycost: toFloat(row[3]), 
+                ps_availqty: toInteger(row[2]),
+                ps_supplycost: toFloat(row[3]),
                 ps_comment: row[4]
             })-[:SUPPLIED_BY]->(s)
         } IN TRANSACTIONS OF 500 ROWS
@@ -303,7 +293,7 @@ class TpchLoader:
         self.run_query(query)
         # Remove redundant foreign key property
         self.run_query("MATCH (n:Nation) REMOVE n.n_regionkey;")
-    
+
     def create_customer_nation_relationships(self):
         print("Creating Customer -> Nation relationships...")
         query = """
@@ -312,7 +302,7 @@ class TpchLoader:
         """
         self.run_query(query)
         self.run_query("MATCH (c:Customer) REMOVE c.c_nationkey;")
-        
+
     def create_supplier_nation_relationships(self):
         print("Creating Supplier -> Nation relationships...")
         query = """
@@ -334,6 +324,12 @@ class TpchLoader:
 
 def main():
     parser = argparse.ArgumentParser(description="Load TPC-H data into a Neo4j database.")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to the configuration yaml file (optional)."
+    )
     parser.add_argument(
         "--data-dir",
         type=str,
@@ -362,53 +358,59 @@ def main():
 
     args = parser.parse_args()
 
+    # TODO remove this but enable --config for specifying .env (or --env or sth).
     # Load config from YAML
-    config_file_path = 'config.yaml'
-    config = {}
-    try:
-        with open(config_file_path, 'r') as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        print(f"Error: Configuration file '{config_file_path}' not found.")
-        return 
-    except yaml.YAMLError as e:
-        print(f"Error parsing YAML file: {e}")
-        return 
+    # config_file_path = 'config.yaml'
+    # config = {}
+    # try:
+    #     with open(config_file_path, 'r') as f:
+    #         config = yaml.safe_load(f)
+    # except FileNotFoundError:
+    #     print(f"Error: Configuration file '{config_file_path}' not found.")
+    #     return
+    # except yaml.YAMLError as e:
+    #     print(f"Error parsing YAML file: {e}")
+    #     return
 
-    neo4j_config = config.get('neo4j')
-    if not neo4j_config:
-        print("Error: 'neo4j' section not found in config.yaml")
-        return
-        
-    NEO4J_URI = neo4j_config.get('uri')
-    NEO4J_USER = neo4j_config.get('user')
-    NEO4J_PASSWORD = neo4j_config.get('password')
-    
-    if not all([NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD]):
-        print("Error: 'uri', 'user', and 'password' must be defined under 'neo4j' in config.yaml")
-        return
-    
+    # neo4j_config = config.get('neo4j')
+    # if not neo4j_config:
+    #     print("Error: 'neo4j' section not found in config.yaml")
+    #     return
+
+    # NEO4J_HOST = neo4j_config.get('host')
+    # NEO4J_PORT = neo4j_config.get('port')
+    # NEO4J_USER = neo4j_config.get('user')
+    # NEO4J_PASSWORD = neo4j_config.get('password')
+
+    # if not all([NEO4J_HOST, NEO4J_PORT, NEO4J_USER, NEO4J_PASSWORD]):
+    #     print("Error: 'host', 'port', 'user', and 'password' must be defined under 'neo4j' in config.yaml")
+    #     return
+
+    # config = Neo4jConfig(NEO4J_HOST, NEO4J_PORT, NEO4J_USER, NEO4J_PASSWORD)
+    # TODO Override config via the yaml file if specified
+    config = Config.load()
+
     # Get Neo4j import directory
-    neo4j_import_dir = args.neo4j_import_dir or neo4j_config.get('import_dir')
+    # neo4j_import_dir = args.neo4j_import_dir or neo4j_config.get('import_dir')
+    neo4j_import_dir = args.neo4j_import_dir
     if not neo4j_import_dir:
         print("Error: Neo4j import directory must be specified via --neo4j-import-dir or 'import_dir' in config.yaml")
         return
-    
+
     if not os.path.isdir(neo4j_import_dir):
         print(f"Error: Neo4j import directory does not exist: {neo4j_import_dir}")
         return
 
     # File Management
-    tbl_files = ['region.tbl', 'nation.tbl', 'part.tbl', 'supplier.tbl', 
-                 'customer.tbl', 'orders.tbl', 'partsupp.tbl', 'lineitem.tbl']
+    tbl_files = ['region.tbl', 'nation.tbl', 'part.tbl', 'supplier.tbl', 'customer.tbl', 'orders.tbl', 'partsupp.tbl', 'lineitem.tbl']
     copied_files = []
-    
+
     if args.data_dir:
         # Copy files from data_dir to neo4j import directory
         if not os.path.isdir(args.data_dir):
             print(f"Error: Data directory does not exist: {args.data_dir}")
             return
-        
+
         print(f"Copying .tbl files from '{args.data_dir}' to '{neo4j_import_dir}'...")
         for tbl_file in tbl_files:
             src = os.path.join(args.data_dir, tbl_file)
@@ -431,16 +433,23 @@ def main():
 
     print(f"--- TPC-H Neo4j Loader ---")
     print(f"Reset database: {args.reset_database}")
-    print(f"Connecting to Neo4j at: {NEO4J_URI}")
+    print(f"Connecting to Neo4j at: {config.neo4j.host}:{config.neo4j.port}")
     print("----------------------------\n")
 
-    loader = None
+    neo4j = Neo4j(config.neo4j)
     try:
-        loader = TpchLoader(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+        try:
+            neo4j.verify()
+            print("Successfully connected to Neo4j.")
+        except Exception as e:
+            print(f"Failed to connect to Neo4j: {e}")
+            raise
+
+        loader = TpchLoader(neo4j)
 
         if args.reset_database:
             loader.reset_database()
-        
+
         loader.create_constraints()
         loader.load_data()
 
@@ -449,9 +458,8 @@ def main():
     except Exception as e:
         print(f"\nAn error occurred: {e}")
     finally:
-        if loader:
-            loader.close()
-        
+        neo4j.close()
+
         # Clean up copied files
         if copied_files:
             print("\nCleaning up copied .tbl files from import directory...")
