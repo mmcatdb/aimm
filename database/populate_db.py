@@ -1,9 +1,35 @@
 import csv
+from decimal import Decimal, InvalidOperation
+from datetime import datetime
 
 import yaml
 from daos.mongo_dao import MongoDAO
 from daos.neo4j_dao import Neo4jDAO
 from daos.postgres_dao import PostgresDAO
+
+
+def convert_value(value, data_type):
+    """Convert a string value to the appropriate Python type based on schema type."""
+    if value is None or value == '':
+        return None
+    
+    data_type_upper = data_type.upper()
+    
+    try:
+        if data_type_upper == 'INTEGER':
+            return int(value)
+        elif data_type_upper.startswith('DECIMAL'):
+            return float(value)
+        elif data_type_upper == 'DATE':
+            # Parse date string (format: YYYY-MM-DD)
+            return datetime.strptime(value, '%Y-%m-%d')
+        elif data_type_upper.startswith('CHAR') or data_type_upper.startswith('VARCHAR'):
+            return str(value).strip()
+        else:
+            return value
+    except (ValueError, InvalidOperation) as e:
+        print(f"Warning: Could not convert value '{value}' to type '{data_type}': {e}")
+        return value
 
 
 class Populator:
@@ -26,13 +52,22 @@ class Populator:
 
     def populate_from_tbl(self, entity_name, file_path, schema):
         dao = self.get_dao_for_entity(entity_name)
+        db_type = self.schema_mapping.get(entity_name)
+        
         with open(file_path, 'r') as f:
             reader = csv.reader(f, delimiter='|')
             for row in reader:
                 # Skip empty or malformed rows
                 if not row or all(col == '' for col in row): continue
 
-                data = {column['name']: row[i] for i, column in enumerate(schema) if i < len(row) and column['name']}
+                data = {}
+                for i, column in enumerate(schema):
+                    if i < len(row) and column['name']:
+                        value = row[i]
+                        # Apply type conversion for MongoDB
+                        if db_type == 'mongodb':
+                            value = convert_value(value, column['type'])
+                        data[column['name']] = value
 
                 # Drop potential empty key from final delimiter
                 data = {k: v for k, v in data.items() if k}
