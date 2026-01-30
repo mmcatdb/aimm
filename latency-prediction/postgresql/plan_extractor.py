@@ -1,13 +1,11 @@
-import json
-import time
 import random
-from config import DatabaseConfig
+from common.databases import Postgres
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from PostgreSQL."""
 
-    def __init__(self, config: DatabaseConfig):
-        self.config = config
+    def __init__(self, postgres: Postgres):
+        self.postgres = postgres
 
     def execute_with_plan(self, query: str, clear_cache: bool = True) -> tuple[dict, float]:
         """
@@ -20,13 +18,12 @@ class PlanExtractor:
         Returns:
             Tuple of (plan_dict, execution_time_ms)
         """
-        conn = self.config.get_connection()
-
+        connection = self.postgres.get_connection()
         try:
             # Set autocommit to avoid transaction block issues
-            conn.autocommit = True
+            connection.autocommit = True
 
-            with conn.cursor() as cursor:
+            with connection.cursor() as cursor:
                 # Clear cache if requested (simulates cold cache)
                 if clear_cache:
                     try:
@@ -42,6 +39,9 @@ class PlanExtractor:
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
 
+                if result is None:
+                    raise RuntimeError('No plan returned from EXPLAIN.')
+
                 # Parse JSON plan
                 plan_json = result[0][0]  # EXPLAIN returns list of plans
 
@@ -51,7 +51,7 @@ class PlanExtractor:
                 return plan_json, execution_time
 
         finally:
-            conn.close()
+            self.postgres.put_connection(connection)
 
     def generate_tpch_queries(self, num_queries: int = 100, scale_factor: int = 1) -> list[str]:
         """

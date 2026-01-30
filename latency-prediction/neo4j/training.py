@@ -2,12 +2,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from typing import Optional
 import numpy as np
 from collections import defaultdict
-import time
-from neo4j import GraphDatabase
-import yaml
+from common.databases import Neo4j
 from plan_structured_network import PlanStructuredNetwork
 from feature_extractor import FeatureExtractor
 
@@ -21,8 +18,7 @@ class Neo4jQueryPlanDataset(Dataset):
     - execution_time: Actual measured execution time in seconds
     """
 
-    def __init__(self, queries: list[str], plans: list[dict],
-                 execution_times: list[float]):
+    def __init__(self, queries: list[str], plans: list[dict], execution_times: list[float]):
         """
         Args:
             queries: List of Cypher query strings
@@ -66,7 +62,7 @@ def compute_plan_structure_hash(plan: dict) -> str:
 
         # Sort children signatures for consistency
         child_sigs = sorted([structure_sig(child) for child in children])
-        return f'{op_type}({','.join(child_sigs)})'
+        return f'{op_type}({",".join(child_sigs)})'
 
     return structure_sig(plan)
 
@@ -91,97 +87,26 @@ def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
 
     return groups
 
-
-class Neo4jConnection:
-    """
-    Manages connection to Neo4j database for query execution.
-    """
-
-    def __init__(self, config_path: str = 'config.yaml'):
-        """
-        Args:
-            config_path: Path to YAML config file with Neo4j credentials
-        """
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-
-        neo4j_config = config['neo4j']
-        self.driver = GraphDatabase.driver(
-            neo4j_config['uri'],
-            auth=(neo4j_config['user'], neo4j_config['password'])
-        )
-
-    def close(self):
-        """Close database connection."""
-        if self.driver:
-            self.driver.close()
-
-    def get_plan(self, query: str) -> dict:
-        """
-        Get query execution plan using EXPLAIN (no execution).
-
-        Args:
-            query: Cypher query string
-
-        Returns:
-            Query plan as dictionary
-        """
-        with self.driver.session() as session:
-            result = session.run(f'EXPLAIN {query}')
-            plan = result.consume().plan
-            # Neo4j driver already returns plan as dict
-            return plan
-
-    def get_plan_and_execute(self, query: str, num_runs: int = 3) -> tuple[dict, float]:
-        """
-        Get query plan with EXPLAIN and measure actual execution time.
-
-        Note: We use EXPLAIN for the plan (not PROFILE) since PROFILE doesn't
-        return the plan structure in the same way.
-
-        Args:
-            query: Cypher query string
-            num_runs: Number of times to execute for averaging
-
-        Returns:
-            Tuple of (plan, average_execution_time_seconds)
-        """
-        with self.driver.session() as session:
-            # Get plan with EXPLAIN (doesn't execute)
-            result = session.run(f'EXPLAIN {query}')
-            summary = result.consume()
-            plan = summary.plan  # Already a dict
-
-            # Measure actual execution time
-            execution_times = []
-            for _ in range(num_runs):
-                start_time = time.time()
-                result = session.run(query)
-                result.consume()  # Ensure full execution
-                end_time = time.time()
-                execution_times.append(end_time - start_time)
-
-            avg_time = np.mean(execution_times)
-            return plan, avg_time
-
-
 class PlanStructuredTrainer:
     """
     Trainer for plan-structured neural networks (Neo4j version).
     Implements optimized training with batching and caching.
     """
 
-    def __init__(self, model: PlanStructuredNetwork,
-                 learning_rate: float = 0.001,
-                 weight_decay: float = 1e-5,
-                 device: str = 'cpu'):
+    def __init__(self,
+        neo4j: Neo4j,
+        model: PlanStructuredNetwork,
+        learning_rate: float = 0.001,
+        weight_decay: float = 1e-5,
+        device: str = 'cpu'
+    ):
         """
         Args:
-            model: PlanStructuredNetwork instance
             learning_rate: Learning rate for optimizer
             weight_decay: L2 regularization coefficient
             device: 'cpu' or 'cuda'
         """
+        self.neo4j = neo4j
         self.model = model
         self.device = device
         self.model.to(device)
@@ -221,9 +146,7 @@ class PlanStructuredTrainer:
                 predicted_latency = self.model.forward(plan)
 
                 predictions.append(predicted_latency)
-                targets.append(torch.tensor([[execution_time]],
-                                           dtype=torch.float32,
-                                           device=self.device))
+                targets.append(torch.tensor([[execution_time]], dtype=torch.float32, device=self.device))
 
         # Stack predictions and targets
         predictions = torch.cat(predictions, dim=0)
@@ -265,9 +188,7 @@ class PlanStructuredTrainer:
 
         return loss.item()
 
-    def train_epoch(self, dataset: Neo4jQueryPlanDataset,
-                    batch_size: int = 32,
-                    shuffle: bool = True) -> float:
+    def train_epoch(self, dataset: Neo4jQueryPlanDataset, batch_size: int = 32, shuffle: bool = True) -> float:
         """
         Train for one epoch.
 
@@ -296,13 +217,12 @@ class PlanStructuredTrainer:
                 print(f'  Batch {batch_idx + 1}/{len(dataloader)}, '
                       f'Loss: {loss:.6f}')
 
-        avg_loss = np.mean(epoch_losses)
+        avg_loss = np.mean(epoch_losses).item()
         self.train_losses.append(avg_loss)
 
         return avg_loss
 
-    def evaluate(self, dataset: Neo4jQueryPlanDataset,
-                 batch_size: int = 32) -> dict[str, float]:
+    def evaluate(self, dataset: Neo4jQueryPlanDataset, batch_size: int = 32) -> dict[str, float]:
         """
         Evaluate model on a dataset.
 
@@ -342,9 +262,9 @@ class PlanStructuredTrainer:
         targets = np.array(all_targets)
 
         # Compute metrics
-        mse = np.mean((predictions - targets) ** 2)
+        mse = np.mean((predictions - targets) ** 2).item()
         rmse = np.sqrt(mse)
-        mae = np.mean(np.abs(predictions - targets))
+        mae = np.mean(np.abs(predictions - targets)).item()
 
         # R-value: max(pred/actual, actual/pred)
         # Add small epsilon to avoid division by zero
@@ -353,14 +273,14 @@ class PlanStructuredTrainer:
             (predictions + epsilon) / (targets + epsilon),
             (targets + epsilon) / (predictions + epsilon)
         )
-        mean_q_error = np.mean(r_values)
-        median_q_error = np.median(r_values)
-        p90_q_error = np.percentile(r_values, 90)
-        p95_q_error = np.percentile(r_values, 95)
+        mean_q_error = np.mean(r_values).item()
+        median_q_error = np.median(r_values).item()
+        p90_q_error = np.percentile(r_values, 90).item()
+        p95_q_error = np.percentile(r_values, 95).item()
 
         # Relative error
         relative_errors = np.abs(predictions - targets) / (targets + epsilon)
-        mean_relative_error = np.mean(relative_errors)
+        mean_relative_error = np.mean(relative_errors).item()
 
         metrics = {
             'mse': mse,
@@ -411,54 +331,10 @@ class PlanStructuredTrainer:
         print(f'Checkpoint loaded from {path}')
         return checkpoint
 
-
-def collect_training_data(queries: list[str],
-                         neo4j_conn: Neo4jConnection,
-                         num_runs: int = 3) -> tuple[list[str], list[dict], list[float]]:
-    """
-    Collect training data by executing queries and measuring their performance.
-
-    Args:
-        queries: List of Cypher query strings
-        neo4j_conn: Neo4j connection object
-        num_runs: Number of executions per query for averaging
-
-    Returns:
-        Tuple of (queries, plans, execution_times)
-    """
-    print(f'Collecting training data from {len(queries)} queries...')
-    print(f'Each query will be executed {num_runs} times for averaging.')
-
-    collected_queries = []
-    plans = []
-    execution_times = []
-
-    for i, query in enumerate(queries):
-        try:
-            print(f'\nQuery {i+1}/{len(queries)}:')
-            print(f'  {query[:100]}...' if len(query) > 100 else f'  {query}')
-
-            # Get plan and execution time
-            plan, exec_time = neo4j_conn.get_plan_and_execute(query, num_runs)
-
-            collected_queries.append(query)
-            plans.append(plan)
-            execution_times.append(exec_time)
-
-            print(f'  Execution time: {exec_time:.4f}s')
-            print(f'  Root operator: {plan.get('operatorType', 'Unknown')}')
-
-        except Exception as e:
-            print(f'  ERROR: Failed to process query: {e}')
-            continue
-
-    print(f'\nSuccessfully collected {len(plans)} query plans.')
-    return collected_queries, plans, execution_times
-
-
 def train_model(
+    neo4j: Neo4j,
     train_dataset: Neo4jQueryPlanDataset,
-    val_dataset: Optional[Neo4jQueryPlanDataset],
+    val_dataset: Neo4jQueryPlanDataset | None,
     feature_extractor: FeatureExtractor,
     num_epochs: int = 100,
     batch_size: int = 32,
@@ -507,6 +383,7 @@ def train_model(
 
     # Create trainer
     trainer = PlanStructuredTrainer(
+        neo4j=neo4j,
         model=model,
         learning_rate=learning_rate,
         device=device
@@ -531,10 +408,10 @@ def train_model(
             trainer.val_losses.append(val_loss)
 
             print(f'Validation Loss: {val_loss:.6f}')
-            print(f'Validation RMSE: {val_metrics['rmse']:.6f}')
-            print(f'Validation MAE: {val_metrics['mae']:.6f}')
-            print(f'Validation R-value (mean): {val_metrics['mean_q_error']:.3f}')
-            print(f'Validation R-value (median): {val_metrics['median_q_error']:.3f}')
+            print(f'Validation RMSE: {val_metrics["rmse"]:.6f}')
+            print(f'Validation MAE: {val_metrics["mae"]:.6f}')
+            print(f'Validation R-value (mean): {val_metrics["mean_q_error"]:.3f}')
+            print(f'Validation R-value (median): {val_metrics["median_q_error"]:.3f}')
 
             # Save best model
             if val_loss < best_val_loss:

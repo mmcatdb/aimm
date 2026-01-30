@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 class BaseDAO(ABC):
     @abstractmethod
-    def find(self, entity_name, query_params):
+    def find(self, entity_name: str, query_params) -> Any:
         """
         Handles simple conditional queries
         Supports exact matches (key1 = val1 AND key2 = val2...), and IN clauses (key__in = [v1, v2,...])
@@ -28,7 +29,7 @@ class BaseDAO(ABC):
     #region A) Selection, Projection, Source (of data)
 
     @abstractmethod
-    def get_all_lineitems(self):
+    def get_all_lineitems(self) -> Any:
         """
         A1) Non-Indexed Columns
 
@@ -40,7 +41,7 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def get_orders_by_daterange(self, start_date, end_date):
+    def get_orders_by_daterange(self, start_date, end_date) -> Any:
         """
         A2) Non-Indexed Columns — Range Query
 
@@ -53,7 +54,7 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def get_all_customers(self):
+    def get_all_customers(self) -> Any:
         """
         A3) Indexed Columns
 
@@ -65,7 +66,7 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def get_orders_by_keyrange(self, start_key, end_key):
+    def get_orders_by_keyrange(self, start_key, end_key) -> Any:
         """
         A4) Indexed Columns — Range Query
 
@@ -81,7 +82,7 @@ class BaseDAO(ABC):
     #region B) Aggregation
 
     @abstractmethod
-    def count_orders_by_month(self):
+    def count_orders_by_month(self) -> Any:
         """
         B1) COUNT
 
@@ -95,7 +96,7 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def get_max_price_by_ship_month(self):
+    def get_max_price_by_ship_month(self) -> Any:
         """
         B2) MAX
 
@@ -109,42 +110,42 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def get_all_parts(self):
+    def get_all_parts(self) -> Any:
         """P1) List all parts."""
         pass
 
     @abstractmethod
-    def get_parts_by_size_range(self, min_size, max_size):
+    def get_parts_by_size_range(self, min_size, max_size) -> Any:
         """P2) Range filter on p_size."""
         pass
 
     @abstractmethod
-    def get_all_suppliers(self):
+    def get_all_suppliers(self) -> Any:
         """S1) List all suppliers."""
         pass
 
     @abstractmethod
-    def get_suppliers_by_nation(self, nation_key):
+    def get_suppliers_by_nation(self, nation_key) -> Any:
         """S2) Filter suppliers by nation key."""
         pass
 
     @abstractmethod
-    def get_partsupp_for_part(self, partkey):
+    def get_partsupp_for_part(self, partkey) -> Any:
         """PS1) All supplier rows for a given part."""
         pass
 
     @abstractmethod
-    def get_lowest_cost_supplier_for_part(self, partkey):
+    def get_lowest_cost_supplier_for_part(self, partkey) -> Any:
         """PS2) Cheapest supplier for a part."""
         pass
 
     @abstractmethod
-    def count_suppliers_per_part(self):
+    def count_suppliers_per_part(self) -> Any:
         """AGG1) Number of suppliers per part (cardinality of part->supplier)."""
         pass
 
     @abstractmethod
-    def avg_supplycost_by_part_size(self):
+    def avg_supplycost_by_part_size(self) -> Any:
         """AGG2) Average supply cost grouped by part size (join part + partsupp)."""
         pass
 

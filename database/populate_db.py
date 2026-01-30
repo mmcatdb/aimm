@@ -1,7 +1,9 @@
 import csv
+import os
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from common.database_provider import DatabaseProvider
+from common.databases import Mongo, Neo4j, Postgres
 from database.daos.mongo_dao import MongoDAO
 from database.daos.neo4j_dao import Neo4jDAO
 from database.daos.postgres_dao import PostgresDAO
@@ -35,9 +37,9 @@ class Populator:
     def __init__(self, dbs: DatabaseProvider, schema_mapping: dict[str, str]):
         self.schema_mapping = schema_mapping
         self.daos = {
-            'postgres': PostgresDAO(dbs.get('postgres')),
-            'mongo': MongoDAO(dbs.get('mongo')),
-            'neo4j': Neo4jDAO(dbs.get('neo4j')),
+            'postgres': PostgresDAO(dbs.get_typed('postgres', Postgres)),
+            'mongo': MongoDAO(dbs.get_typed('mongo', Mongo)),
+            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4j)),
         }
 
     def get_dao_for_entity(self, entity_name):
@@ -201,19 +203,20 @@ def main():
         })
 
         populate_plan = [
-            ('region', 'data/region.tbl', region_schema),
-            ('nation', 'data/nation.tbl', nation_schema),
-            ('part', 'data/part.tbl', part_schema),
-            ('supplier', 'data/supplier.tbl', supplier_schema),
-            ('partsupp', 'data/partsupp.tbl', partsupp_schema),
-            ('customer', 'data/customer.tbl', customer_schema),
-            ('orders', 'data/orders.tbl', orders_schema),
-            ('lineitem', 'data/lineitem.tbl', lineitem_schema)
+            ('region', 'region.tbl', region_schema),
+            ('nation', 'nation.tbl', nation_schema),
+            ('part', 'part.tbl', part_schema),
+            ('supplier', 'supplier.tbl', supplier_schema),
+            ('partsupp', 'partsupp.tbl', partsupp_schema),
+            ('customer', 'customer.tbl', customer_schema),
+            ('orders', 'orders.tbl', orders_schema),
+            ('lineitem', 'lineitem.tbl', lineitem_schema)
         ]
 
-        for entity, path, schema in populate_plan:
-            if entity in populator.schema_mapping:
+        for entity, filename, schema in populate_plan:
+            path = os.path.join(config.import_directory, filename)
 
+            if entity in populator.schema_mapping:
                 populator.populate_from_tbl(entity, path, schema)
             else:
                 print(f'Skipping {entity}; add to schema_mapping to populate.')

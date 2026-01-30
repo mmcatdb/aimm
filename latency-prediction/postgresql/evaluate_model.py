@@ -5,20 +5,22 @@ import json
 import pickle
 from tabulate import tabulate
 import matplotlib.pyplot as plt
-from config import DatabaseConfig
-from plan_extractor import PlanExtractor
+from common.config import Config
+from common.databases import Postgres
 from plan_structured_network import PlanStructuredNetwork
 
 class ModelEvaluator:
     """Evaluates a trained QPP-Net model on new queries."""
 
-    def __init__(self, model_path: str = 'qpp_net_model.pt'):
+    def __init__(self, postgres: Postgres, model_path: str = 'qpp_net_model.pt'):
         """
         Load trained model and initialize evaluator.
 
         Args:
             model_path: Path to saved model checkpoint
         """
+        self.postgres = postgres
+
         print('Loading trained model...')
         checkpoint = torch.load(model_path, weights_only=False)
 
@@ -46,9 +48,9 @@ class ModelEvaluator:
         # Print training metrics if available
         if 'metrics' in checkpoint:
             print('\nTraining Metrics:')
-            print(f'  Train MAE: {checkpoint['metrics']['train']['mae']:.2f} ms')
-            print(f'  Test MAE: {checkpoint['metrics']['test']['mae']:.2f} ms')
-            print(f'  Test R ≤ 1.5: {checkpoint['metrics']['test']['r_within_1.5']*100:.1f}%')
+            print(f'  Train MAE: {checkpoint["metrics"]["train"]["mae"]:.2f} ms')
+            print(f'  Test MAE: {checkpoint["metrics"]["test"]["mae"]:.2f} ms')
+            print(f'  Test R ≤ 1.5: {checkpoint["metrics"]["test"]["r_within_1.5"]*100:.1f}%')
 
         print('Model loaded successfully!\n')
 
@@ -63,19 +65,18 @@ class ModelEvaluator:
         Returns:
             Query plan dictionary
         """
-        config = DatabaseConfig()
-        conn = config.get_connection()
-        conn.autocommit = True
+        connection = self.postgres.get_connection()
+        connection.autocommit = True
 
         try:
-            with conn.cursor() as cursor:
+            with connection.cursor() as cursor:
                 explain_query = f'EXPLAIN (FORMAT JSON, VERBOSE) {query}'
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
                 plan = result[0][0]['Plan']
                 return plan
         finally:
-            conn.close()
+            self.postgres.put_connection(connection)
 
     def get_explain_analyze_time(self, query: str) -> tuple[dict, float]:
         """
@@ -87,12 +88,11 @@ class ModelEvaluator:
         Returns:
             Tuple of (plan, explain_analyze_time_ms)
         """
-        config = DatabaseConfig()
-        conn = config.get_connection()
-        conn.autocommit = True
+        connection = self.postgres.get_connection()
+        connection.autocommit = True
 
         try:
-            with conn.cursor() as cursor:
+            with connection.cursor() as cursor:
                 explain_query = f'EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}'
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
@@ -100,7 +100,7 @@ class ModelEvaluator:
                 execution_time = plan_json['Execution Time']
                 return plan_json['Plan'], execution_time
         finally:
-            conn.close()
+            self.postgres.put_connection(connection)
 
     def get_actual_execution_time(self, query: str, num_runs: int = 3) -> tuple[float, float, float]:
         """
@@ -114,15 +114,14 @@ class ModelEvaluator:
         Returns:
             Tuple of (mean_time_ms, min_time_ms, max_time_ms)
         """
-        config = DatabaseConfig()
         times = []
 
         for i in range(num_runs):
-            conn = config.get_connection()
-            conn.autocommit = True
+            connection = self.postgres.get_connection()
+            connection.autocommit = True
 
             try:
-                with conn.cursor() as cursor:
+                with connection.cursor() as cursor:
                     start_time = time.time()
                     cursor.execute(query)
                     # Fetch all results to ensure query completes
@@ -132,9 +131,9 @@ class ModelEvaluator:
                     elapsed_ms = (end_time - start_time) * 1000
                     times.append(elapsed_ms)
             finally:
-                conn.close()
+                self.postgres.put_connection(connection)
 
-        return np.mean(times), np.min(times), np.max(times)
+        return np.mean(times).item(), np.min(times), np.max(times)
 
     def predict_latency(self, plan: dict) -> float:
         """
@@ -150,7 +149,7 @@ class ModelEvaluator:
             prediction = self.model(plan).item()
         return prediction
 
-    def evaluate_query(self, query: str, query_name: str = None, measure_actual: bool = True, num_runs: int = 3) -> dict:
+    def evaluate_query(self, query: str, query_name: str | None = None, measure_actual: bool = True, num_runs: int = 3) -> dict:
         """
         Comprehensive evaluation of a single query.
 
@@ -200,28 +199,24 @@ class ModelEvaluator:
         # Calculate errors and ratios
         results['error_vs_explain'] = abs(predicted_time - explain_time)
         results['relative_error_vs_explain'] = abs(predicted_time - explain_time) / (explain_time + 1e-8)
-        results['r_vs_explain'] = max(predicted_time / (explain_time + 1e-8),
-                                       explain_time / (predicted_time + 1e-8))
+        results['r_vs_explain'] = max(predicted_time / (explain_time + 1e-8), explain_time / (predicted_time + 1e-8))
         results['explain_predicted_ratio'] = explain_time / (predicted_time + 1e-8)
 
         if measure_actual:
             results['error_vs_actual'] = abs(predicted_time - actual_mean)
             results['relative_error_vs_actual'] = abs(predicted_time - actual_mean) / (actual_mean + 1e-8)
-            results['r_vs_actual'] = max(predicted_time / (actual_mean + 1e-8),
-                                          actual_mean / (predicted_time + 1e-8))
+            results['r_vs_actual'] = max(predicted_time / (actual_mean + 1e-8), actual_mean / (predicted_time + 1e-8))
             results['actual_predicted_ratio'] = actual_mean / (predicted_time + 1e-8)
 
             # Also compare EXPLAIN ANALYZE vs Actual
             results['explain_vs_actual_error'] = abs(explain_time - actual_mean)
             results['explain_vs_actual_relative'] = abs(explain_time - actual_mean) / (actual_mean + 1e-8)
 
-        print(f'\n  Prediction Error vs EXPLAIN ANALYZE: {results['error_vs_explain']:.2f} ms '
-              f'(R={results['r_vs_explain']:.2f})')
+        print(f'\n  Prediction Error vs EXPLAIN ANALYZE: {results["error_vs_explain"]:.2f} ms (R={results["r_vs_explain"    ]:.2f})')
 
         if measure_actual:
-            print(f'  Prediction Error vs Actual: {results['error_vs_actual']:.2f} ms '
-                  f'(R={results['r_vs_actual']:.2f})')
-            print(f'  EXPLAIN ANALYZE vs Actual: {results['explain_vs_actual_error']:.2f} ms')
+            print(f'  Prediction Error vs Actual: {results["error_vs_actual"]:.2f} ms (R={results["r_vs_actual"]:.2f})')
+            print(f'  EXPLAIN ANALYZE vs Actual: {results["explain_vs_actual_error"]:.2f} ms')
 
         return results
 
@@ -267,16 +262,16 @@ class ModelEvaluator:
         for r in results:
             row = [
                 r['query_name'],
-                f'{r['predicted_time']:.1f}',
-                f'{r['explain_analyze_time']:.1f}',
-                f'{r['actual_time_mean']:.1f}' if r['actual_time_mean'] else 'N/A',
-                f'{r['explain_predicted_ratio']:.2f}',
-                f'{r['r_vs_explain']:.2f}',
+                f'{r["predicted_time"]:.1f}',
+                f'{r["explain_analyze_time"]:.1f}',
+                f'{r["actual_time_mean"]:.1f}' if r['actual_time_mean'] else 'N/A',
+                f'{r["explain_predicted_ratio"]:.2f}',
+                f'{r["r_vs_explain"]:.2f}',
             ]
             if r['actual_time_mean']:
                 row.extend([
-                    f'{r['actual_predicted_ratio']:.2f}',
-                    f'{r['r_vs_actual']:.2f}',
+                    f'{r["actual_predicted_ratio"]:.2f}',
+                    f'{r["r_vs_actual"]:.2f}',
                 ])
             table_data.append(row)
 
@@ -1088,6 +1083,7 @@ def main():
     parser.add_argument('--runs', type=int, default=10, help='Number of runs for actual execution measurement')
     parser.add_argument('--save-results', type=str, default='evaluation_results.json', help='Path to save results JSON')
     parser.add_argument('--no-plots', action='store_true', help='Skip generating plots')
+    parser.add_argument('--config', type=str, default=None, help=f'Path to config file (default: {Config.DEFAULT_CONFIG_PATH})')
     parser.add_argument('--query', '-q', type=str, action='append', dest='queries', help='Additional SQL query to evaluate (can be used multiple times)')
     parser.add_argument('--query-only', '-qo', action='store_true', help='Only evaluate the provided --query arguments, skip built-in test queries')
 
@@ -1098,7 +1094,9 @@ def main():
     print('=' * 80)
 
     # Initialize evaluator
-    evaluator = ModelEvaluator(args.model)
+    config = Config.load(args.config)
+    postgres = Postgres(config.postgres)
+    evaluator = ModelEvaluator(postgres, args.model)
 
     # Generate test queries
     print('\nGenerating test queries...')

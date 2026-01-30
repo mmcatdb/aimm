@@ -1,9 +1,8 @@
 import argparse
 import os
 import shutil
-import yaml
 from common.config import Config
-from common.databases import Neo4j
+from common.databases import Neo4j, cypher
 
 class TpchLoader:
     """
@@ -18,22 +17,22 @@ class TpchLoader:
             print(f'Failed to connect to Neo4j: {e}')
             raise
 
-    def run_query(self, query, parameters=None):
+    def run_query(self, query: str, parameters=None):
         """
         Executes a Cypher query that doesn't need to return data.
         Ensures the result is fully consumed within the session.
         """
         with self._neo4j.session() as session:
-            result = session.run(query, parameters or {})
+            result = session.run(cypher(query), parameters or {})
             result.consume()
 
-    def run_scalar(self, query, parameters=None, key=None):
+    def run_scalar(self, query: str, parameters=None, key=None):
         """
         Executes a Cypher query expected to return a single record.
         Returns the value for 'key' or the first value in the record.
         """
         with self._neo4j.session() as session:
-            rec = session.run(query, parameters or {}).single()
+            rec = session.run(cypher(query), parameters or {}).single()
             if rec is None:
                 return None
             if key is None:
@@ -328,7 +327,7 @@ def main():
         '--config',
         type=str,
         default=None,
-        help='Path to the configuration yaml file (optional).'
+        help=f'Path to config file (default: {Config.DEFAULT_CONFIG_PATH})'
     )
     parser.add_argument(
         '--data-dir',
@@ -341,7 +340,7 @@ def main():
         type=str,
         default=None,
         help=(
-            'Path to Neo4j\'s import directory. If not specified, reads from "neo4j.import_dir" in config.yaml.\n'
+            'Path to Neo4j\'s import directory. If not specified, reads from "IMPORT_DIRECTORY" in .env.\n'
             'Common locations:\n'
             '  - Linux (Debian/RPM): /var/lib/neo4j/import\n'
             '  - macOS (Homebrew):   /usr/local/var/neo4j/import or /opt/homebrew/var/neo4j/import\n'
@@ -358,47 +357,16 @@ def main():
 
     args = parser.parse_args()
 
-    # TODO remove this but enable --config for specifying .env (or --env or sth).
-    # Load config from YAML
-    # config_file_path = 'config.yaml'
-    # config = {}
-    # try:
-    #     with open(config_file_path, 'r') as f:
-    #         config = yaml.safe_load(f)
-    # except FileNotFoundError:
-    #     print(f'Error: Configuration file '{config_file_path}' not found.')
-    #     return
-    # except yaml.YAMLError as e:
-    #     print(f'Error parsing YAML file: {e}')
-    #     return
-
-    # neo4j_config = config.get('neo4j')
-    # if not neo4j_config:
-    #     print('Error: 'neo4j' section not found in config.yaml')
-    #     return
-
-    # NEO4J_HOST = neo4j_config.get('host')
-    # NEO4J_PORT = neo4j_config.get('port')
-    # NEO4J_USER = neo4j_config.get('user')
-    # NEO4J_PASSWORD = neo4j_config.get('password')
-
-    # if not all([NEO4J_HOST, NEO4J_PORT, NEO4J_USER, NEO4J_PASSWORD]):
-    #     print('Error: 'host', 'port', 'user', and 'password' must be defined under 'neo4j' in config.yaml')
-    #     return
-
-    # config = Neo4jConfig(NEO4J_HOST, NEO4J_PORT, NEO4J_USER, NEO4J_PASSWORD)
-    # TODO Override config via the yaml file if specified
     config = Config.load()
 
     # Get Neo4j import directory
-    # neo4j_import_dir = args.neo4j_import_dir or neo4j_config.get('import_dir')
-    neo4j_import_dir = args.neo4j_import_dir
-    if not neo4j_import_dir:
-        print('Error: Neo4j import directory must be specified via --neo4j-import-dir or "import_dir" in config.yaml')
+    import_directory = args.neo4j_import_dir or config.import_directory
+    if not import_directory:
+        print('Error: Neo4j import directory must be specified via --neo4j-import-dir or "IMPORT_DIRECTORY" in .env')
         return
 
-    if not os.path.isdir(neo4j_import_dir):
-        print(f'Error: Neo4j import directory does not exist: {neo4j_import_dir}')
+    if not os.path.isdir(import_directory):
+        print(f'Error: Neo4j import directory does not exist: {import_directory}')
         return
 
     # File Management
@@ -411,10 +379,10 @@ def main():
             print(f'Error: Data directory does not exist: {args.data_dir}')
             return
 
-        print(f'Copying .tbl files from "{args.data_dir}" to "{neo4j_import_dir}"...')
+        print(f'Copying .tbl files from "{args.data_dir}" to "{import_directory}"...')
         for tbl_file in tbl_files:
             src = os.path.join(args.data_dir, tbl_file)
-            dst = os.path.join(neo4j_import_dir, tbl_file)
+            dst = os.path.join(import_directory, tbl_file)
             if not os.path.isfile(src):
                 print(f'Error: Required file not found: {src}')
                 return
@@ -423,9 +391,9 @@ def main():
             print(f'  Copied: {tbl_file}')
     else:
         # Verify files exist in neo4j import directory
-        print(f'Using .tbl files directly from Neo4j import directory: "{neo4j_import_dir}"')
+        print(f'Using .tbl files directly from Neo4j import directory: "{import_directory}"')
         for tbl_file in tbl_files:
-            filepath = os.path.join(neo4j_import_dir, tbl_file)
+            filepath = os.path.join(import_directory, tbl_file)
             if not os.path.isfile(filepath):
                 print(f'Error: Required file not found in import directory: {filepath}')
                 return

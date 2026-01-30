@@ -1,5 +1,8 @@
+from typing import TypeVar
 from common.config import Config
 from common.databases import Mongo, Neo4j, Postgres, PostgresConfig, MongoConfig, Neo4jConfig
+
+TDatabase = TypeVar('TDatabase', Postgres, Mongo, Neo4j)
 
 class DatabaseProvider:
     def __init__(self, db_configs: dict[str, PostgresConfig | MongoConfig | Neo4jConfig]):
@@ -17,10 +20,16 @@ class DatabaseProvider:
         else:
             raise ValueError(f'Unsupported database config type for id "{id}".')
 
-    def get(self, id: str):
+    def get(self, id: str) -> Postgres | Mongo | Neo4j:
         db = self.dbs.get(id)
         if not db:
             raise ValueError(f'Database with id "{id}" not found in DatabaseProvider.')
+        return db
+
+    def get_typed(self, id: str, clazz: type[TDatabase]) -> TDatabase:
+        db = self.get(id)
+        if not isinstance(db, clazz):
+            raise TypeError(f'Database with id "{id}" is not of type {clazz.__name__}.')
         return db
 
     @staticmethod

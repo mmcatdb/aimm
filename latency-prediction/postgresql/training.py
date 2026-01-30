@@ -75,7 +75,7 @@ def compute_plan_structure_hash(plan: dict) -> str:
             for child in node['Plans']:
                 children_sig.append(structure_sig(child))
 
-        return f'{node_type}_{num_children}_{'_'.join(sorted(children_sig))}'
+        return f'{node_type}_{num_children}_{"_".join(sorted(children_sig))}'
 
     return structure_sig(plan)
 
@@ -148,9 +148,7 @@ class PlanStructuredTrainer:
                 if node_id in node_latencies:
                     actual_latency = node_latencies[node_id]
 
-                    actual_latency_tensor = torch.tensor(actual_latency,
-                                                         dtype=pred_latency.dtype,
-                                                         device=pred_latency.device)
+                    actual_latency_tensor = torch.tensor(actual_latency, dtype=pred_latency.dtype, device=pred_latency.device)
 
                     squared_error = (pred_latency - actual_latency_tensor) ** 2
                     total_squared_error += squared_error

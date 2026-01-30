@@ -1,5 +1,6 @@
-from typing import Generator
+from typing import Generator, cast
 from contextlib import contextmanager
+from typing_extensions import LiteralString
 from psycopg2.pool import SimpleConnectionPool
 from psycopg2.extensions import connection as PostgresConnection
 from psycopg2.extensions import cursor as PostgresCursor
@@ -10,7 +11,7 @@ from neo4j import GraphDatabase
 # They should be created one per application and reused.
 
 class PostgresConfig:
-    def __init__(self, host, port, database, user, password):
+    def __init__(self, host: str, port: int, database: str, user: str, password: str):
         self.host = host
         self.port = port
         self.database = database
@@ -63,7 +64,7 @@ class Postgres():
         self._pool.putconn(connection)
 
 class MongoConfig:
-    def __init__(self, host, port, database):
+    def __init__(self, host: str, port: int, database: str):
         self.host = host
         self.port = port
         self.database = database
@@ -83,7 +84,7 @@ class Mongo():
         return self._database
 
 class Neo4jConfig:
-    def __init__(self, host, port, user, password):
+    def __init__(self, host: str, port: int, user: str, password: str):
         self.host = host
         self.port = port
         self.user = user
@@ -111,3 +112,7 @@ class Neo4j():
 
     def close(self):
         self._driver.close()
+
+def cypher(query: str) -> LiteralString:
+    """Nobody asked for this feature. What about some actually useful types hints instead?"""
+    return cast(LiteralString, query)

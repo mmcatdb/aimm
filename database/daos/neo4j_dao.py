@@ -1,13 +1,13 @@
+from common.databases import Neo4j, cypher
 from .base_dao import BaseDAO
 
 class Neo4jDAO(BaseDAO):
-    def __init__(self, config):
-        self.config = config
-        # self.driver = GraphDatabase.driver(config['uri'], auth=(config['user'], config['password'])) if config else None
+    def __init__(self, neo4j: Neo4j):
+        self.neo4j = neo4j
 
-    def _execute_query(self, query, params=None):
-        with self.driver.session() as session:
-            result = session.run(query, params)
+    def _execute_query(self, query: str, params=None):
+        with self.neo4j.session() as session:
+            result = session.run(cypher(query), params)
             return [record.data() for record in result]
 
     def find(self, entity_name, query_params):
