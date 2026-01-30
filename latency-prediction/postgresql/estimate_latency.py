@@ -1,7 +1,7 @@
 """
 Usage:
     # Single query via argument
-    python estimate_latency.py --query "SELECT COUNT(*) FROM lineitem"
+    python estimate_latency.py --query 'SELECT COUNT(*) FROM lineitem'
 
     # Multiple queries from a file (one query per line or separated by semicolons)
     python estimate_latency.py --file queries.txt
@@ -43,17 +43,12 @@ class LatencyEstimator:
         try:
             checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         except FileNotFoundError:
-            raise FileNotFoundError(
-                f"Model checkpoint not found at {checkpoint_path}. "
-                f"Please ensure the checkpoint file exists or specify --checkpoint path."
-            )
+            raise FileNotFoundError(f'Model checkpoint not found at {checkpoint_path}. Please ensure the checkpoint file exists or specify --checkpoint path.')
 
         # Load feature extractor from checkpoint
         if 'feature_extractor' not in checkpoint:
-            raise ValueError(
-                f"Checkpoint does not contain feature_extractor. "
-                f"Please ensure you are using a checkpoint saved by the training script."
-            )
+            raise ValueError(f'Checkpoint does not contain feature_extractor. Please ensure you are using a checkpoint saved by the training script.')
+
         self.feature_extractor = checkpoint['feature_extractor']
 
         # Get model config from checkpoint, with argument values as fallback
@@ -106,7 +101,7 @@ class LatencyEstimator:
                         num_layers=self.num_layers
                     )
                     # Use the same key format as PlanStructuredNetwork
-                    key = f"{operator_type}_{num_children}"
+                    key = f'{operator_type}_{num_children}'
                     self.model.units[key] = unit
 
         # Load trained weights
@@ -140,11 +135,11 @@ class LatencyEstimator:
             conn.autocommit = True
             with conn.cursor() as cursor:
                 # Get the plan without execution (no ANALYZE)
-                explain_query = f"EXPLAIN (FORMAT JSON, VERBOSE) {query}"
+                explain_query = f'EXPLAIN (FORMAT JSON, VERBOSE) {query}'
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
 
-                # Parse JSON plan - EXPLAIN returns [{"Plan": {...}}]
+                # Parse JSON plan - EXPLAIN returns [{'Plan': {...}}]
                 plan_json = result[0][0]
 
                 return plan_json['Plan']
@@ -226,20 +221,20 @@ def parse_queries_from_file(filepath: str) -> list[str]:
 def format_latency(latency_seconds: float) -> str:
     """Format latency for human-readable output."""
     if latency_seconds is None:
-        return "ERROR"
+        return 'ERROR'
     if latency_seconds < 0.001:
-        return f"{latency_seconds * 1000000:.2f} µs"
+        return f'{latency_seconds * 1000000:.2f} µs'
     elif latency_seconds < 1:
-        return f"{latency_seconds * 1000:.2f} ms"
+        return f'{latency_seconds * 1000:.2f} ms'
     else:
-        return f"{latency_seconds:.3f} s"
+        return f'{latency_seconds:.3f} s'
 
 
 def truncate_query(query: str, max_length: int = 60) -> str:
     """Truncate query for display."""
     query = ' '.join(query.split())  # Normalize whitespace
     if len(query) > max_length:
-        return query[:max_length - 3] + "..."
+        return query[:max_length - 3] + '...'
     return query
 
 
@@ -282,16 +277,16 @@ def main():
         try:
             queries = parse_queries_from_file(args.file)
             if not queries:
-                print(f"Error: No queries found in {args.file}", file=sys.stderr)
+                print(f'Error: No queries found in {args.file}', file=sys.stderr)
                 sys.exit(1)
         except FileNotFoundError:
-            print(f"Error: File not found: {args.file}", file=sys.stderr)
+            print(f'Error: File not found: {args.file}', file=sys.stderr)
             sys.exit(1)
 
     # Initialize estimator
     try:
         if not args.quiet:
-            print("Loading model...", file=sys.stderr)
+            print('Loading model...', file=sys.stderr)
         estimator = LatencyEstimator(
             checkpoint_path=args.checkpoint,
             device=args.device,
@@ -301,10 +296,9 @@ def main():
         )
         if not args.quiet:
             num_params = sum(p.numel() for p in estimator.model.parameters())
-            print(f"Model loaded (trained for {estimator.epoch} epochs, "
-                  f"{num_params:,} parameters)\n", file=sys.stderr)
+            print(f'Model loaded (trained for {estimator.epoch} epochs, {num_params:,} parameters)\n', file=sys.stderr)
     except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f'Error: {e}', file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -331,47 +325,47 @@ def main():
         elif args.quiet:
             for query, latency, plan in results:
                 if latency is not None:
-                    print(f"{latency:.6f}")
+                    print(f'{latency:.6f}')
                 else:
-                    print("ERROR")
+                    print('ERROR')
 
         else:
             # Standard output
             if len(results) == 1:
                 query, latency, plan = results[0]
                 if 'error' in plan:
-                    print(f"Error: {plan['error']}")
+                    print(f'Error: {plan['error']}')
                     sys.exit(1)
 
-                print(f"Query: {query.strip()}")
-                print(f"Estimated latency: {format_latency(latency)}")
+                print(f'Query: {query.strip()}')
+                print(f'Estimated latency: {format_latency(latency)}')
 
                 if args.verbose:
-                    print(f"\nQuery Plan:")
-                    print(f"  Root operator: {plan.get('Node Type', 'Unknown')}")
-                    print(f"  Estimated rows: {plan.get('Plan Rows', 'N/A')}")
-                    print(f"  Total cost: {plan.get('Total Cost', 'N/A')}")
+                    print(f'\nQuery Plan:')
+                    print(f'  Root operator: {plan.get('Node Type', 'Unknown')}')
+                    print(f'  Estimated rows: {plan.get('Plan Rows', 'N/A')}')
+                    print(f'  Total cost: {plan.get('Total Cost', 'N/A')}')
 
             else:
                 # Multiple queries - table format
-                print(f"{'#':<4} {'Query':<60} {'Estimated Latency':<20}")
-                print("-" * 84)
+                print(f'{'#':<4} {'Query':<60} {'Estimated Latency':<20}')
+                print('-' * 84)
 
                 for i, (query, latency, plan) in enumerate(results, 1):
                     query_display = truncate_query(query)
                     if 'error' in plan:
-                        latency_str = f"ERROR: {plan['error'][:30]}"
+                        latency_str = f'ERROR: {plan['error'][:30]}'
                     else:
                         latency_str = format_latency(latency)
-                    print(f"{i:<4} {query_display:<60} {latency_str:<20}")
+                    print(f'{i:<4} {query_display:<60} {latency_str:<20}')
 
                 # Summary
                 valid_latencies = [lat for _, lat, plan in results if lat is not None and 'error' not in plan]
                 if valid_latencies:
-                    print("-" * 84)
-                    print(f"Total queries: {len(results)}")
-                    print(f"Successful estimates: {len(valid_latencies)}")
-                    print(f"Average estimated latency: {format_latency(sum(valid_latencies) / len(valid_latencies))}")
+                    print('-' * 84)
+                    print(f'Total queries: {len(results)}')
+                    print(f'Successful estimates: {len(valid_latencies)}')
+                    print(f'Average estimated latency: {format_latency(sum(valid_latencies) / len(valid_latencies))}')
 
     finally:
         estimator.close()

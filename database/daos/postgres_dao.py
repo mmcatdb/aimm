@@ -9,18 +9,18 @@ class PostgresDAO(BaseDAO):
         self.postgres = postgres
 
     def find(self, entity_name, query_params):
-        query = f"SELECT * FROM {entity_name} WHERE "
+        query = f'SELECT * FROM {entity_name} WHERE '
         conditions = []
         params = []
         for key, value in query_params.items():
-            if key.endswith("__in"):
-                conditions.append(f"{key[:-4]} IN %s")
+            if key.endswith('__in'):
+                conditions.append(f'{key[:-4]} IN %s')
                 params.append(tuple(value))
             else:
-                conditions.append(f"{key} = %s")
+                conditions.append(f'{key} = %s')
                 params.append(value)
 
-        query += " AND ".join(conditions)
+        query += ' AND '.join(conditions)
 
         with self.postgres.cursor() as cursor:
             cursor.execute(query, tuple(params))
@@ -40,16 +40,16 @@ class PostgresDAO(BaseDAO):
             return None
 
     def get_all_lineitems(self):
-        return self._execute_query("SELECT * FROM lineitem;")
+        return self._execute_query('SELECT * FROM lineitem;')
 
     def get_orders_by_daterange(self, start_date, end_date):
-        return self._execute_query("SELECT * FROM orders WHERE o_orderdate BETWEEN %s AND %s;", (start_date, end_date))
+        return self._execute_query('SELECT * FROM orders WHERE o_orderdate BETWEEN %s AND %s;', (start_date, end_date))
 
     def get_all_customers(self):
-        return self._execute_query("SELECT * FROM customer;")
+        return self._execute_query('SELECT * FROM customer;')
 
     def get_orders_by_keyrange(self, start_key, end_key):
-        return self._execute_query("SELECT * FROM orders WHERE o_orderkey BETWEEN %s AND %s;", (start_key, end_key))
+        return self._execute_query('SELECT * FROM orders WHERE o_orderkey BETWEEN %s AND %s;', (start_key, end_key))
 
     def count_orders_by_month(self):
         return self._execute_query("""
@@ -69,19 +69,19 @@ class PostgresDAO(BaseDAO):
 
     # --- Part / Supplier / PartSupp ---
     def get_all_parts(self):
-        return self._execute_query("SELECT * FROM part;")
+        return self._execute_query('SELECT * FROM part;')
 
     def get_parts_by_size_range(self, min_size, max_size):
-        return self._execute_query("SELECT * FROM part WHERE p_size BETWEEN %s AND %s;", (min_size, max_size))
+        return self._execute_query('SELECT * FROM part WHERE p_size BETWEEN %s AND %s;', (min_size, max_size))
 
     def get_all_suppliers(self):
-        return self._execute_query("SELECT * FROM supplier;")
+        return self._execute_query('SELECT * FROM supplier;')
 
     def get_suppliers_by_nation(self, nation_key):
-        return self._execute_query("SELECT * FROM supplier WHERE s_nationkey = %s;", (nation_key,))
+        return self._execute_query('SELECT * FROM supplier WHERE s_nationkey = %s;', (nation_key,))
 
     def get_partsupp_for_part(self, partkey):
-        return self._execute_query("SELECT * FROM partsupp WHERE ps_partkey = %s;", (partkey,))
+        return self._execute_query('SELECT * FROM partsupp WHERE ps_partkey = %s;', (partkey,))
 
     def get_lowest_cost_supplier_for_part(self, partkey):
         res = self._execute_query("""
@@ -114,44 +114,44 @@ class PostgresDAO(BaseDAO):
     def insert(self, entity_name, data):
         columns = ', '.join(data.keys())
         placeholders = ', '.join(['%s'] * len(data))
-        query = f"INSERT INTO {entity_name} ({columns}) VALUES ({placeholders})"
+        query = f'INSERT INTO {entity_name} ({columns}) VALUES ({placeholders})'
 
         with self.postgres.cursor() as cursor:
             cursor.execute(query, list(data.values()))
 
     def create_schema(self, entity_name, schema):
-        columns_def = [f"{col['name']} {col['type'].replace('PRIMARY KEY', '').strip()}" for col in schema]
+        columns_def = [f'{col['name']} {col['type'].replace('PRIMARY KEY', '').strip()}' for col in schema]
 
         # Identify primary key columns from the primary_key flag
         pk_cols = [col['name'] for col in schema if col.get('primary_key')]
         if not pk_cols:
-            raise ValueError(f"No primary key defined for entity '{entity_name}'. Please specify a primary key(s) in the schema.")
+            raise ValueError(f'No primary key defined for entity "{entity_name}". Please specify a primary key(s) in the schema.')
 
-        pk_def = f", PRIMARY KEY ({', '.join(pk_cols)})"
+        pk_def = f', PRIMARY KEY ({', '.join(pk_cols)})'
 
         # Build and execute the final query
-        query = f"CREATE TABLE IF NOT EXISTS {entity_name} ({', '.join(columns_def)}{pk_def})"
+        query = f'CREATE TABLE IF NOT EXISTS {entity_name} ({', '.join(columns_def)}{pk_def})'
 
         with self.postgres.cursor() as cursor:
             cursor.execute(query)
-            print(f"Table '{entity_name}' created or already exists in PostgreSQL.")
+            print(f'Table "{entity_name}" created or already exists in PostgreSQL.')
 
     def delete_all_from(self, entity_name):
         connection = self.postgres.get_connection()
         try:
             with connection.cursor() as cursor:
-                query = f"TRUNCATE TABLE {entity_name} RESTART IDENTITY"
+                query = f'TRUNCATE TABLE {entity_name} RESTART IDENTITY'
                 cursor.execute(query)
             connection.commit()
-            print(f"All data from '{entity_name}' has been deleted in PostgreSQL.")
+            print(f'All data from "{entity_name}" has been deleted in PostgreSQL.')
         except psycopg2.errors.UndefinedTable:
             connection.rollback()
-            print(f"Table '{entity_name}' does not exist, skipping TRUNCATE.")
+            print(f'Table "{entity_name}" does not exist, skipping TRUNCATE.')
         finally:
             self.postgres.put_connection(connection)
 
     def drop_entity(self, entity_name):
         with self.postgres.cursor() as cursor:
-            query = f"DROP TABLE IF EXISTS {entity_name}"
+            query = f'DROP TABLE IF EXISTS {entity_name}'
             cursor.execute(query)
-            print(f"Table '{entity_name}' has been dropped in PostgreSQL.")
+            print(f'Table "{entity_name}" has been dropped in PostgreSQL.')

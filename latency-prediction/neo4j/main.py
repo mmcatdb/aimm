@@ -35,7 +35,7 @@ def save_workload_data(
     }
     with open(filename, 'wb') as f:
         pickle.dump(data, f)
-    print(f"\nWorkload data saved to {filename}")
+    print(f'\nWorkload data saved to {filename}')
 
 
 def load_workload_data(filename: str = 'data/neo4j_workload_data.pkl') -> tuple[list[str], list[dict], list[float]]:
@@ -50,7 +50,7 @@ def load_workload_data(filename: str = 'data/neo4j_workload_data.pkl') -> tuple[
     """
     with open(filename, 'rb') as f:
         data = pickle.load(f)
-    print(f"\nWorkload data loaded from {filename}")
+    print(f'\nWorkload data loaded from {filename}')
     return data['queries'], data['plans'], data['execution_times']
 
 
@@ -72,25 +72,25 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"\nConfiguration:")
-    print(f"  Number of queries: {args.num_queries}")
-    print(f"  Runs per query: {args.num_runs}")
-    print(f"  Training epochs: {args.num_epochs}")
-    print(f"  Batch size: {args.batch_size}")
-    print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Hidden dimension: {args.hidden_dim}")
-    print(f"  Number of layers: {args.num_layers}")
-    print(f"  Data vector dimension: {args.data_vec_dim}")
-    print(f"  Validation split: {args.val_split}")
-    print(f"  Device: {args.device}")
+    print(f'\nConfiguration:')
+    print(f'  Number of queries: {args.num_queries}')
+    print(f'  Runs per query: {args.num_runs}')
+    print(f'  Training epochs: {args.num_epochs}')
+    print(f'  Batch size: {args.batch_size}')
+    print(f'  Learning rate: {args.learning_rate}')
+    print(f'  Hidden dimension: {args.hidden_dim}')
+    print(f'  Number of layers: {args.num_layers}')
+    print(f'  Data vector dimension: {args.data_vec_dim}')
+    print(f'  Validation split: {args.val_split}')
+    print(f'  Device: {args.device}')
     print()
 
 
     if args.load_workload:
-        print(f"Loading workload data from {args.load_workload}...")
+        print(f'Loading workload data from {args.load_workload}...')
         queries, plans, execution_times = load_workload_data(args.load_workload)
     else:
-        print("Connecting to Neo4j and collecting workload...")
+        print('Connecting to Neo4j and collecting workload...')
         extractor = PlanExtractor()
 
         try:
@@ -105,7 +105,7 @@ def main():
         finally:
             extractor.close()
 
-    print(f"\nCollected {len(queries)} queries with execution times")
+    print(f'\nCollected {len(queries)} queries with execution times')
 
 
     feature_extractor = FeatureExtractor()
@@ -114,7 +114,7 @@ def main():
     # Get feature dimension
     sample_features = feature_extractor.extract_features(plans[0])
     feature_dim = len(sample_features)
-    print(f"\nFeature vector dimension: {feature_dim}")
+    print(f'\nFeature vector dimension: {feature_dim}')
 
 
     num_val = int(len(queries) * args.val_split)
@@ -133,14 +133,14 @@ def main():
     val_plans = [plans[i] for i in val_indices]
     val_times = [execution_times[i] for i in val_indices]
 
-    print(f"\nTraining set: {num_train} queries")
-    print(f"Validation set: {num_val} queries")
+    print(f'\nTraining set: {num_train} queries')
+    print(f'Validation set: {num_val} queries')
 
     # Create datasets
     train_dataset = Neo4jQueryPlanDataset(train_queries, train_plans, train_times)
     val_dataset = Neo4jQueryPlanDataset(val_queries, val_plans, val_times) if num_val > 0 else None
 
-    print("\n" + "=" * 70)
+    print('\n' + '=' * 70)
 
     start_time = time.time()
 
@@ -160,33 +160,33 @@ def main():
 
     training_time = time.time() - start_time
 
-    print(f"\nTraining completed in {training_time:.2f} seconds")
+    print(f'\nTraining completed in {training_time:.2f} seconds')
 
-    print("\n" + "=" * 70)
-    print("Evalutation")
+    print('\n' + '=' * 70)
+    print('Evalutation')
 
     trainer = PlanStructuredTrainer(model, device=args.device)
 
-    print("\nTraining set performance:")
+    print('\nTraining set performance:')
     train_metrics = trainer.evaluate(train_dataset, batch_size=args.batch_size)
     for metric_name, value in train_metrics.items():
-        print(f"  {metric_name}: {value:.6f}")
+        print(f'  {metric_name}: {value:.6f}')
 
     if val_dataset:
-        print("\nValidation set performance:")
+        print('\nValidation set performance:')
         val_metrics = trainer.evaluate(val_dataset, batch_size=args.batch_size)
         for metric_name, value in val_metrics.items():
-            print(f"  {metric_name}: {value:.6f}")
+            print(f'  {metric_name}: {value:.6f}')
 
     feature_extractor_path = args.checkpoint_path.replace('.pt', '_feature_extractor.pkl')
     with open(feature_extractor_path, 'wb') as f:
         pickle.dump(feature_extractor, f)
-    print(f"\nFeature extractor saved to {feature_extractor_path}")
+    print(f'\nFeature extractor saved to {feature_extractor_path}')
 
-    print("=" * 70)
-    print(f"\nModel checkpoint: {args.checkpoint_path}")
-    print(f"Feature extractor: {feature_extractor_path}")
-    print(f"Total time: {training_time:.2f} seconds")
+    print('=' * 70)
+    print(f'\nModel checkpoint: {args.checkpoint_path}')
+    print(f'Feature extractor: {feature_extractor_path}')
+    print(f'Total time: {training_time:.2f} seconds')
 
 if __name__ == '__main__':
     main()

@@ -75,7 +75,7 @@ def compute_plan_structure_hash(plan: dict) -> str:
             for child in node['Plans']:
                 children_sig.append(structure_sig(child))
 
-        return f"{node_type}_{num_children}_{'_'.join(sorted(children_sig))}"
+        return f'{node_type}_{num_children}_{'_'.join(sorted(children_sig))}'
 
     return structure_sig(plan)
 
@@ -122,7 +122,7 @@ class PlanStructuredTrainer:
     def compute_loss(self, batch: list[dict]) -> torch.Tensor:
         """
         Compute L2 loss over all operators in all plans (Equation 7).
-     Args:
+        Args:
             batch: List of batch items with plans and ground truth
 
         Returns:
@@ -138,7 +138,7 @@ class PlanStructuredTrainer:
             try:
                 all_outputs = self.model.get_all_node_predictions(plan)
             except Exception as e:
-                print(f"Error processing plan: {e}. Skipping plan.")
+                print(f'Error processing plan: {e}. Skipping plan.')
                 continue
 
             # Compute squared errors for all nodes

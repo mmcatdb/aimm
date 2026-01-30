@@ -5,7 +5,7 @@ from psycopg2.extras import RealDictCursor
 class DatabaseConfig:
     """Manages database configuration and connections."""
 
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = 'config.yaml'):
         """Load configuration from YAML file."""
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)

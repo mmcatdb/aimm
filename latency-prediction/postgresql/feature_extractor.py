@@ -92,13 +92,13 @@ class FeatureExtractor:
                 'std': np.std(values) + 1e-8   # avoid div by zero
             }
 
-        print(f"Built vocabularies:")
-        print(f"- Node types: {len(self.node_type_vocab)}")
-        print(f"- Scan types: {len(self.scan_type_vocab)}")
-        print(f"- Join types: {len(self.join_type_vocab)}")
-        print(f"- Relations: {len(self.scan_relation_vocab)}")
-        print(f"- Sort Keys: {len(self.sort_key_vocab)}")
-        print(f"- Agg Operators: {len(self.agg_operator_vocab)}")
+        print(f'Built vocabularies:')
+        print(f'- Node types: {len(self.node_type_vocab)}')
+        print(f'- Scan types: {len(self.scan_type_vocab)}')
+        print(f'- Join types: {len(self.join_type_vocab)}')
+        print(f'- Relations: {len(self.scan_relation_vocab)}')
+        print(f'- Sort Keys: {len(self.sort_key_vocab)}')
+        print(f'- Agg Operators: {len(self.agg_operator_vocab)}')
 
     def normalize_numeric(self, value: float, feature_name: str) -> float:
         """Normalize a numeric feature using z-score normalization."""

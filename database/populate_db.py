@@ -27,7 +27,7 @@ def convert_value(value, data_type):
         else:
             return value
     except (ValueError, InvalidOperation) as e:
-        print(f"Warning: Could not convert value '{value}' to type '{data_type}': {e}")
+        print(f'Warning: Could not convert value "{value}" to type "{data_type}": {e}')
         return value
 
 
@@ -43,7 +43,7 @@ class Populator:
     def get_dao_for_entity(self, entity_name):
         db_type = self.schema_mapping[entity_name]
         if not db_type:
-            raise ValueError(f"Entity '{entity_name}' not found in schema mapping. Add it to config.yaml under schema_mapping.")
+            raise ValueError(f'Entity "{entity_name}" not found in schema mapping. Add it to config.yaml under schema_mapping.')
         return self.daos[db_type]
 
     def populate_from_tbl(self, entity_name, file_path, schema):
@@ -54,7 +54,8 @@ class Populator:
             reader = csv.reader(f, delimiter='|')
             for row in reader:
                 # Skip empty or malformed rows
-                if not row or all(col == '' for col in row): continue
+                if not row or all(col == '' for col in row):
+                    continue
 
                 data = {}
                 for i, column in enumerate(schema):
@@ -70,7 +71,7 @@ class Populator:
                 if data:
                     dao.insert(entity_name, data)
 
-        print(f"Finished populating '{entity_name}' from '{file_path}'")
+        print(f'Finished populating "{entity_name}" from "{file_path}"')
 
     def delete_entity(self, entity_name):
         dao = self.get_dao_for_entity(entity_name)
@@ -186,7 +187,7 @@ def main():
                 try:
                     populator.delete_entity(entity)
                 except Exception as e:
-                    print(f"Skip delete for {entity}: {e}")
+                    print(f'Skip delete for {entity}: {e}')
 
         create_schemas(populator, {
             'region': region_schema,
@@ -212,12 +213,13 @@ def main():
 
         for entity, path, schema in populate_plan:
             if entity in populator.schema_mapping:
+
                 populator.populate_from_tbl(entity, path, schema)
             else:
-                print(f"Skipping {entity}; add to schema_mapping to populate.")
+                print(f'Skipping {entity}; add to schema_mapping to populate.')
 
     finally:
-        print("\nDisconnected from all databases.")
+        print('\nDisconnected from all databases.')
 
 def create_schemas(populator, schemas_dict):
     for entity_name, schema in schemas_dict.items():
@@ -225,7 +227,7 @@ def create_schemas(populator, schemas_dict):
             dao = populator.get_dao_for_entity(entity_name)
             dao.create_schema(entity_name, schema)
         else:
-            print(f"Skipping schema creation for {entity_name}; not in schema_mapping.")
+            print(f'Skipping schema creation for {entity_name}; not in schema_mapping.')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

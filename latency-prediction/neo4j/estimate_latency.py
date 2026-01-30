@@ -1,7 +1,7 @@
 """
 Usage:
     # Single query via argument
-    python estimate_latency.py --query "MATCH (n:Customer) RETURN count(n)"
+    python estimate_latency.py --query 'MATCH (n:Customer) RETURN count(n)'
 
     # Multiple queries from a file (one query per line or separated by semicolons)
     python estimate_latency.py --file queries.txt
@@ -39,8 +39,8 @@ class LatencyEstimator:
                 self.feature_extractor = pickle.load(f)
         except FileNotFoundError:
             raise FileNotFoundError(
-                f"Feature extractor not found at {feature_extractor_path}. "
-                f"Please ensure the feature extractor file exists or specify --feature-extractor path."
+                f'Feature extractor not found at {feature_extractor_path}. '
+                f'Please ensure the feature extractor file exists or specify --feature-extractor path.'
             )
 
         # Load checkpoint
@@ -48,8 +48,8 @@ class LatencyEstimator:
             checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         except FileNotFoundError:
             raise FileNotFoundError(
-                f"Model checkpoint not found at {checkpoint_path}. "
-                f"Please ensure the checkpoint file exists or specify --checkpoint path."
+                f'Model checkpoint not found at {checkpoint_path}. '
+                f'Please ensure the checkpoint file exists or specify --checkpoint path.'
             )
 
         # Create model
@@ -190,20 +190,20 @@ def parse_queries_from_file(filepath: str) -> list[str]:
 def format_latency(latency_seconds: float) -> str:
     """Format latency for human-readable output."""
     if latency_seconds is None:
-        return "ERROR"
+        return 'ERROR'
     if latency_seconds < 0.001:
-        return f"{latency_seconds * 1000000:.2f} µs"
+        return f'{latency_seconds * 1000000:.2f} µs'
     elif latency_seconds < 1:
-        return f"{latency_seconds * 1000:.2f} ms"
+        return f'{latency_seconds * 1000:.2f} ms'
     else:
-        return f"{latency_seconds:.3f} s"
+        return f'{latency_seconds:.3f} s'
 
 
 def truncate_query(query: str, max_length: int = 60) -> str:
     """Truncate query for display."""
     query = ' '.join(query.split())  # Normalize whitespace
     if len(query) > max_length:
-        return query[:max_length - 3] + "..."
+        return query[:max_length - 3] + '...'
     return query
 
 
@@ -212,31 +212,20 @@ def main():
 
     # Query input options (mutually exclusive)
     input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument('--query', '-q', type=str,
-                            help='Single Cypher query to estimate')
-    input_group.add_argument('--file', '-f', type=str,
-                            help='File containing queries (one per line or semicolon-separated)')
+    input_group.add_argument('--query', '-q', type=str, help='Single Cypher query to estimate')
+    input_group.add_argument('--file', '-f', type=str, help='File containing queries (one per line or semicolon-separated)')
 
     # Model options
-    parser.add_argument('--checkpoint', '-c', type=str,
-                       default='data/neo4j_qpp_checkpoint.pt',
-                       help='Path to model checkpoint (default: data/neo4j_qpp_checkpoint.pt)')
-    parser.add_argument('--feature-extractor', type=str, default=None,
-                       help='Path to feature extractor pickle (default: derived from checkpoint path)')
-    parser.add_argument('--hidden-dim', type=int, default=128,
-                       help='Hidden dimension of neural units (must match trained model)')
-    parser.add_argument('--num-layers', type=int, default=5,
-                       help='Number of layers per neural unit (must match trained model)')
-    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
-                       help='Device to use for inference')
+    parser.add_argument('--checkpoint', '-c', type=str, default='data/neo4j_qpp_checkpoint.pt', help='Path to model checkpoint (default: data/neo4j_qpp_checkpoint.pt)')
+    parser.add_argument('--feature-extractor', type=str, default=None, help='Path to feature extractor pickle (default: derived from checkpoint path)')
+    parser.add_argument('--hidden-dim', type=int, default=128, help='Hidden dimension of neural units (must match trained model)')
+    parser.add_argument('--num-layers', type=int, default=5, help='Number of layers per neural unit (must match trained model)')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'], help='Device to use for inference')
 
     # Output options
-    parser.add_argument('--verbose', '-v', action='store_true',
-                       help='Show detailed output including query plans')
-    parser.add_argument('--json', action='store_true',
-                       help='Output results in JSON format')
-    parser.add_argument('--quiet', action='store_true',
-                       help='Only output the estimated latency value(s)')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Show detailed output including query plans')
+    parser.add_argument('--json', action='store_true', help='Output results in JSON format')
+    parser.add_argument('--quiet', action='store_true', help='Only output the estimated latency value(s)')
 
     args = parser.parse_args()
 
@@ -247,16 +236,16 @@ def main():
         try:
             queries = parse_queries_from_file(args.file)
             if not queries:
-                print(f"Error: No queries found in {args.file}", file=sys.stderr)
+                print(f'Error: No queries found in {args.file}', file=sys.stderr)
                 sys.exit(1)
         except FileNotFoundError:
-            print(f"Error: File not found: {args.file}", file=sys.stderr)
+            print(f'Error: File not found: {args.file}', file=sys.stderr)
             sys.exit(1)
 
     # Initialize estimator
     try:
         if not args.quiet:
-            print("Loading model...", file=sys.stderr)
+            print('Loading model...', file=sys.stderr)
         estimator = LatencyEstimator(
             checkpoint_path=args.checkpoint,
             feature_extractor_path=args.feature_extractor,
@@ -265,10 +254,10 @@ def main():
             hidden_dim=args.hidden_dim
         )
         if not args.quiet:
-            print(f"Model loaded (trained for {estimator.epoch} epochs, "
-                  f"{estimator.model.count_parameters():,} parameters)\n", file=sys.stderr)
+            print(f'Model loaded (trained for {estimator.epoch} epochs, '
+                  f'{estimator.model.count_parameters():,} parameters)\n', file=sys.stderr)
     except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f'Error: {e}', file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -295,46 +284,46 @@ def main():
         elif args.quiet:
             for query, latency, plan in results:
                 if latency is not None:
-                    print(f"{latency:.6f}")
+                    print(f'{latency:.6f}')
                 else:
-                    print("ERROR")
+                    print('ERROR')
 
         else:
             # Standard output
             if len(results) == 1:
                 query, latency, plan = results[0]
                 if 'error' in plan:
-                    print(f"Error: {plan['error']}")
+                    print(f'Error: {plan['error']}')
                     sys.exit(1)
 
-                print(f"Query: {query.strip()}")
-                print(f"Estimated latency: {format_latency(latency)}")
+                print(f'Query: {query.strip()}')
+                print(f'Estimated latency: {format_latency(latency)}')
 
                 if args.verbose:
-                    print(f"\nQuery Plan:")
-                    print(f"  Root operator: {plan.get('operatorType', 'Unknown')}")
-                    print(f"  Estimated rows: {plan.get('args', {}).get('EstimatedRows', 'N/A')}")
+                    print(f'\nQuery Plan:')
+                    print(f'  Root operator: {plan.get('operatorType', 'Unknown')}')
+                    print(f'  Estimated rows: {plan.get('args', {}).get('EstimatedRows', 'N/A')}')
 
             else:
                 # Multiple queries - table format
-                print(f"{'#':<4} {'Query':<60} {'Estimated Latency':<20}")
-                print("-" * 84)
+                print(f'{'#':<4} {'Query':<60} {'Estimated Latency':<20}')
+                print('-' * 84)
 
                 for i, (query, latency, plan) in enumerate(results, 1):
                     query_display = truncate_query(query)
                     if 'error' in plan:
-                        latency_str = f"ERROR: {plan['error'][:30]}"
+                        latency_str = f'ERROR: {plan['error'][:30]}'
                     else:
                         latency_str = format_latency(latency)
-                    print(f"{i:<4} {query_display:<60} {latency_str:<20}")
+                    print(f'{i:<4} {query_display:<60} {latency_str:<20}')
 
                 # Summary
                 valid_latencies = [lat for _, lat, plan in results if lat is not None and 'error' not in plan]
                 if valid_latencies:
-                    print("-" * 84)
-                    print(f"Total queries: {len(results)}")
-                    print(f"Successful estimates: {len(valid_latencies)}")
-                    print(f"Average estimated latency: {format_latency(sum(valid_latencies) / len(valid_latencies))}")
+                    print('-' * 84)
+                    print(f'Total queries: {len(results)}')
+                    print(f'Successful estimates: {len(valid_latencies)}')
+                    print(f'Average estimated latency: {format_latency(sum(valid_latencies) / len(valid_latencies))}')
 
     finally:
         estimator.close()

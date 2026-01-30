@@ -32,7 +32,8 @@ class MCTSNode:
         actions = []
         for i, current_db in enumerate(self.state):
             for db in self.mcts.dbs.all_ids:
-                if db == current_db: continue
+                if db == current_db:
+                    continue
 
                 action = (i, db)
                 actions.append(action)
@@ -57,7 +58,8 @@ class MCTSNode:
 
     def expand(self, previous_states):
         viable_actions = self.get_viable_actions(previous_states)
-        if len(viable_actions) == 0: raise RuntimeError("ERROR: Trying to expand a node with no viable actions")
+        if len(viable_actions) == 0:
+            raise RuntimeError('ERROR: Trying to expand a node with no viable actions')
 
         action = random.choice(viable_actions)
         self.actions_left.remove(action)
@@ -82,7 +84,7 @@ class MCTSNode:
     def get_best_child(self, path, exploration_weight=1.414):
         viable_children = list(set(self.children) - set(path))
         if not viable_children:
-            raise RuntimeError(f"Trying to go down a node with no viable children:\n  Node's children: {self.children}\n  Current path: {path}")
+            raise RuntimeError(f'Trying to go down a node with no viable children:\n  Node\'s children: {self.children}\n  Current path: {path}')
 
 
         #? Could work with edge statistics instead of node statistics to eliminate shared-visit distortion.
@@ -142,7 +144,7 @@ class MCTS:
                 path.append(node)
                 previous_states.add(node.state)
 
-            print(f"Selected node to expand with state: {node.state}")
+            print(f'Selected node to expand with state: {node.state}')
 
             # 2. Expansion
             if not node.is_fully_expanded(previous_states):
@@ -155,7 +157,7 @@ class MCTS:
                     schema_mapping = self.state_to_mapping(node.state)
                     reward, exec_time = self.perform_simulation(schema_mapping)
 
-                    print(f"Time: {exec_time}s with state: {node.state}")
+                    print(f'Time: {exec_time}s with state: {node.state}')
 
                     if exec_time < best_time:
                         best_time = exec_time
@@ -167,7 +169,7 @@ class MCTS:
 
             path_has_duplicates = len(path) != len(set(path))
             if path_has_duplicates:
-                raise RuntimeError(f"ERROR: path has some duplicate states:\n  {[node.state for node in path]}")
+                raise RuntimeError(f'ERROR: path has some duplicate states:\n  {[node.state for node in path]}')
 
             # 4. Backpropagation
             for node in path:
@@ -186,11 +188,11 @@ class MCTS:
 
 def main():
     tables = ('customer', 'orders', 'supplier', 'part', 'partsupp', 'lineitem')
-    initial_mapping = ('postgres') = tuple(["postgres"] * len(tables))
+    initial_mapping = ('postgres') = tuple(['postgres'] * len(tables))
     dbs = DatabaseProvider.default(Config.load())
     mcts = MCTS(dbs, tables)
     best_mapping, best_time = mcts.run(initial_mapping, iterations=50)
-    print(f"Final best mapping: {best_mapping} with time {best_time}s")
+    print(f'Final best mapping: {best_mapping} with time {best_time}s')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

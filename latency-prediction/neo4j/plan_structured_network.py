@@ -48,10 +48,9 @@ class PlanStructuredNetwork(nn.Module):
         """
         # Remove @neo4j suffix if present
         operator_type = operator_type.replace('@neo4j', '')
-        return f"{operator_type}_{num_children}"
+        return f'{operator_type}_{num_children}'
 
-    def _ensure_unit_exists(self, operator_type: str, num_children: int,
-                           feature_dim: int) -> str:
+    def _ensure_unit_exists(self, operator_type: str, num_children: int, feature_dim: int) -> str:
         """
         Ensure a neural unit exists for the given operator configuration.
         Creates it if it doesn't exist.
@@ -157,10 +156,7 @@ class PlanStructuredNetwork(nn.Module):
 
         # Root should have predicted latency
         if 'latency' not in output:
-            raise ValueError(
-                f"Root operator {plan.get('operatorType')} did not predict latency. "
-                "Make sure root is ProduceResults."
-            )
+            raise ValueError(f'Root operator {plan.get('operatorType')} did not predict latency. Make sure root is ProduceResults.')
 
         return output['latency']
 
@@ -194,7 +190,7 @@ class PlanStructuredNetwork(nn.Module):
         Args:
             plans: List of Neo4j query plans
         """
-        print("Initializing neural units from plans...")
+        print('Initializing neural units from plans...')
 
         def scan_node(node):
             operator_type = node.get('operatorType', 'Unknown').replace('@neo4j', '')
@@ -216,8 +212,8 @@ class PlanStructuredNetwork(nn.Module):
         for plan in plans:
             scan_node(plan)
 
-        print(f"  Created {len(self.units)} unique neural units")
-        print(f"  Operator types: {sorted(self.operator_types)}")
+        print(f'  Created {len(self.units)} unique neural units')
+        print(f'  Operator types: {sorted(self.operator_types)}')
 
     def get_operator_info(self) -> dict:
         """
