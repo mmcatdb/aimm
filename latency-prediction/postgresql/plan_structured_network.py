@@ -172,7 +172,7 @@ class PlanStructuredNetwork(nn.Module):
             raise ValueError(f'No neural unit found for operator type/children combination: {op_key}. Available types: {list(self.units.keys())}')
         return self.units[op_key]
 
-    def process_node(self, node: dict, cache: dict = None) -> torch.Tensor:
+    def process_node(self, node: dict, cache: dict | None = None) -> torch.Tensor:
         """
         Recursively process a query plan node.
 

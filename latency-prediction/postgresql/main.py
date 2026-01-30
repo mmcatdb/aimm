@@ -14,7 +14,8 @@ import pickle
 import copy
 import json
 import argparse
-from config import DatabaseConfig
+from common.config import Config
+from common.databases import Postgres
 from plan_extractor import PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
@@ -48,8 +49,9 @@ def main():
 
     # Step 1: Initialize database connection
     print('\n[1/7] Connecting to database...')
-    config = DatabaseConfig()
-    extractor = PlanExtractor(config)
+    config = Config.load()
+    postgres = Postgres(config.postgres)
+    extractor = PlanExtractor(postgres)
 
     # Step 2: Collect query plans
     print(f'\n[2/7] Collecting {NUM_QUERIES} query plans...')
@@ -128,10 +130,10 @@ def main():
 
             # Evaluate on test set
             metrics = trainer.evaluate(test_dataset)
-            print(f'  Test MAE: {metrics['mae']:.2f} ms')
-            print(f'  Test Relative Error: {metrics['relative_error']:.4f}')
-            print(f'  Test R ≤ 1.5: {metrics['r_within_1.5']*100:.1f}%')
-            print(f'  Test R ≤ 2.0: {metrics['r_within_2.0']*100:.1f}%')
+            print(f'  Test MAE: {metrics["mae"]:.2f} ms')
+            print(f'  Test Relative Error: {metrics["relative_error"]:.4f}')
+            print(f'  Test R ≤ 1.5: {metrics["r_within_1.5"]*100:.1f}%')
+            print(f'  Test R ≤ 2.0: {metrics["r_within_2.0"]*100:.1f}%')
 
             # Track and save best model
             if metrics['mae'] < best_test_mae:
@@ -188,9 +190,9 @@ def main():
     print('\n' + '=' * 80)
     print('Training complete!')
     print('=' * 80)
-    print(f'\nFinal Test MAE: {test_metrics['mae']:.2f} ms')
-    print(f'Final Test Relative Error: {test_metrics['relative_error']:.4f}')
-    print(f'Predictions within factor of 1.5: {test_metrics['r_within_1.5']*100:.1f}%')
+    print(f'\nFinal Test MAE: {test_metrics["mae"]:.2f} ms')
+    print(f'Final Test Relative Error: {test_metrics["relative_error"]:.4f}')
+    print(f'Predictions within factor of 1.5: {test_metrics["r_within_1.5"]*100:.1f}%')
 
 if __name__ == '__main__':
     main()

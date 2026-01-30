@@ -6,13 +6,13 @@ This module handles:
 - Parsing the plan structure
 - Recording ground truth latencies
 """
-import yaml
 import time
 import datetime
 import random
 from typing import Any
-from neo4j import GraphDatabase
 import numpy as np
+
+from common.databases import Neo4j, cypher
 
 class PlanExtractor:
     """
@@ -22,26 +22,12 @@ class PlanExtractor:
 
     NUM_QUERY_TYPES = 32
 
-    def __init__(self, config_path: str = 'config.yaml'):
-        """
-        Initialize connection to Neo4j database.
-
-        Args:
-            config_path: Path to YAML config file with Neo4j credentials
-        """
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-
-        neo4j_config = config['neo4j']
-        self.driver = GraphDatabase.driver(
-            neo4j_config['uri'],
-            auth=(neo4j_config['user'], neo4j_config['password'])
-        )
+    def __init__(self, neo4j: Neo4j):
+        self.neo4j = neo4j
 
     def close(self):
         """Close database connection."""
-        if self.driver:
-            self.driver.close()
+        self.neo4j.close()
 
     def generate_workload_queries(self, num_queries: int = 350) -> list[str]:
         """
@@ -87,7 +73,7 @@ class PlanExtractor:
         def get_random_name(table_name, max_id, min_id=1, id_length=9):
             num = random.randint(min_id, max_id)
             num_padding_zeroes = id_length - len(str(num))
-            return f'{table_name}#{'0'*num_padding_zeroes}{num}'
+            return f'{table_name}#{"0" * num_padding_zeroes}{num}'
 
 
         # Q1: Pricing Summary Report
@@ -478,10 +464,12 @@ LIMIT 50
         Returns:
             Query plan as dictionary
         """
-        with self.driver.session() as session:
-            result = session.run(f'EXPLAIN {query}')
-            summary = result.consume()
-            plan = summary.plan
+        with self.neo4j.session() as session:
+            result = session.run(cypher(f'EXPLAIN {query}'))
+            plan = result.consume().plan
+            if (plan is None):
+                raise ValueError('Failed to retrieve query plan.')
+
             return plan
 
     def execute_query(self, query: str, num_runs: int = 1, show_details: bool = False) -> float:
@@ -497,10 +485,10 @@ LIMIT 50
         """
         execution_times = []
 
-        with self.driver.session() as session:
+        with self.neo4j.session() as session:
             for _ in range(num_runs):
                 start_time = time.time()
-                result = session.run(query)
+                result = session.run(cypher(query))
 
                 if show_details:
                     print(query)
@@ -513,7 +501,7 @@ LIMIT 50
                 end_time = time.time()
                 execution_times.append(end_time - start_time)
 
-        return np.mean(execution_times)
+        return np.mean(execution_times).item()
 
     def get_plan_and_execute(self, query: str, num_runs: int = 1, show_details: bool = False) -> tuple[dict, float]:
         """
@@ -533,8 +521,7 @@ LIMIT 50
 
         return plan, execution_time
 
-    def collect_workload(self, num_queries: int = 350,
-                         num_runs_per_query: int = 1, show_details: bool = False) -> tuple[list[str], list[dict], list[float]]:
+    def collect_workload(self, num_queries: int = 350, num_runs_per_query: int = 1, show_details: bool = False) -> tuple[list[str], list[dict], list[float]]:
         """
         Collect a workload of query plans and execution times.
 
@@ -569,12 +556,12 @@ LIMIT 50
                 print(f' ERROR: {str(e)}')
                 continue
 
-        print(f'\n{'='*60}')
+        print(f'\n{"=" * 60}')
         print(f'Workload collection complete!')
         print(f'  Total queries: {len(queries)}')
         print(f'  Average execution time: {np.mean(all_times):.4f}s')
         print(f'  Min/Max execution time: {np.min(all_times):.4f}s / {np.max(all_times):.4f}s')
-        print(f'{'='*60}\n')
+        print(f'{"=" * 60}\n')
 
         return queries, all_plans, all_times
 
@@ -615,3 +602,43 @@ LIMIT 50
             'max_plan_depth': max_depth,
             'avg_operators_per_plan': total_operators / len(plans) if plans else 0
         }
+
+    def collect_training_data(self, queries: list[str], num_runs: int = 3) -> tuple[list[str], list[dict], list[float]]:
+        """
+        Collect training data by executing queries and measuring their performance.
+
+        Args:
+            queries: List of Cypher query strings
+            num_runs: Number of executions per query for averaging
+
+        Returns:
+            Tuple of (queries, plans, execution_times)
+        """
+        print(f'Collecting training data from {len(queries)} queries...')
+        print(f'Each query will be executed {num_runs} times for averaging.')
+
+        collected_queries = []
+        plans = []
+        execution_times = []
+
+        for i, query in enumerate(queries):
+            try:
+                print(f'\nQuery {i+1}/{len(queries)}:')
+                print(f'  {query[:100]}...' if len(query) > 100 else f'  {query}')
+
+                # Get plan and execution time
+                plan, exec_time = self.get_plan_and_execute(query, num_runs)
+
+                collected_queries.append(query)
+                plans.append(plan)
+                execution_times.append(exec_time)
+
+                print(f'  Execution time: {exec_time:.4f}s')
+                print(f'  Root operator: {plan.get("operatorType", "Unknown")}')
+
+            except Exception as e:
+                print(f'  ERROR: Failed to process query: {e}')
+                continue
+
+        print(f'\nSuccessfully collected {len(plans)} query plans.')
+        return collected_queries, plans, execution_times

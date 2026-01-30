@@ -15,6 +15,8 @@ import pickle
 import argparse
 from tabulate import tabulate
 
+from common.config import Config
+from common.databases import Neo4j, cypher
 from plan_extractor import PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
@@ -22,8 +24,7 @@ from plan_structured_network import PlanStructuredNetwork
 class ModelEvaluator:
     """Evaluates a trained Neo4j QPP model."""
 
-    def __init__(self, checkpoint_path: str, feature_extractor_path: str,
-                 device: str = 'cpu', num_layers: int = 10, hidden_dim: int = 128):
+    def __init__(self, neo4j: Neo4j, checkpoint_path: str, feature_extractor_path: str, device: str = 'cpu', num_layers: int = 10, hidden_dim: int = 128):
         """
         Args:
             checkpoint_path: Path to model checkpoint
@@ -32,6 +33,7 @@ class ModelEvaluator:
             num_layers: Number of layers in neural units
             hidden_dim: Hidden dimension of neural units
         """
+        self.extractor = PlanExtractor(neo4j)
         self.device = device
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
@@ -109,12 +111,9 @@ class ModelEvaluator:
         self.model.to(device)
         self.model.eval()
 
-        print(f'  Trained for {checkpoint['epoch']} epochs')
+        print(f'  Trained for {checkpoint["epoch"]} epochs')
         print(f'  Model has {self.model.count_parameters():,} parameters')
         print(f'  Number of neural units: {len(self.model.units)}')
-
-        # Connect to Neo4j
-        self.extractor = PlanExtractor()
 
     def close(self):
         """Close database connection."""
@@ -151,17 +150,17 @@ class ModelEvaluator:
         """
         execution_times = []
 
-        with self.extractor.driver.session() as session:
+        with self.extractor.neo4j.session() as session:
             for _ in range(num_runs):
                 start_time = time.time()
-                result = session.run(query)
+                result = session.run(cypher(query))
                 result.consume()
                 end_time = time.time()
                 execution_times.append(end_time - start_time)
 
-        return np.mean(execution_times), np.std(execution_times)
+        return np.mean(execution_times).item(), np.std(execution_times).item()
 
-    def evaluate_query(self, query: str, query_name: str = None, num_runs: int = 3) -> dict:
+    def evaluate_query(self, query: str, query_name: str | None = None, num_runs: int = 3) -> dict:
         """
         Evaluate a single query.
 
@@ -265,10 +264,10 @@ class ModelEvaluator:
         for r in results:
             table_data.append([
                 r['query_name'][:30] if r['query_name'] else 'N/A',
-                f'{r['predicted_latency'] * 1000:.2f}',
-                f'{r['actual_latency'] * 1000:.2f}',
-                f'{r['absolute_error'] * 1000:.2f}',
-                f'{r['r_value']:.4f}' if r['r_value'] != float('inf') else 'inf'
+                f'{r["predicted_latency"] * 1000:.2f}',
+                f'{r["actual_latency"] * 1000:.2f}',
+                f'{r["absolute_error"] * 1000:.2f}',
+                f'{r["r_value"]:.4f}' if r['r_value'] != float('inf') else 'inf'
             ])
 
         print('\n' + '=' * 70)
@@ -985,7 +984,10 @@ def main():
     print('=' * 70)
 
     # Load model
+    config = Config.load()
+    neo4j = Neo4j(config.neo4j)
     evaluator = ModelEvaluator(
+        neo4j=neo4j,
         checkpoint_path=args.checkpoint,
         feature_extractor_path=args.feature_extractor,
         device=args.device,

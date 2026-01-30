@@ -4,6 +4,8 @@ import pickle
 import argparse
 import time
 
+from common.config import Config
+from common.databases import Neo4j
 from plan_extractor import PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
@@ -85,13 +87,15 @@ def main():
     print(f'  Device: {args.device}')
     print()
 
+    config = Config.load()
+    neo4j = Neo4j(config.neo4j)
 
     if args.load_workload:
         print(f'Loading workload data from {args.load_workload}...')
         queries, plans, execution_times = load_workload_data(args.load_workload)
     else:
         print('Connecting to Neo4j and collecting workload...')
-        extractor = PlanExtractor()
+        extractor = PlanExtractor(neo4j)
 
         try:
             queries, plans, execution_times = extractor.collect_workload(
@@ -106,7 +110,6 @@ def main():
             extractor.close()
 
     print(f'\nCollected {len(queries)} queries with execution times')
-
 
     feature_extractor = FeatureExtractor()
     feature_extractor.build_vocabularies(plans)
@@ -145,6 +148,7 @@ def main():
     start_time = time.time()
 
     model = train_model(
+        neo4j=neo4j,
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         feature_extractor=feature_extractor,
@@ -165,7 +169,7 @@ def main():
     print('\n' + '=' * 70)
     print('Evalutation')
 
-    trainer = PlanStructuredTrainer(model, device=args.device)
+    trainer = PlanStructuredTrainer(neo4j=neo4j, model=model, device=args.device)
 
     print('\nTraining set performance:')
     train_metrics = trainer.evaluate(train_dataset, batch_size=args.batch_size)

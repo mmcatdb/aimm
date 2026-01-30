@@ -81,7 +81,7 @@ class PlanStructuredNetwork(nn.Module):
 
         return key
 
-    def _process_node(self, node: dict, cache: dict = None) -> dict[str, torch.Tensor]:
+    def _process_node(self, node: dict, cache: dict | None = None) -> dict[str, torch.Tensor]:
         """
         Recursively process a query plan node.
 
@@ -156,7 +156,7 @@ class PlanStructuredNetwork(nn.Module):
 
         # Root should have predicted latency
         if 'latency' not in output:
-            raise ValueError(f'Root operator {plan.get('operatorType')} did not predict latency. Make sure root is ProduceResults.')
+            raise ValueError(f'Root operator {plan.get("operatorType")} did not predict latency. Make sure root is ProduceResults.')
 
         return output['latency']
 

@@ -1,6 +1,6 @@
-import yaml
 import time
 from common.database_provider import DatabaseProvider
+from common.databases import Mongo, Neo4j, Postgres
 from daos.mongo_dao import MongoDAO
 from daos.neo4j_dao import Neo4jDAO
 from daos.postgres_dao import PostgresDAO
@@ -9,9 +9,9 @@ class QueryEngine:
     def __init__(self, dbs: DatabaseProvider, schema_mapping: dict[str, str]):
         self.schema_mapping = schema_mapping
         self.daos = {
-            'postgres': PostgresDAO(dbs.get('postgres')),
-            'mongo': MongoDAO(dbs.get('mongo')),
-            'neo4j': Neo4jDAO(dbs.get('neo4j')),
+            'postgres': PostgresDAO(dbs.get_typed('postgres', Postgres)),
+            'mongo': MongoDAO(dbs.get_typed('mongo', Mongo)),
+            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4j)),
         }
 
     def get_dao_for_entity(self, entity_name):
@@ -55,12 +55,12 @@ class QueryEngine:
         start = checkpoint = time.time()
 
         if verbose:
-            print(f'Customers stored in: {self.schema_mapping['customer']}')
-            print(f'Orders stored in: {self.schema_mapping['orders']}')
-            print(f'Lineitems stored in: {self.schema_mapping['lineitem']}')
-            print(f'Parts stored in: {self.schema_mapping['part']}')
-            print(f'Suppliers stored in: {self.schema_mapping['supplier']}')
-            print(f'PartSupp stored in: {self.schema_mapping['partsupp']}')
+            print(f'Customers stored in: {self.schema_mapping["customer"]}')
+            print(f'Orders stored in: {self.schema_mapping["orders"]}')
+            print(f'Lineitems stored in: {self.schema_mapping["lineitem"]}')
+            print(f'Parts stored in: {self.schema_mapping["part"]}')
+            print(f'Suppliers stored in: {self.schema_mapping["supplier"]}')
+            print(f'PartSupp stored in: {self.schema_mapping["partsupp"]}')
             print('=' * 50)
 
         lineitem_dao = self.get_dao_for_entity('lineitem')
@@ -179,7 +179,7 @@ class QueryEngine:
         # PS2
         lowest_cost = partsupp_dao.get_lowest_cost_supplier_for_part(partkey_example)
         if verbose:
-            print(f'PS2) Lowest cost supplier for part {partkey_example}: {'found' if lowest_cost else 'none'}')
+            print(f'PS2) Lowest cost supplier for part {partkey_example}: {"found" if lowest_cost else "none"}')
             print(f'Time PS2: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 

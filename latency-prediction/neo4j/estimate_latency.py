@@ -11,7 +11,8 @@ import pickle
 import argparse
 import sys
 
-from plan_extractor import PlanExtractor
+from common.config import Config
+from plan_extractor import Neo4j, PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
 from neural_units import create_neural_unit
@@ -23,8 +24,8 @@ class LatencyEstimator:
     Uses EXPLAIN to get the query plan and neural network for prediction.
     """
 
-    def __init__(self, checkpoint_path: str, feature_extractor_path: str = None,
-                 device: str = 'cpu', num_layers: int = 5, hidden_dim: int = 128):
+    def __init__(self, neo4j: Neo4j, checkpoint_path: str, feature_extractor_path: str | None = None, device: str = 'cpu', num_layers: int = 5, hidden_dim: int = 128):
+        self.extractor = PlanExtractor(neo4j)
         self.device = device
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
@@ -106,9 +107,6 @@ class LatencyEstimator:
 
         # Store model info
         self.epoch = checkpoint.get('epoch', 'unknown')
-
-        # Connect to Neo4j
-        self.extractor = PlanExtractor()
 
     def close(self):
         """Close database connection."""
@@ -246,7 +244,11 @@ def main():
     try:
         if not args.quiet:
             print('Loading model...', file=sys.stderr)
+
+        config = Config.load()
+        neo4j = Neo4j(config.neo4j)
         estimator = LatencyEstimator(
+            neo4j=neo4j,
             checkpoint_path=args.checkpoint,
             feature_extractor_path=args.feature_extractor,
             device=args.device,
@@ -293,7 +295,7 @@ def main():
             if len(results) == 1:
                 query, latency, plan = results[0]
                 if 'error' in plan:
-                    print(f'Error: {plan['error']}')
+                    print(f'Error: {plan["error"]}')
                     sys.exit(1)
 
                 print(f'Query: {query.strip()}')
@@ -301,18 +303,18 @@ def main():
 
                 if args.verbose:
                     print(f'\nQuery Plan:')
-                    print(f'  Root operator: {plan.get('operatorType', 'Unknown')}')
-                    print(f'  Estimated rows: {plan.get('args', {}).get('EstimatedRows', 'N/A')}')
+                    print(f'  Root operator: {plan.get("operatorType", "Unknown")}')
+                    print(f'  Estimated rows: {plan.get("args", {}).get("EstimatedRows", "N/A")}')
 
             else:
                 # Multiple queries - table format
-                print(f'{'#':<4} {'Query':<60} {'Estimated Latency':<20}')
+                print(f'{"#":<4} {"Query":<60} {"Estimated Latency":<20}')
                 print('-' * 84)
 
                 for i, (query, latency, plan) in enumerate(results, 1):
                     query_display = truncate_query(query)
                     if 'error' in plan:
-                        latency_str = f'ERROR: {plan['error'][:30]}'
+                        latency_str = f'ERROR: {plan["error"][:30]}'
                     else:
                         latency_str = format_latency(latency)
                     print(f'{i:<4} {query_display:<60} {latency_str:<20}')

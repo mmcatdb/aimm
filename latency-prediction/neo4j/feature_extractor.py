@@ -251,7 +251,7 @@ class FeatureExtractor:
 
         return feature_vector
 
-    def get_feature_dim(self, node_type: str = None) -> int:
+    def get_feature_dim(self, node_type: str | None = None) -> int:
         """
         Get the dimension of the feature vector for a given node type.
         In Neo4j, all operators have the same feature vector size (unlike Postgres

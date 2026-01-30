@@ -1,3 +1,4 @@
+from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -8,7 +9,16 @@ class PostgresDAO(BaseDAO):
     def __init__(self, postgres: Postgres):
         self.postgres = postgres
 
-    def find(self, entity_name, query_params):
+    def _execute_query(self, query, params=None):
+        with self.postgres.cursor(cursor_factory = RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            if cursor.description:
+                results = cursor.fetchall()
+                return results
+
+        raise ValueError('Query did not return any results.')
+
+    def find(self, entity_name, query_params) -> list[dict[Any, Any]]:
         query = f'SELECT * FROM {entity_name} WHERE '
         conditions = []
         params = []
@@ -24,20 +34,13 @@ class PostgresDAO(BaseDAO):
 
         with self.postgres.cursor() as cursor:
             cursor.execute(query, tuple(params))
+            if cursor.description is None:
+                return []
+
             columns = [desc[0] for desc in cursor.description]
             results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
         return results
-
-    def _execute_query(self, query, params=None):
-        with self.postgres.cursor(cursor_factory = RealDictCursor) as cursor:
-            cursor.execute(query, params)
-            if cursor.description:
-                results = cursor.fetchall()
-                return results
-
-            # In case of non-select statements return None
-            return None
 
     def get_all_lineitems(self):
         return self._execute_query('SELECT * FROM lineitem;')
@@ -120,17 +123,17 @@ class PostgresDAO(BaseDAO):
             cursor.execute(query, list(data.values()))
 
     def create_schema(self, entity_name, schema):
-        columns_def = [f'{col['name']} {col['type'].replace('PRIMARY KEY', '').strip()}' for col in schema]
+        columns_def = [f'{col["name"]} {col["type"].replace("PRIMARY KEY", "").strip()}' for col in schema]
 
         # Identify primary key columns from the primary_key flag
         pk_cols = [col['name'] for col in schema if col.get('primary_key')]
         if not pk_cols:
             raise ValueError(f'No primary key defined for entity "{entity_name}". Please specify a primary key(s) in the schema.')
 
-        pk_def = f', PRIMARY KEY ({', '.join(pk_cols)})'
+        pk_def = f', PRIMARY KEY ({", ".join(pk_cols)})'
 
         # Build and execute the final query
-        query = f'CREATE TABLE IF NOT EXISTS {entity_name} ({', '.join(columns_def)}{pk_def})'
+        query = f'CREATE TABLE IF NOT EXISTS {entity_name} ({", ".join(columns_def)}{pk_def})'
 
         with self.postgres.cursor() as cursor:
             cursor.execute(query)

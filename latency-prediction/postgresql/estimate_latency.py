@@ -10,14 +10,14 @@ import torch
 import argparse
 import sys
 
-from config import DatabaseConfig
+from common.config import Config
+from common.databases import Postgres
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
 from neural_units import GenericUnit
 
 
-def create_neural_unit(operator_type: str, input_dim: int, num_children: int,
-                       data_vec_dim: int, hidden_dim: int, num_layers: int):
+def create_neural_unit(operator_type: str, input_dim: int, num_children: int, data_vec_dim: int, hidden_dim: int, num_layers: int):
     """Create a neural unit for a given operator type."""
     return GenericUnit(
         input_dim=input_dim,
@@ -34,9 +34,8 @@ class LatencyEstimator:
     Uses EXPLAIN to get the query plan and neural network for prediction.
     """
 
-    def __init__(self, checkpoint_path: str,
-                 device: str = 'cpu', num_layers: int = None, hidden_dim: int = None,
-                 config_path: str = 'config.yaml'):
+    def __init__(self, postgres: Postgres, checkpoint_path: str, device: str = 'cpu', num_layers: int | None = None, hidden_dim: int | None = None):
+        self.postgres = postgres
         self.device = device
 
         # Load checkpoint
@@ -112,9 +111,6 @@ class LatencyEstimator:
         # Store model info
         self.epoch = checkpoint.get('epoch', 'unknown')
 
-        # Connect to PostgreSQL
-        self.config = DatabaseConfig(config_path)
-
     def close(self):
         """Close database connection (should be no persistent connection for PostgreSQL)."""
         pass
@@ -129,22 +125,23 @@ class LatencyEstimator:
         Returns:
             Query plan dictionary
         """
-        conn = self.config.get_connection()
-
+        connection = self.postgres.get_connection()
         try:
-            conn.autocommit = True
-            with conn.cursor() as cursor:
+            connection.autocommit = True
+            with connection.cursor() as cursor:
                 # Get the plan without execution (no ANALYZE)
                 explain_query = f'EXPLAIN (FORMAT JSON, VERBOSE) {query}'
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
+                if result is None:
+                    raise RuntimeError('No plan returned from EXPLAIN.')
 
                 # Parse JSON plan - EXPLAIN returns [{'Plan': {...}}]
                 plan_json = result[0][0]
 
                 return plan_json['Plan']
         finally:
-            conn.close()
+            self.postgres.put_connection(connection)
 
     def estimate(self, query: str) -> tuple[float, dict]:
         """
@@ -245,28 +242,17 @@ def main():
 
     # Query input options (mutually exclusive)
     input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument('--query', '-q', type=str,
-                            help='Single SQL query to estimate')
-    input_group.add_argument('--file', '-f', type=str,
-                            help='File containing queries (one per line or semicolon-separated)')
+    input_group.add_argument('--query', '-q', type=str, help='Single SQL query to estimate')
+    input_group.add_argument('--file', '-f', type=str, help='File containing queries (one per line or semicolon-separated)')
 
-    parser.add_argument('--checkpoint', '-c', type=str,
-                       default='qpp_net_model.pt',
-                       help='Path to model checkpoint (default: qpp_net_model.pt)')
-    parser.add_argument('--hidden-dim', type=int, default=None,
-                       help='Hidden dimension of neural units (default: auto-detect from checkpoint)')
-    parser.add_argument('--num-layers', type=int, default=None,
-                       help='Number of layers per neural unit (default: auto-detect from checkpoint)')
-    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
-                       help='Device to use for inference')
-    parser.add_argument('--config', type=str, default='config.yaml',
-                       help='Path to database config file (default: config.yaml)')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                       help='Show detailed output including query plans')
-    parser.add_argument('--json', action='store_true',
-                       help='Output results in JSON format')
-    parser.add_argument('--quiet', action='store_true',
-                       help='Only output the estimated latency value(s)')
+    parser.add_argument('--checkpoint', '-c', type=str, default='qpp_net_model.pt', help='Path to model checkpoint (default: qpp_net_model.pt)')
+    parser.add_argument('--hidden-dim', type=int, default=None, help='Hidden dimension of neural units (default: auto-detect from checkpoint)')
+    parser.add_argument('--num-layers', type=int, default=None, help='Number of layers per neural unit (default: auto-detect from checkpoint)')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'], help='Device to use for inference')
+    parser.add_argument('--config', type=str, default=None, help=f'Path to config file (default: {Config.DEFAULT_CONFIG_PATH})')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Show detailed output including query plans')
+    parser.add_argument('--json', action='store_true', help='Output results in JSON format')
+    parser.add_argument('--quiet', action='store_true', help='Only output the estimated latency value(s)')
 
     args = parser.parse_args()
 
@@ -287,16 +273,21 @@ def main():
     try:
         if not args.quiet:
             print('Loading model...', file=sys.stderr)
+
+        config = Config.load(args.config)
+        postgres = Postgres(config.postgres)
         estimator = LatencyEstimator(
+            postgres=postgres,
             checkpoint_path=args.checkpoint,
             device=args.device,
             num_layers=args.num_layers,
             hidden_dim=args.hidden_dim,
-            config_path=args.config
         )
+
         if not args.quiet:
             num_params = sum(p.numel() for p in estimator.model.parameters())
             print(f'Model loaded (trained for {estimator.epoch} epochs, {num_params:,} parameters)\n', file=sys.stderr)
+
     except FileNotFoundError as e:
         print(f'Error: {e}', file=sys.stderr)
         sys.exit(1)
@@ -334,7 +325,7 @@ def main():
             if len(results) == 1:
                 query, latency, plan = results[0]
                 if 'error' in plan:
-                    print(f'Error: {plan['error']}')
+                    print(f'Error: {plan["error"]}')
                     sys.exit(1)
 
                 print(f'Query: {query.strip()}')
@@ -342,19 +333,19 @@ def main():
 
                 if args.verbose:
                     print(f'\nQuery Plan:')
-                    print(f'  Root operator: {plan.get('Node Type', 'Unknown')}')
-                    print(f'  Estimated rows: {plan.get('Plan Rows', 'N/A')}')
-                    print(f'  Total cost: {plan.get('Total Cost', 'N/A')}')
+                    print(f'  Root operator: {plan.get("Node Type", "Unknown")}')
+                    print(f'  Estimated rows: {plan.get("Plan Rows", "N/A")}')
+                    print(f'  Total cost: {plan.get("Total Cost", "N/A")}')
 
             else:
                 # Multiple queries - table format
-                print(f'{'#':<4} {'Query':<60} {'Estimated Latency':<20}')
+                print(f'{"#":<4} {"Query":<60} {"Estimated Latency":<20}')
                 print('-' * 84)
 
                 for i, (query, latency, plan) in enumerate(results, 1):
                     query_display = truncate_query(query)
                     if 'error' in plan:
-                        latency_str = f'ERROR: {plan['error'][:30]}'
+                        latency_str = f'ERROR: {plan["error"][:30]}'
                     else:
                         latency_str = format_latency(latency)
                     print(f'{i:<4} {query_display:<60} {latency_str:<20}')

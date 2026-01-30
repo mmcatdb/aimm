@@ -188,7 +188,7 @@ class MCTS:
 
 def main():
     tables = ('customer', 'orders', 'supplier', 'part', 'partsupp', 'lineitem')
-    initial_mapping = ('postgres') = tuple(['postgres'] * len(tables))
+    initial_mapping = tuple(['postgres'] * len(tables))
     dbs = DatabaseProvider.default(Config.load())
     mcts = MCTS(dbs, tables)
     best_mapping, best_time = mcts.run(initial_mapping, iterations=50)
