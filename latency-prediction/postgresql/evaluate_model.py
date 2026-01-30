@@ -19,7 +19,7 @@ class ModelEvaluator:
         Args:
             model_path: Path to saved model checkpoint
         """
-        print("Loading trained model...")
+        print('Loading trained model...')
         checkpoint = torch.load(model_path, weights_only=False)
 
         self.feature_extractor = checkpoint['feature_extractor']
@@ -37,7 +37,7 @@ class ModelEvaluator:
         if 'operator_info' in checkpoint:
             self.model.initialize_units_from_operator_info(checkpoint['operator_info'])
         else:
-            raise ValueError("Model checkpoint does not contain operator_info. Please retrain the model with the updated main.py script.")
+            raise ValueError('Model checkpoint does not contain operator_info. Please retrain the model with the updated main.py script.')
 
         # Load trained weights
         self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -45,12 +45,12 @@ class ModelEvaluator:
 
         # Print training metrics if available
         if 'metrics' in checkpoint:
-            print("\nTraining Metrics:")
-            print(f"  Train MAE: {checkpoint['metrics']['train']['mae']:.2f} ms")
-            print(f"  Test MAE: {checkpoint['metrics']['test']['mae']:.2f} ms")
-            print(f"  Test R ≤ 1.5: {checkpoint['metrics']['test']['r_within_1.5']*100:.1f}%")
+            print('\nTraining Metrics:')
+            print(f'  Train MAE: {checkpoint['metrics']['train']['mae']:.2f} ms')
+            print(f'  Test MAE: {checkpoint['metrics']['test']['mae']:.2f} ms')
+            print(f'  Test R ≤ 1.5: {checkpoint['metrics']['test']['r_within_1.5']*100:.1f}%')
 
-        print("Model loaded successfully!\n")
+        print('Model loaded successfully!\n')
 
     def get_query_plan_only(self, query: str) -> dict:
         """
@@ -69,7 +69,7 @@ class ModelEvaluator:
 
         try:
             with conn.cursor() as cursor:
-                explain_query = f"EXPLAIN (FORMAT JSON, VERBOSE) {query}"
+                explain_query = f'EXPLAIN (FORMAT JSON, VERBOSE) {query}'
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
                 plan = result[0][0]['Plan']
@@ -93,7 +93,7 @@ class ModelEvaluator:
 
         try:
             with conn.cursor() as cursor:
-                explain_query = f"EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}"
+                explain_query = f'EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}'
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
                 plan_json = result[0][0]
@@ -164,34 +164,34 @@ class ModelEvaluator:
             Dictionary with all measurements and comparisons
         """
         if query_name is None:
-            query_name = f"Query_{hash(query) % 10000}"
+            query_name = f'Query_{hash(query) % 10000}'
 
-        print(f"\nEvaluating: {query_name}")
-        print("-" * 80)
+        print(f'\nEvaluating: {query_name}')
+        print('-' * 80)
 
         results = {'query_name': query_name, 'query': query}
 
         # 1. Get prediction (without executing)
-        print("  [1/3] Getting query plan and prediction...")
+        print('  [1/3] Getting query plan and prediction...')
         plan = self.get_query_plan_only(query)
         predicted_time = self.predict_latency(plan)
         results['predicted_time'] = predicted_time
-        print(f"        Model Prediction: {predicted_time:.2f} ms")
+        print(f'        Model Prediction: {predicted_time:.2f} ms')
 
         # 2. Get EXPLAIN ANALYZE time
-        print("  [2/3] Running EXPLAIN ANALYZE...")
+        print('  [2/3] Running EXPLAIN ANALYZE...')
         _, explain_time = self.get_explain_analyze_time(query)
         results['explain_analyze_time'] = explain_time
-        print(f"        EXPLAIN ANALYZE: {explain_time:.2f} ms")
+        print(f'        EXPLAIN ANALYZE: {explain_time:.2f} ms')
 
         # 3. Get actual execution time
         if measure_actual:
-            print(f"  [3/3] Measuring actual execution ({num_runs} runs)...")
+            print(f'  [3/3] Measuring actual execution ({num_runs} runs)...')
             actual_mean, actual_min, actual_max = self.get_actual_execution_time(query, num_runs)
             results['actual_time_mean'] = actual_mean
             results['actual_time_min'] = actual_min
             results['actual_time_max'] = actual_max
-            print(f"        Actual Time: {actual_mean:.2f} ms (min: {actual_min:.2f}, max: {actual_max:.2f})")
+            print(f'        Actual Time: {actual_mean:.2f} ms (min: {actual_min:.2f}, max: {actual_max:.2f})')
         else:
             results['actual_time_mean'] = None
             results['actual_time_min'] = None
@@ -215,13 +215,13 @@ class ModelEvaluator:
             results['explain_vs_actual_error'] = abs(explain_time - actual_mean)
             results['explain_vs_actual_relative'] = abs(explain_time - actual_mean) / (actual_mean + 1e-8)
 
-        print(f"\n  Prediction Error vs EXPLAIN ANALYZE: {results['error_vs_explain']:.2f} ms "
-              f"(R={results['r_vs_explain']:.2f})")
+        print(f'\n  Prediction Error vs EXPLAIN ANALYZE: {results['error_vs_explain']:.2f} ms '
+              f'(R={results['r_vs_explain']:.2f})')
 
         if measure_actual:
-            print(f"  Prediction Error vs Actual: {results['error_vs_actual']:.2f} ms "
-                  f"(R={results['r_vs_actual']:.2f})")
-            print(f"  EXPLAIN ANALYZE vs Actual: {results['explain_vs_actual_error']:.2f} ms")
+            print(f'  Prediction Error vs Actual: {results['error_vs_actual']:.2f} ms '
+                  f'(R={results['r_vs_actual']:.2f})')
+            print(f'  EXPLAIN ANALYZE vs Actual: {results['explain_vs_actual_error']:.2f} ms')
 
         return results
 
@@ -239,16 +239,16 @@ class ModelEvaluator:
         """
         results = []
 
-        print("=" * 80)
-        print(f"EVALUATING {len(queries)} QUERIES")
-        print("=" * 80)
+        print('=' * 80)
+        print(f'EVALUATING {len(queries)} QUERIES')
+        print('=' * 80)
 
         for query_name, query in queries:
             try:
                 result = self.evaluate_query(query, query_name, measure_actual, num_runs)
                 results.append(result)
             except Exception as e:
-                print(f"\nError evaluating {query_name}: {e}")
+                print(f'\nError evaluating {query_name}: {e}')
                 import traceback
                 traceback.print_exc()
                 continue
@@ -258,59 +258,59 @@ class ModelEvaluator:
     def print_summary(self, results: list[dict]):
         """Print summary statistics and comparison table."""
 
-        print("\n" + "=" * 80)
-        print("EVALUATION SUMMARY")
-        print("=" * 80)
+        print('\n' + '=' * 80)
+        print('EVALUATION SUMMARY')
+        print('=' * 80)
 
         # Prepare data for table
         table_data = []
         for r in results:
             row = [
                 r['query_name'],
-                f"{r['predicted_time']:.1f}",
-                f"{r['explain_analyze_time']:.1f}",
-                f"{r['actual_time_mean']:.1f}" if r['actual_time_mean'] else "N/A",
-                f"{r['explain_predicted_ratio']:.2f}",
-                f"{r['r_vs_explain']:.2f}",
+                f'{r['predicted_time']:.1f}',
+                f'{r['explain_analyze_time']:.1f}',
+                f'{r['actual_time_mean']:.1f}' if r['actual_time_mean'] else 'N/A',
+                f'{r['explain_predicted_ratio']:.2f}',
+                f'{r['r_vs_explain']:.2f}',
             ]
             if r['actual_time_mean']:
                 row.extend([
-                    f"{r['actual_predicted_ratio']:.2f}",
-                    f"{r['r_vs_actual']:.2f}",
+                    f'{r['actual_predicted_ratio']:.2f}',
+                    f'{r['r_vs_actual']:.2f}',
                 ])
             table_data.append(row)
 
         headers = [
-            "Query",
-            "Predicted\n(ms)",
-            "EXPLAIN\n(ms)",
-            "Actual\n(ms)",
-            "Explain/\nPredicted",
-            "R vs\nEXPLAIN"
+            'Query',
+            'Predicted\n(ms)',
+            'EXPLAIN\n(ms)',
+            'Actual\n(ms)',
+            'Explain/\nPredicted',
+            'R vs\nEXPLAIN'
         ]
 
         if results[0]['actual_time_mean']:
-            headers.extend(["Actual/\nPredicted", "R vs\nActual"])
+            headers.extend(['Actual/\nPredicted', 'R vs\nActual'])
 
-        print("\n" + tabulate(table_data, headers=headers, tablefmt="grid"))
+        print('\n' + tabulate(table_data, headers=headers, tablefmt='grid'))
 
         # Summary statistics
-        print("\n" + "=" * 80)
-        print("AGGREGATE STATISTICS")
-        print("=" * 80)
+        print('\n' + '=' * 80)
+        print('AGGREGATE STATISTICS')
+        print('=' * 80)
 
         # Prediction vs EXPLAIN ANALYZE
         errors_explain = [r['error_vs_explain'] for r in results]
         relative_errors_explain = [r['relative_error_vs_explain'] for r in results]
         r_values_explain = [r['r_vs_explain'] for r in results]
 
-        print("\nModel Prediction vs EXPLAIN ANALYZE:")
-        print(f"  Mean Absolute Error: {np.mean(errors_explain):.2f} ms")
-        print(f"  Median Absolute Error: {np.median(errors_explain):.2f} ms")
-        print(f"  Mean Relative Error: {np.mean(relative_errors_explain):.4f}")
-        print(f"  Median R-value: {np.median(r_values_explain):.2f}")
-        print(f"  R ≤ 1.5: {np.mean([r <= 1.5 for r in r_values_explain])*100:.1f}%")
-        print(f"  R ≤ 2.0: {np.mean([r <= 2.0 for r in r_values_explain])*100:.1f}%")
+        print('\nModel Prediction vs EXPLAIN ANALYZE:')
+        print(f'  Mean Absolute Error: {np.mean(errors_explain):.2f} ms')
+        print(f'  Median Absolute Error: {np.median(errors_explain):.2f} ms')
+        print(f'  Mean Relative Error: {np.mean(relative_errors_explain):.4f}')
+        print(f'  Median R-value: {np.median(r_values_explain):.2f}')
+        print(f'  R ≤ 1.5: {np.mean([r <= 1.5 for r in r_values_explain])*100:.1f}%')
+        print(f'  R ≤ 2.0: {np.mean([r <= 2.0 for r in r_values_explain])*100:.1f}%')
 
         # Prediction vs Actual
         if results[0]['actual_time_mean']:
@@ -318,22 +318,22 @@ class ModelEvaluator:
             relative_errors_actual = [r['relative_error_vs_actual'] for r in results]
             r_values_actual = [r['r_vs_actual'] for r in results]
 
-            print("\nModel Prediction vs Actual Execution:")
-            print(f"  Mean Absolute Error: {np.mean(errors_actual):.2f} ms")
-            print(f"  Median Absolute Error: {np.median(errors_actual):.2f} ms")
-            print(f"  Mean Relative Error: {np.mean(relative_errors_actual):.4f}")
-            print(f"  Median R-value: {np.median(r_values_actual):.2f}")
-            print(f"  R ≤ 1.5: {np.mean([r <= 1.5 for r in r_values_actual])*100:.1f}%")
-            print(f"  R ≤ 2.0: {np.mean([r <= 2.0 for r in r_values_actual])*100:.1f}%")
+            print('\nModel Prediction vs Actual Execution:')
+            print(f'  Mean Absolute Error: {np.mean(errors_actual):.2f} ms')
+            print(f'  Median Absolute Error: {np.median(errors_actual):.2f} ms')
+            print(f'  Mean Relative Error: {np.mean(relative_errors_actual):.4f}')
+            print(f'  Median R-value: {np.median(r_values_actual):.2f}')
+            print(f'  R ≤ 1.5: {np.mean([r <= 1.5 for r in r_values_actual])*100:.1f}%')
+            print(f'  R ≤ 2.0: {np.mean([r <= 2.0 for r in r_values_actual])*100:.1f}%')
 
             # EXPLAIN ANALYZE vs Actual
             explain_vs_actual = [r['explain_vs_actual_error'] for r in results]
             explain_vs_actual_rel = [r['explain_vs_actual_relative'] for r in results]
 
-            print("\nEXPLAIN ANALYZE vs Actual Execution:")
-            print(f"  Mean Absolute Error: {np.mean(explain_vs_actual):.2f} ms")
-            print(f"  Median Absolute Error: {np.median(explain_vs_actual):.2f} ms")
-            print(f"  Mean Relative Error: {np.mean(explain_vs_actual_rel):.4f}")
+            print('\nEXPLAIN ANALYZE vs Actual Execution:')
+            print(f'  Mean Absolute Error: {np.mean(explain_vs_actual):.2f} ms')
+            print(f'  Median Absolute Error: {np.median(explain_vs_actual):.2f} ms')
+            print(f'  Mean Relative Error: {np.mean(explain_vs_actual_rel):.4f}')
 
     def plot_results(self, results: list[dict], save_path: str = 'evaluation_plots.png'):
         """Create visualization plots comparing predictions and actual times."""
@@ -410,7 +410,7 @@ class ModelEvaluator:
 
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"\nPlots saved to: {save_path}")
+        print(f'\nPlots saved to: {save_path}')
 
         return fig
 
@@ -422,7 +422,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
     # CATEGORY 1: Simple Aggregation Queries
     # ========================================================================
 
-    queries.append(("Simple Agg 1: Lineitem Summary", """
+    queries.append(('Simple Agg 1: Lineitem Summary', """
         SELECT
             l_returnflag,
             COUNT(*) as count,
@@ -433,7 +433,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         GROUP BY l_returnflag
     """))
 
-    queries.append(("Simple Agg 2: Order Statistics", """
+    queries.append(('Simple Agg 2: Order Statistics', """
         SELECT
             o_orderpriority,
             COUNT(*) as order_count,
@@ -445,7 +445,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         GROUP BY o_orderpriority
     """))
 
-    queries.append(("Simple Agg 3: Customer Segments", """
+    queries.append(('Simple Agg 3: Customer Segments', """
         SELECT
             c_mktsegment,
             COUNT(*) as customer_count,
@@ -457,7 +457,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY customer_count DESC
     """))
 
-    queries.append(("Simple Agg 4: Part Analysis", """
+    queries.append(('Simple Agg 4: Part Analysis', """
         SELECT
             p_brand,
             p_type,
@@ -469,7 +469,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         HAVING COUNT(*) > 5
     """))
 
-    queries.append(("Simple Agg 5: Supplier Stats", """
+    queries.append(('Simple Agg 5: Supplier Stats', """
         SELECT
             r.r_name AS region_name,
             n.n_name AS nation_name,
@@ -484,7 +484,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY supplier_count DESC
     """))
 
-    queries.append(("Simple Agg 6: Discount Analysis", """
+    queries.append(('Simple Agg 6: Discount Analysis', """
         SELECT
             l_linestatus,
             AVG(l_discount) as avg_discount,
@@ -500,7 +500,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
     # CATEGORY 2: Simple Join Queries
     # ========================================================================
 
-    queries.append(("Join 1: Customer Orders", """
+    queries.append(('Join 1: Customer Orders', """
         SELECT
             c_name,
             c_mktsegment,
@@ -514,7 +514,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Join 2: Parts and Suppliers", """
+    queries.append(('Join 2: Parts and Suppliers', """
         SELECT
             p_partkey,
             p_name,
@@ -528,7 +528,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 200
     """))
 
-    queries.append(("Join 3: Order Details", """
+    queries.append(('Join 3: Order Details', """
         SELECT
             o_orderkey,
             o_orderdate,
@@ -543,7 +543,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 500
     """))
 
-    queries.append(("Join 4: Supplier Orders", """
+    queries.append(('Join 4: Supplier Orders', """
         SELECT
             s_name,
             s_address,
@@ -558,7 +558,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 50
     """))
 
-    queries.append(("Join 5: Customer Nation Analysis", """
+    queries.append(('Join 5: Customer Nation Analysis', """
         SELECT
             r.r_name AS region_name,
             n.n_name AS nation_name,
@@ -574,7 +574,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY total_orders DESC
     """))
 
-    queries.append(("Join 6: Part Lineitem Summary", """
+    queries.append(('Join 6: Part Lineitem Summary', """
         SELECT
             p_brand,
             p_container,
@@ -593,7 +593,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
     # CATEGORY 3: Complex Multi-table Joins
     # ========================================================================
 
-    queries.append(("Complex Join 1: Customer Segment Revenue", """
+    queries.append(('Complex Join 1: Customer Segment Revenue', """
         SELECT
             c_mktsegment,
             AVG(l_extendedprice * (1 - l_discount)) as avg_revenue,
@@ -608,7 +608,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         GROUP BY c_mktsegment
     """))
 
-    queries.append(("Complex Join 2: Supplier Revenue Analysis", """
+    queries.append(('Complex Join 2: Supplier Revenue Analysis', """
         SELECT
             r.r_name AS region_name,
             sn.n_name AS supplier_nation,
@@ -628,7 +628,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Complex Join 3: Part Supplier Customer Chain", """
+    queries.append(('Complex Join 3: Part Supplier Customer Chain', """
         SELECT
             p_brand,
             c_mktsegment,
@@ -646,7 +646,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY order_count DESC
     """))
 
-    queries.append(("Complex Join 4: Multi-way with Partsupp", """
+    queries.append(('Complex Join 4: Multi-way with Partsupp', """
         SELECT
             p_partkey,
             s_name,
@@ -664,7 +664,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Complex Join 5: Full Chain Analysis", """
+    queries.append(('Complex Join 5: Full Chain Analysis', """
         SELECT
             c_mktsegment,
             p_brand,
@@ -681,7 +681,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         HAVING COUNT(*) > 5
     """))
 
-    queries.append(("Complex Join 6: Regional Supply Chain", """
+    queries.append(('Complex Join 6: Regional Supply Chain', """
         SELECT
             sn.n_name AS supplier_nation,
             cn.n_name AS customer_nation,
@@ -708,7 +708,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
     # CATEGORY 4: Selective Scans with Filters
     # ========================================================================
 
-    queries.append(("Selective 1: Discount Range", """
+    queries.append(('Selective 1: Discount Range', """
         SELECT
             l_orderkey,
             l_linenumber,
@@ -724,7 +724,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Selective 2: High Value Orders", """
+    queries.append(('Selective 2: High Value Orders', """
         SELECT
             o_orderkey,
             o_custkey,
@@ -738,7 +738,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 50
     """))
 
-    queries.append(("Selective 3: Premium Customers", """
+    queries.append(('Selective 3: Premium Customers', """
         SELECT
             c_custkey,
             c_name,
@@ -751,7 +751,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Selective 4: Specific Part Types", """
+    queries.append(('Selective 4: Specific Part Types', """
         SELECT
             p_partkey,
             p_name,
@@ -764,7 +764,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY p_retailprice DESC
     """))
 
-    queries.append(("Selective 5: Late Shipments", """
+    queries.append(('Selective 5: Late Shipments', """
         SELECT
             l_orderkey,
             l_linenumber,
@@ -779,7 +779,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 200
     """))
 
-    queries.append(("Selective 6: Low Supply Cost", """
+    queries.append(('Selective 6: Low Supply Cost', """
         SELECT
             ps_partkey,
             ps_suppkey,
@@ -796,7 +796,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
     # CATEGORY 5: Subquery Patterns
     # ========================================================================
 
-    queries.append(("Subquery 1: High Value Customers", """
+    queries.append(('Subquery 1: High Value Customers', """
         SELECT
             c_custkey,
             c_name,
@@ -813,7 +813,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 50
     """))
 
-    queries.append(("Subquery 2: Frequent Buyers", """
+    queries.append(('Subquery 2: Frequent Buyers', """
         SELECT
             c_custkey,
             c_name,
@@ -830,7 +830,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Subquery 3: Popular Parts", """
+    queries.append(('Subquery 3: Popular Parts', """
         SELECT
             p_partkey,
             p_name,
@@ -848,7 +848,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY p_retailprice DESC
     """))
 
-    queries.append(("Subquery 4: Top Suppliers by Volume", """
+    queries.append(('Subquery 4: Top Suppliers by Volume', """
         SELECT
             s_suppkey,
             s_name,
@@ -865,7 +865,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY s_name
     """))
 
-    queries.append(("Subquery 5: Orders Above Average", """
+    queries.append(('Subquery 5: Orders Above Average', """
         SELECT
             o_orderkey,
             o_custkey,
@@ -882,7 +882,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Subquery 6: Customers with Recent Large Orders", """
+    queries.append(('Subquery 6: Customers with Recent Large Orders', """
         SELECT
             c_custkey,
             c_name,
@@ -903,7 +903,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
     # CATEGORY 6: Large Scans with Sorting
     # ========================================================================
 
-    queries.append(("Large Scan 1: Sorted Lineitem by Price", """
+    queries.append(('Large Scan 1: Sorted Lineitem by Price', """
         SELECT
             l_orderkey,
             l_partkey,
@@ -917,7 +917,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 200
     """))
 
-    queries.append(("Large Scan 2: Orders by Date", """
+    queries.append(('Large Scan 2: Orders by Date', """
         SELECT
             o_orderkey,
             o_custkey,
@@ -931,7 +931,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 500
     """))
 
-    queries.append(("Large Scan 3: Parts by Price", """
+    queries.append(('Large Scan 3: Parts by Price', """
         SELECT
             p_partkey,
             p_name,
@@ -944,7 +944,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 300
     """))
 
-    queries.append(("Large Scan 4: Customer Balance Ranking", """
+    queries.append(('Large Scan 4: Customer Balance Ranking', """
         SELECT
             c.c_custkey,
             c.c_name,
@@ -960,7 +960,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 400
     """))
 
-    queries.append(("Large Scan 5: Lineitem Quantity Sort", """
+    queries.append(('Large Scan 5: Lineitem Quantity Sort', """
         SELECT
             l_orderkey,
             l_partkey,
@@ -975,7 +975,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 250
     """))
 
-    queries.append(("Large Scan 6: Recent Shipments", """
+    queries.append(('Large Scan 6: Recent Shipments', """
         SELECT
             l_orderkey,
             l_linenumber,
@@ -992,7 +992,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
     # CATEGORY 7: Aggregation with HAVING
     # ========================================================================
 
-    queries.append(("Having 1: Large Order Aggregates", """
+    queries.append(('Having 1: Large Order Aggregates', """
         SELECT
             l_orderkey,
             SUM(l_quantity) as total_qty,
@@ -1005,7 +1005,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 100
     """))
 
-    queries.append(("Having 2: High Volume Customers", """
+    queries.append(('Having 2: High Volume Customers', """
         SELECT
             o_custkey,
             COUNT(*) as order_count,
@@ -1019,7 +1019,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 50
     """))
 
-    queries.append(("Having 3: Popular Parts by Brand", """
+    queries.append(('Having 3: Popular Parts by Brand', """
         SELECT
             p_brand,
             COUNT(*) as part_count,
@@ -1032,7 +1032,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         ORDER BY avg_price DESC
     """))
 
-    queries.append(("Having 4: High Revenue Suppliers", """
+    queries.append(('Having 4: High Revenue Suppliers', """
         SELECT
             l_suppkey,
             COUNT(DISTINCT l_orderkey) as order_count,
@@ -1046,7 +1046,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 75
     """))
 
-    queries.append(("Having 5: Part Categories with High Sales", """
+    queries.append(('Having 5: Part Categories with High Sales', """
         SELECT
             p_type,
             COUNT(DISTINCT l_orderkey) as order_count,
@@ -1062,7 +1062,7 @@ def generate_test_queries() -> list[tuple[str, str]]:
         LIMIT 25
     """))
 
-    queries.append(("Having 6: Customer Segments with Volume", """
+    queries.append(('Having 6: Customer Segments with Volume', """
         SELECT
             c_mktsegment,
             COUNT(DISTINCT c_custkey) as customer_count,
@@ -1093,15 +1093,15 @@ def main():
 
     args = parser.parse_args()
 
-    print("=" * 80)
-    print("QPP-NET MODEL EVALUATION")
-    print("=" * 80)
+    print('=' * 80)
+    print('QPP-NET MODEL EVALUATION')
+    print('=' * 80)
 
     # Initialize evaluator
     evaluator = ModelEvaluator(args.model)
 
     # Generate test queries
-    print("\nGenerating test queries...")
+    print('\nGenerating test queries...')
     if args.query_only:
         test_queries = []
     else:
@@ -1110,15 +1110,15 @@ def main():
     # Add user-provided queries
     if args.queries:
         for i, query in enumerate(args.queries, 1):
-            query_name = f"Custom Query {i}"
+            query_name = f'Custom Query {i}'
             test_queries.append((query_name, query))
-        print(f"Added {len(args.queries)} custom query/queries")
+        print(f'Added {len(args.queries)} custom query/queries')
 
     if not test_queries:
-        print("Error: No queries to evaluate. Provide queries with --query or remove --query-only flag.")
+        print('Error: No queries to evaluate. Provide queries with --query or remove --query-only flag.')
         return
 
-    print(f"Total queries to evaluate: {len(test_queries)}")
+    print(f'Total queries to evaluate: {len(test_queries)}')
 
     # Run evaluation
     results = evaluator.evaluate_multiple_queries(
@@ -1131,7 +1131,7 @@ def main():
     evaluator.print_summary(results)
 
     # Save results
-    print(f"\nSaving results to {args.save_results}...")
+    print(f'\nSaving results to {args.save_results}...')
     with open(args.save_results, 'w') as f:
         json.dump(results, f, indent=2)
 
@@ -1140,11 +1140,11 @@ def main():
         try:
             evaluator.plot_results(results)
         except Exception as e:
-            print(f"Warning: Could not generate plots: {e}")
+            print(f'Warning: Could not generate plots: {e}')
 
-    print("\n" + "=" * 80)
-    print("EVALUATION COMPLETE!")
-    print("=" * 80)
+    print('\n' + '=' * 80)
+    print('EVALUATION COMPLETE!')
+    print('=' * 80)
 
 if __name__ == '__main__':
     main()

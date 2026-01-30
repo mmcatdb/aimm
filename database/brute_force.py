@@ -26,9 +26,9 @@ def main():
                 if execution_time < best_time:
                     best_time = execution_time
                     best_mapping = schema_mapping
-                    print(f"New best time: {best_time} with mapping: {schema_mapping}")
+                    print(f'New best time: {best_time} with mapping: {schema_mapping}')
 
-    print(f"Best time: {best_time} with mapping: {best_mapping}")
+    print(f'Best time: {best_time} with mapping: {best_mapping}')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

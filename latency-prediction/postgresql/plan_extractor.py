@@ -30,14 +30,14 @@ class PlanExtractor:
                 # Clear cache if requested (simulates cold cache)
                 if clear_cache:
                     try:
-                        cursor.execute("DISCARD ALL;")
+                        cursor.execute('DISCARD ALL;')
                     except Exception as e:
                         # If DISCARD ALL fails, try alternative cache clearing
-                        print(f"Warning: Could not clear cache: {e}")
+                        print(f'Warning: Could not clear cache: {e}')
                         pass
 
                 # Get the plan with execution statistics
-                explain_query = f"EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}"
+                explain_query = f'EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}'
 
                 cursor.execute(explain_query)
                 result = cursor.fetchone()
@@ -90,7 +90,7 @@ class PlanExtractor:
         # TPC-H Query 3 variations
         for _ in range(num_queries // 6):
             segment = random.choice(['BUILDING', 'AUTOMOBILE', 'MACHINERY', 'HOUSEHOLD', 'FURNITURE'])
-            date = f"1995-03-{random.randint(1, 31):02d}"
+            date = f'1995-03-{random.randint(1, 31):02d}'
             queries.append(f"""
                 SELECT
                     l_orderkey,
@@ -206,15 +206,15 @@ class PlanExtractor:
         queries = self.generate_tpch_queries(num_queries)
         dataset = []
 
-        print(f"Collecting {len(queries)} query plans...")
+        print(f'Collecting {len(queries)} query plans...')
 
         if not clear_cache:
-            print("Note: Cache clearing is disabled for faster collection.")
-            print("      Set clear_cache=True for cold-cache measurements.\n")
+            print('Note: Cache clearing is disabled for faster collection.')
+            print('      Set clear_cache=True for cold-cache measurements.\n')
 
         for i, query in enumerate(queries):
             if i % 50 == 0:
-                print(f"Progress: {i}/{len(queries)} ({100*i//len(queries)}%)")
+                print(f'Progress: {i}/{len(queries)} ({100*i//len(queries)}%)')
 
             try:
                 plan, exec_time = self.execute_with_plan(query, clear_cache=clear_cache)
@@ -224,9 +224,9 @@ class PlanExtractor:
                     'execution_time': exec_time
                 })
             except Exception as e:
-                print(f"\nError executing query {i}: {e}")
-                print(f"Query preview: {query[:100]}...\n")
+                print(f'\nError executing query {i}: {e}')
+                print(f'Query preview: {query[:100]}...\n')
                 continue
 
-        print(f"\nCollected {len(dataset)} query plans successfully")
+        print(f'\nCollected {len(dataset)} query plans successfully')
         return dataset

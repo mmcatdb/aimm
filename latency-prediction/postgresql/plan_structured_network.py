@@ -90,31 +90,31 @@ class PlanStructuredNetwork(nn.Module):
             collect_operator_info(plan)
 
         # MODIFIED: Sort and print the pairs
-        print(f"\nFound {len(operator_info_pairs)} unique operator type/children combinations:")
+        print(f'\nFound {len(operator_info_pairs)} unique operator type/children combinations:')
         sorted_pairs = sorted(list(operator_info_pairs))
         for op_type, num_children in sorted_pairs:
-            print(f"  - {op_type} (children: {num_children})")
+            print(f'  - {op_type} (children: {num_children})')
 
         # Create neural units for each (type, children) pair
         for node_type, num_children in sorted_pairs:
 
             feature_dim = self.feature_extractor.get_feature_dim(node_type)
 
-            op_key = f"{node_type}_{num_children}"
+            op_key = f'{node_type}_{num_children}'
             self.operator_info[op_key] = {
                 'node_type': node_type,
                 'feature_dim': feature_dim,
                 'num_children': num_children
             }
 
-            print(f"  Creating unit for {node_type} ({num_children} children): feature_dim={feature_dim}")
+            print(f'  Creating unit for {node_type} ({num_children} children): feature_dim={feature_dim}')
 
             # Create the neural unit
             self._create_unit(node_type, feature_dim, num_children)
 
-        print(f"\nInitialized {len(self.units)} neural units")
+        print(f'\nInitialized {len(self.units)} neural units')
         total_params = sum(p.numel() for p in self.parameters())
-        print(f"Total model parameters: {total_params:,}")
+        print(f'Total model parameters: {total_params:,}')
 
     def initialize_units_from_operator_info(self, operator_info: dict[str, dict[str, Any]]):
         """
@@ -124,27 +124,27 @@ class PlanStructuredNetwork(nn.Module):
         Args:
             operator_info: Dictionary mapping operator type to {feature_dim, num_children}
         """
-        print(f"\nInitializing {len(operator_info)} neural units from saved operator info...")
+        print(f'\nInitializing {len(operator_info)} neural units from saved operator info...')
 
         for op_key, info in operator_info.items():
             node_type = info['node_type']
             feature_dim = info['feature_dim']
             num_children = info['num_children']
 
-            print(f"  Creating unit for {node_type} ({num_children} children): feature_dim={feature_dim}")
+            print(f'  Creating unit for {node_type} ({num_children} children): feature_dim={feature_dim}')
             self._create_unit(node_type, feature_dim, num_children)
 
         self.operator_info = operator_info.copy()
 
         total_params = sum(p.numel() for p in self.parameters())
-        print(f"Total model parameters: {total_params:,}")
+        print(f'Total model parameters: {total_params:,}')
 
     def _create_unit(self, node_type: str, feature_dim: int, num_children: int = 0) -> nn.Module:
         """
         Create a neural unit for a specific operator type.
         """
 
-        op_key = f"{node_type}_{num_children}"
+        op_key = f'{node_type}_{num_children}'
 
         if op_key in self.units:
             return self.units[op_key]
@@ -164,13 +164,12 @@ class PlanStructuredNetwork(nn.Module):
         """
         Get existing neural unit for (operator_type, num_children) pair.
         """
-        op_key = f"{node_type}_{num_children}"
+        op_key = f'{node_type}_{num_children}'
 
         if op_key not in self.units:
             # Potential fallback: could try to find the closest num_children.
             # For now, we'll just error out.
-            raise ValueError(f"No neural unit found for operator type/children combination: {op_key}. "
-                           f"Available types: {list(self.units.keys())}")
+            raise ValueError(f'No neural unit found for operator type/children combination: {op_key}. Available types: {list(self.units.keys())}')
         return self.units[op_key]
 
     def process_node(self, node: dict, cache: dict = None) -> torch.Tensor:

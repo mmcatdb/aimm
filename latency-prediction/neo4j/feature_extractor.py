@@ -76,7 +76,7 @@ class FeatureExtractor:
         Args:
             plans: List of Neo4j query plan dictionaries
         """
-        print("Building vocabularies from plans...")
+        print('Building vocabularies from plans...')
 
         all_numeric_features = defaultdict(list)
 
@@ -124,7 +124,7 @@ class FeatureExtractor:
                 self.stats[feature_name]['mean'] = float(np.mean(values))
                 self.stats[feature_name]['count'] = len(values)
 
-        print(f"  Found {len(self.identifiers_vocab)} unique identifiers")
+        print(f'  Found {len(self.identifiers_vocab)} unique identifiers')
 
     def normalize_numeric(self, value: float, feature_name: str) -> float:
         """
@@ -246,8 +246,8 @@ class FeatureExtractor:
 
         # Concatenate all features
         feature_vector = np.concatenate(features)
-        # print("Extracted feature vector:", feature_vector)
-        # print("---")
+        # print('Extracted feature vector:', feature_vector)
+        # print('---')
 
         return feature_vector
 

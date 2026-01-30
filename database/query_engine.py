@@ -17,7 +17,7 @@ class QueryEngine:
     def get_dao_for_entity(self, entity_name):
         db_type = self.schema_mapping[entity_name]
         if not db_type:
-            raise ValueError(f"Entity '{entity_name}' not found in schema mapping.")
+            raise ValueError(f'Entity "{entity_name}" not found in schema mapping.')
         return self.daos[db_type]
 
 
@@ -49,19 +49,19 @@ class QueryEngine:
 
 
 
-    def run_queries(self, customer_name="Customer#000000007", verbose=True) -> float:
+    def run_queries(self, customer_name='Customer#000000007', verbose=True) -> float:
         # Queries from: https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/mysql/queries.md
 
         start = checkpoint = time.time()
 
         if verbose:
-            print(f"Customers stored in: {self.schema_mapping['customer']}")
-            print(f"Orders stored in: {self.schema_mapping['orders']}")
-            print(f"Lineitems stored in: {self.schema_mapping['lineitem']}")
-            print(f"Parts stored in: {self.schema_mapping['part']}")
-            print(f"Suppliers stored in: {self.schema_mapping['supplier']}")
-            print(f"PartSupp stored in: {self.schema_mapping['partsupp']}")
-            print("=" * 50)
+            print(f'Customers stored in: {self.schema_mapping['customer']}')
+            print(f'Orders stored in: {self.schema_mapping['orders']}')
+            print(f'Lineitems stored in: {self.schema_mapping['lineitem']}')
+            print(f'Parts stored in: {self.schema_mapping['part']}')
+            print(f'Suppliers stored in: {self.schema_mapping['supplier']}')
+            print(f'PartSupp stored in: {self.schema_mapping['partsupp']}')
+            print('=' * 50)
 
         lineitem_dao = self.get_dao_for_entity('lineitem')
         customer_dao = self.get_dao_for_entity('customer')
@@ -71,66 +71,66 @@ class QueryEngine:
         # -----------  A1  -----------
         lineitems = lineitem_dao.get_all_lineitems()
         if verbose:
-            print(f"Found {len(lineitems)} lineitems.")
-            print(f"Time taken for A1: {time.time() - start:.2f} seconds")
-            print("-" * 50)
+            print(f'Found {len(lineitems)} lineitems.')
+            print(f'Time taken for A1: {time.time() - start:.2f} seconds')
+            print('-' * 50)
         checkpoint = time.time()
 
         # -----------  A2  -----------
         orders = order_dao.get_orders_by_daterange('1996-01-01', '1996-12-31')
         if verbose:
-            print(f"Found {len(orders)} orders.")
-            print(f"Time taken for A2: {time.time() - checkpoint:.2f} seconds")
-            print("-" * 50)
+            print(f'Found {len(orders)} orders.')
+            print(f'Time taken for A2: {time.time() - checkpoint:.2f} seconds')
+            print('-' * 50)
         checkpoint = time.time()
 
 
         # -----------  A3  -----------
         customers = customer_dao.get_all_customers()
         if verbose:
-            print(f"Found {len(customers)} customers.")
-            print(f"Time taken for A3: {time.time() - checkpoint:.2f} seconds")
-            print("-" * 50)
+            print(f'Found {len(customers)} customers.')
+            print(f'Time taken for A3: {time.time() - checkpoint:.2f} seconds')
+            print('-' * 50)
         checkpoint = time.time()
 
 
         # -----------  A4  -----------
-        orders = order_dao.get_orders_by_keyrange("1000", "50000")
+        orders = order_dao.get_orders_by_keyrange('1000', '50000')
         if verbose:
-            print(f"Found {len(orders)} orders.")
-            print(f"Time taken for A4: {time.time() - checkpoint:.2f} seconds")
-            print("-" * 50)
+            print(f'Found {len(orders)} orders.')
+            print(f'Time taken for A4: {time.time() - checkpoint:.2f} seconds')
+            print('-' * 50)
         checkpoint = time.time()
 
 
         # -----------  B1  -----------
         orders_by_month = order_dao.count_orders_by_month()
         if verbose:
-            print(f"Found orders by month. Total number of months: {len(orders_by_month)}")
-            print(f"Time taken for B1: {time.time() - checkpoint:.2f} seconds")
-            print("-" * 50)
+            print(f'Found orders by month. Total number of months: {len(orders_by_month)}')
+            print(f'Time taken for B1: {time.time() - checkpoint:.2f} seconds')
+            print('-' * 50)
         checkpoint = time.time()
 
         # -----------  B2  -----------
         max_price = lineitem_dao.get_max_price_by_ship_month()
         if verbose:
-            print(f"Found max price by ship month. Total number of months: {len(max_price)}")
-            print(f"Time taken for B2: {time.time() - checkpoint:.2f} seconds")
-            print("-" * 50)
+            print(f'Found max price by ship month. Total number of months: {len(max_price)}')
+            print(f'Time taken for B2: {time.time() - checkpoint:.2f} seconds')
+            print('-' * 50)
         checkpoint = time.time()
 
         # -----------  Join  ---------
         lineitems = self.find_lineitems_for_customer(customer_name)
         if verbose:
-            print(f"Found {len(lineitems)} lineitems for customer: {customer_name}")
-            print(f"Time taken for Join: {time.time() - checkpoint:.2f} seconds")
-            print("-" * 50)
+            print(f'Found {len(lineitems)} lineitems for customer: {customer_name}')
+            print(f'Time taken for Join: {time.time() - checkpoint:.2f} seconds')
+            print('-' * 50)
         checkpoint = time.time()
 
         self.run_part_supplier_queries(verbose=verbose)
 
         if verbose:
-            print(f"Finished. Total time taken: {time.time() - start:.2f} seconds")
+            print(f'Finished. Total time taken: {time.time() - start:.2f} seconds')
 
         return round(time.time() - start, 2)
 
@@ -143,55 +143,55 @@ class QueryEngine:
         # P1
         parts = part_dao.get_all_parts()
         if verbose:
-            print(f"P1) Parts count: {len(parts)} (all parts)")
-            print(f"Time P1: {time.time() - checkpoint:.2f}s")
+            print(f'P1) Parts count: {len(parts)} (all parts)')
+            print(f'Time P1: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 
         # P2
         parts_size_range = part_dao.get_parts_by_size_range(1, 20)
         if verbose:
-            print(f"P2) Parts size 1-20: {len(parts_size_range)}")
-            print(f"Time P2: {time.time() - checkpoint:.2f}s")
+            print(f'P2) Parts size 1-20: {len(parts_size_range)}')
+            print(f'Time P2: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 
         # S1
         suppliers = supplier_dao.get_all_suppliers()
         if verbose:
-            print(f"S1) Suppliers count: {len(suppliers)}")
-            print(f"Time S1: {time.time() - checkpoint:.2f}s")
+            print(f'S1) Suppliers count: {len(suppliers)}')
+            print(f'Time S1: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 
         # S2
         suppliers_nation = supplier_dao.get_suppliers_by_nation('1')
         if verbose:
-            print(f"S2) Suppliers nation=1: {len(suppliers_nation)}")
-            print(f"Time S2: {time.time() - checkpoint:.2f}s")
+            print(f'S2) Suppliers nation=1: {len(suppliers_nation)}')
+            print(f'Time S2: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 
         # PS1
         partkey_example = 1
         ps_for_part = partsupp_dao.get_partsupp_for_part(partkey_example)
         if verbose:
-            print(f"PS1) PartSupp rows for part {partkey_example}: {len(ps_for_part)}")
-            print(f"Time PS1: {time.time() - checkpoint:.2f}s")
+            print(f'PS1) PartSupp rows for part {partkey_example}: {len(ps_for_part)}')
+            print(f'Time PS1: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 
         # PS2
         lowest_cost = partsupp_dao.get_lowest_cost_supplier_for_part(partkey_example)
         if verbose:
-            print(f"PS2) Lowest cost supplier for part {partkey_example}: {'found' if lowest_cost else 'none'}")
-            print(f"Time PS2: {time.time() - checkpoint:.2f}s")
+            print(f'PS2) Lowest cost supplier for part {partkey_example}: {'found' if lowest_cost else 'none'}')
+            print(f'Time PS2: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 
         # AGG1
         suppliers_per_part = partsupp_dao.count_suppliers_per_part()
         if verbose:
-            print(f"AGG1) Suppliers per part rows: {len(suppliers_per_part)}")
-            print(f"Time AGG1: {time.time() - checkpoint:.2f}s")
+            print(f'AGG1) Suppliers per part rows: {len(suppliers_per_part)}')
+            print(f'Time AGG1: {time.time() - checkpoint:.2f}s')
         checkpoint = time.time()
 
         # AGG2
         # avg_supplycost = partsupp_dao.avg_supplycost_by_part_size()
         # if verbose:
-        #     print(f"AGG2) Avg supply cost by size groups: {len(avg_supplycost)}")
-        #     print(f"Time AGG2: {time.time() - checkpoint:.2f}s")
+        #     print(f'AGG2) Avg supply cost by size groups: {len(avg_supplycost)}')
+        #     print(f'Time AGG2: {time.time() - checkpoint:.2f}s')

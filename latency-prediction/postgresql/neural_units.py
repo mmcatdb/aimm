@@ -6,14 +6,14 @@ import torch.nn as nn
 class NeuralUnit(nn.Module):
     """
     Base class for operator-level neural units.
-    
+
     Each unit has:
     - Hidden layers for feature learning
     - Latency output (1 value)
     - Data vector output (d values)
     """
-    
-    def __init__(self, input_dim: int, hidden_dim: int = 128, 
+
+    def __init__(self, input_dim: int, hidden_dim: int = 128,
                  num_layers: int = 5, data_vec_dim: int = 32):
         """
         Args:
@@ -23,51 +23,51 @@ class NeuralUnit(nn.Module):
             data_vec_dim: Dimension of output data vector
         """
         super().__init__()
-        
+
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.data_vec_dim = data_vec_dim
-        
+
         # Build hidden layers
         layers = []
-        
+
         # First layer
         layers.append(nn.Linear(input_dim, hidden_dim))
         layers.append(nn.ReLU())
-        
+
         # Hidden layers
         for _ in range(num_layers - 1):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.ReLU())
-        
+
         self.hidden_layers = nn.Sequential(*layers)
-        
+
         # Output layers
         self.latency_output = nn.Linear(hidden_dim, 1)
         self.data_output = nn.Linear(hidden_dim, data_vec_dim)
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass through neural unit.
-        
+
         Args:
             x: Input tensor [batch_size, input_dim]
-            
+
         Returns:
             Output tensor [batch_size, 1 + data_vec_dim]
             where output[:, 0] is latency and output[:, 1:] is data vector
         """
         # Pass through hidden layers
         h = self.hidden_layers(x)
-        
+
         # Generate outputs
         latency = self.latency_output(h)
         data_vec = self.data_output(h)
-        
+
         # Concatenate: [latency, data_vector]
         output = torch.cat([latency, data_vec], dim=1)
-        
+
         return output
 
 
@@ -77,8 +77,8 @@ class GenericUnit(NeuralUnit):
     Handles variable number of children by calculating the
     total input dimension correctly.
     """
-    
-    def __init__(self, input_dim: int, num_children: int = 0, 
+
+    def __init__(self, input_dim: int, num_children: int = 0,
                  data_vec_dim: int = 32, **kwargs):
         """
         Args:
@@ -88,5 +88,5 @@ class GenericUnit(NeuralUnit):
             **kwargs: Passed to NeuralUnit (hidden_dim, num_layers)
         """
         total_input_dim = input_dim + num_children * (1 + data_vec_dim)
-        
+
         super().__init__(total_input_dim, data_vec_dim=data_vec_dim, **kwargs)

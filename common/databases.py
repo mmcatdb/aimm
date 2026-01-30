@@ -21,7 +21,7 @@ class Postgres():
     """
     Usage:
     with postgres.cursor() as cursor:
-        cursor.execute("SELECT 1")
+        cursor.execute('SELECT 1')
     """
     def __init__(self, config: PostgresConfig):
         self._config = config
@@ -76,7 +76,7 @@ class Mongo():
     """
     def __init__(self, config: MongoConfig):
         self._config = config
-        self._client = MongoClient(f"mongodb://{config.host}:{config.port}")
+        self._client = MongoClient(f'mongodb://{config.host}:{config.port}')
         self._database = self._client[config.database]
 
     def database(self):
@@ -93,12 +93,12 @@ class Neo4j():
     """
     Usage:
     with neo4j.session() as session:
-        result = session.run("MATCH (n) RETURN n LIMIT 1")
+        result = session.run('MATCH (n) RETURN n LIMIT 1')
     """
     def __init__(self, config: Neo4jConfig):
         self._config = config
         self._driver = GraphDatabase.driver(
-            f"bolt://{config.host}:{config.port}",
+            f'bolt://{config.host}:{config.port}',
             auth = (config.user, config.password)
         )
 

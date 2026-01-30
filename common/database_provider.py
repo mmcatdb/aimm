@@ -15,12 +15,12 @@ class DatabaseProvider:
         elif isinstance(config, Neo4jConfig):
             return Neo4j(config)
         else:
-            raise ValueError(f"Unsupported database config type for id '{id}'.")
+            raise ValueError(f'Unsupported database config type for id "{id}".')
 
     def get(self, id: str):
         db = self.dbs.get(id)
         if not db:
-            raise ValueError(f"Database with id '{id}' not found in DatabaseProvider.")
+            raise ValueError(f'Database with id "{id}" not found in DatabaseProvider.')
         return db
 
     @staticmethod

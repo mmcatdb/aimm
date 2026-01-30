@@ -22,7 +22,7 @@ class PlanExtractor:
 
     NUM_QUERY_TYPES = 32
 
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = 'config.yaml'):
         """
         Initialize connection to Neo4j database.
 
@@ -62,21 +62,21 @@ class PlanExtractor:
         SHIPMODES_ALL = ['MAIL', 'SHIP', 'AIR', 'TRUCK', 'RAIL', 'FOB', 'REG AIR']
         REGION_CHOICES = ['ASIA', 'AMERICA', 'EUROPE', 'MIDDLE EAST', 'AFRICA']
         SEGMENT_CHOICES = ['AUTOMOBILE', 'BUILDING', 'FURNITURE', 'MACHINERY', 'HOUSEHOLD']
-        NATIONS = ["ALGERIA", "ARGENTINA", "BRAZIL", "CANADA", "EGYPT", "ETHIOPIA",
-                       "FRANCE", "GERMANY", "INDIA", "INDONESIA", "IRAN", "IRAQ",
-                       "JAPAN", "JORDAN", "KENYA", "MOROCCO", "MOZAMBIQUE", "PERU",
-                       "CHINA", "ROMANIA", "SAUDI ARABIA", "VIETNAM", "RUSSIA", "UNITED KINGDOM", "UNITED STATES"]
+        NATIONS = ['ALGERIA', 'ARGENTINA', 'BRAZIL', 'CANADA', 'EGYPT', 'ETHIOPIA',
+                       'FRANCE', 'GERMANY', 'INDIA', 'INDONESIA', 'IRAN', 'IRAQ',
+                       'JAPAN', 'JORDAN', 'KENYA', 'MOROCCO', 'MOZAMBIQUE', 'PERU',
+                       'CHINA', 'ROMANIA', 'SAUDI ARABIA', 'VIETNAM', 'RUSSIA', 'UNITED KINGDOM', 'UNITED STATES']
         P_NAME_WORDS = [
-            "almond", "antique", "aquamarine", "azure", "beige", "bisque", "black", "blanched", "blue",
-            "blush", "brown", "burlywood", "burnished", "chartreuse", "chiffon", "chocolate", "coral",
-            "cornflower", "cornsilk", "cream", "cyan", "dark", "deep", "dim", "dodger", "drab", "firebrick",
-            "floral", "forest", "frosted", "gainsboro", "ghost", "goldenrod", "green", "grey", "honeydew",
-            "hot", "indian", "ivory", "khaki", "lace", "lavender", "lawn", "lemon", "light", "lime", "linen",
-            "magenta", "maroon", "medium", "metallic", "midnight", "mint", "misty", "moccasin", "navajo",
-            "navy", "olive", "orange", "orchid", "pale", "papaya", "peach", "peru", "pink", "plum", "powder",
-            "puff", "purple", "red", "rose", "rosy", "royal", "saddle", "salmon", "sandy", "seashell", "sienna",
-            "sky", "slate", "smoke", "snow", "spring", "steel", "tan", "thistle", "tomato", "turquoise", "violet",
-            "wheat", "white", "yellow"
+            'almond', 'antique', 'aquamarine', 'azure', 'beige', 'bisque', 'black', 'blanched', 'blue',
+            'blush', 'brown', 'burlywood', 'burnished', 'chartreuse', 'chiffon', 'chocolate', 'coral',
+            'cornflower', 'cornsilk', 'cream', 'cyan', 'dark', 'deep', 'dim', 'dodger', 'drab', 'firebrick',
+            'floral', 'forest', 'frosted', 'gainsboro', 'ghost', 'goldenrod', 'green', 'grey', 'honeydew',
+            'hot', 'indian', 'ivory', 'khaki', 'lace', 'lavender', 'lawn', 'lemon', 'light', 'lime', 'linen',
+            'magenta', 'maroon', 'medium', 'metallic', 'midnight', 'mint', 'misty', 'moccasin', 'navajo',
+            'navy', 'olive', 'orange', 'orchid', 'pale', 'papaya', 'peach', 'peru', 'pink', 'plum', 'powder',
+            'puff', 'purple', 'red', 'rose', 'rosy', 'royal', 'saddle', 'salmon', 'sandy', 'seashell', 'sienna',
+            'sky', 'slate', 'smoke', 'snow', 'spring', 'steel', 'tan', 'thistle', 'tomato', 'turquoise', 'violet',
+            'wheat', 'white', 'yellow'
         ]
         CONTAINER_CHOICES_SM = ['SM CASE', 'SM BOX', 'SM PACK', 'SM PKG']
         CONTAINER_CHOICES_LG = ['LG CASE', 'LG BOX', 'LG PACK', 'LG PKG']
@@ -119,8 +119,8 @@ ORDER BY returnflag, linestatus
         for _ in range(queries_per_type):
             region = random.choice(REGION_CHOICES)
             year = random.randint(1993, 1997)
-            start_date = f"{year}-01-01"
-            end_date = f"{year+1}-01-01"
+            start_date = f'{year}-01-01'
+            end_date = f'{year+1}-01-01'
 
             queries.append(f"""
 MATCH (r:Region {{r_name: '{region}'}})<-[:IS_IN_REGION]-(n:Nation)
@@ -159,7 +159,7 @@ RETURN sum(li.l_extendedprice * li.l_discount) AS revenue
             random_month_offset = random.randint(0, 23)  # 24 possible months (Feb 1993 to Jan 1995)
             year = 1993 + ((random_month_offset + 1) // 12)
             month = ((random_month_offset + 1) % 12) + 1
-            start_date = f"{year}-{month:02d}-01"
+            start_date = f'{year}-{month:02d}-01'
 
             # Add 3 months
             end_month = month + 3
@@ -167,7 +167,7 @@ RETURN sum(li.l_extendedprice * li.l_discount) AS revenue
             if end_month > 12:
                 end_month -= 12
                 end_year += 1
-            end_date = f"{end_year}-{end_month:02d}-01"
+            end_date = f'{end_year}-{end_month:02d}-01'
 
             queries.append(f"""
 MATCH (n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
@@ -220,14 +220,14 @@ ORDER BY shipmode
         for _ in range(queries_per_type):
             year = random.randint(1993, 1997)
             month = random.randint(1, 12)  # Fix: Was 1-11
-            start_date = f"{year}-{month:02d}-01"
+            start_date = f'{year}-{month:02d}-01'
 
             end_month = month + 1
             end_year = year
             if end_month > 12:
                 end_month = 1
                 end_year += 1
-            end_date = f"{end_year}-{end_month:02d}-01"
+            end_date = f'{end_year}-{end_month:02d}-01'
 
             queries.append(f"""
 MATCH (li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
@@ -246,9 +246,9 @@ RETURN 100.00 * promo_revenue / total_revenue AS promo_revenue_percentage
 
         # Q19: Discounted Revenue (Fix: Brand generation)
         for _ in range(queries_per_type):
-            brand1 = f"Brand#{random.randint(1, 5)}{random.randint(1, 5)}"
-            brand2 = f"Brand#{random.randint(1, 5)}{random.randint(1, 5)}"
-            brand3 = f"Brand#{random.randint(1, 5)}{random.randint(1, 5)}"
+            brand1 = f'Brand#{random.randint(1, 5)}{random.randint(1, 5)}'
+            brand2 = f'Brand#{random.randint(1, 5)}{random.randint(1, 5)}'
+            brand3 = f'Brand#{random.randint(1, 5)}{random.randint(1, 5)}'
 
             qty1 = random.randint(1, 10)
             qty2 = random.randint(10, 20)
@@ -281,31 +281,31 @@ RETURN sum(li.l_extendedprice * (1 - li.l_discount)) AS revenue
 
         # Custom Q1: Simple Scan (All Nodes of a Label)
         for _ in range(queries_per_type):
-            queries.append("MATCH (n:Nation) RETURN n.n_name, n.n_comment LIMIT 100")
+            queries.append('MATCH (n:Nation) RETURN n.n_name, n.n_comment LIMIT 100')
 
         # Custom Q2: Scan with Exact Property Match
         for _ in range(queries_per_type):
             name = get_random_name('Customer', 30000)
-            queries.append(f"MATCH (c:Customer {{c_name: '{name}'}}) RETURN c.c_address, c.c_phone")
+            queries.append(f'MATCH (c:Customer {{c_name: \'{name}\'}}) RETURN c.c_address, c.c_phone')
 
         # Custom Q3: Scan with Numeric Filter
         for _ in range(queries_per_type):
             balance = random.randint(5000, 9500)
-            queries.append(f"MATCH (s:Supplier) WHERE s.s_acctbal > {balance} RETURN s.s_name, s.s_acctbal")
+            queries.append(f'MATCH (s:Supplier) WHERE s.s_acctbal > {balance} RETURN s.s_name, s.s_acctbal')
 
         # Custom Q4: Scan with Sort
         for _ in range(queries_per_type):
-            queries.append("MATCH (p:Part) RETURN p.p_name, p.p_retailprice ORDER BY p.p_retailprice DESC LIMIT 50")
+            queries.append('MATCH (p:Part) RETURN p.p_name, p.p_retailprice ORDER BY p.p_retailprice DESC LIMIT 50')
 
         # Custom Q5: Scan with Sort + Limit
         for _ in range(queries_per_type):
             limit = random.randint(10, 50)
-            queries.append(f"MATCH (o:Order) RETURN o.o_orderkey, o.o_totalprice ORDER BY o.o_totalprice DESC LIMIT {limit}")
+            queries.append(f'MATCH (o:Order) RETURN o.o_orderkey, o.o_totalprice ORDER BY o.o_totalprice DESC LIMIT {limit}')
 
         # Custom Q6: Scan with IN list
         for _ in range(queries_per_type):
             containers = random.sample(CONTAINER_CHOICES_SM + CONTAINER_CHOICES_LG, 3)
-            queries.append(f"MATCH (p:Part) WHERE p.p_container IN {containers} RETURN p.p_name, p.p_container")
+            queries.append(f'MATCH (p:Part) WHERE p.p_container IN {containers} RETURN p.p_name, p.p_container')
 
         # Custom Q7: Scan with STARTS WITH
         TYPE_CHOICES = [
@@ -318,47 +318,47 @@ RETURN sum(li.l_extendedprice * (1 - li.l_discount)) AS revenue
         ]
         for _ in range(queries_per_type):
             type_start = random.choice(TYPE_CHOICES)
-            queries.append(f"MATCH (p:Part) WHERE p.p_type STARTS WITH '{type_start.upper()}' RETURN p.p_name, p.p_type")
+            queries.append(f'MATCH (p:Part) WHERE p.p_type STARTS WITH \'{type_start.upper()}\' RETURN p.p_name, p.p_type')
 
         # Custom Q8: Scan with Date Filter
         for _ in range(queries_per_type):
             year = random.randint(1996, 1998)
             month = random.randint(1, 12)
             day = random.randint(1, 28)
-            queries.append(f"MATCH (o:Order) WHERE o.o_orderdate > date('{year}-{month:02d}-{day:02d}') RETURN o.o_orderkey, o.o_orderdate")
+            queries.append(f'MATCH (o:Order) WHERE o.o_orderdate > date(\'{year}-{month:02d}-{day:02d}\') RETURN o.o_orderkey, o.o_orderdate')
 
         # Custom Q9: Count Aggregation (All)
         for _ in range(queries_per_type):
-            queries.append("MATCH (c:Customer) RETURN count(c) AS total_customers")
+            queries.append('MATCH (c:Customer) RETURN count(c) AS total_customers')
 
         # Custom Q10: Group-by Aggregation (Simple)
         for _ in range(queries_per_type):
-            queries.append("MATCH (o:Order) RETURN o.o_orderstatus, count(o) AS order_count ORDER BY order_count DESC")
+            queries.append('MATCH (o:Order) RETURN o.o_orderstatus, count(o) AS order_count ORDER BY order_count DESC')
 
         # Custom Q11: Simple AVG/SUM Aggregation
         for _ in range(queries_per_type):
-            queries.append("MATCH (li:LineItem) RETURN sum(li.l_quantity) AS total_qty, avg(li.l_extendedprice) AS avg_price, min(li.l_discount) AS min_discount")
+            queries.append('MATCH (li:LineItem) RETURN sum(li.l_quantity) AS total_qty, avg(li.l_extendedprice) AS avg_price, min(li.l_discount) AS min_discount')
 
         # Custom Q12: Simple DISTINCT
         for _ in range(queries_per_type):
-            queries.append("MATCH (c:Customer) RETURN count(DISTINCT c.c_mktsegment) AS market_segments")
+            queries.append('MATCH (c:Customer) RETURN count(DISTINCT c.c_mktsegment) AS market_segments')
 
         # Custom Q13: Scan with AND
         for _ in range(queries_per_type):
             size = random.randint(10, 40)
             price = random.randint(1000, 1500)
-            queries.append(f"MATCH (p:Part) WHERE p.p_size > {size} AND p.p_retailprice < {price} RETURN p.p_name, p.p_size, p.p_retailprice")
+            queries.append(f'MATCH (p:Part) WHERE p.p_size > {size} AND p.p_retailprice < {price} RETURN p.p_name, p.p_size, p.p_retailprice')
 
         # Custom Q14: Scan with OR
         for _ in range(queries_per_type):
             region1 = random.choice(REGION_CHOICES)
             region2 = random.choice(list(set(REGION_CHOICES) - {region1}))
-            queries.append(f"MATCH (r:Region) WHERE r.r_name = '{region1}' OR r.r_name = '{region2}' RETURN r.r_name")
+            queries.append(f'MATCH (r:Region) WHERE r.r_name = \'{region1}\' OR r.r_name = \'{region2}\' RETURN r.r_name')
 
         # Custom Q15: Scan with NOT
         for _ in range(queries_per_type):
             status = random.choice(ORDER_STATUS_CHOICES)
-            queries.append(f"MATCH (o:Order) WHERE NOT o.o_orderstatus = '{status}' RETURN o.o_orderkey, o.o_orderstatus LIMIT 100")
+            queries.append(f'MATCH (o:Order) WHERE NOT o.o_orderstatus = \'{status}\' RETURN o.o_orderkey, o.o_orderstatus LIMIT 100')
 
         # Custom Q16: 1-Hop Traversal (Find orders for a customer)
         for _ in range(queries_per_type):
@@ -463,7 +463,7 @@ LIMIT 50
 """)
 
 
-        print(f"Generated {len(queries)} query variants ({queries_per_type} per query type)")
+        print(f'Generated {len(queries)} query variants ({queries_per_type} per query type)')
 
 
         return queries[:num_queries]
@@ -479,7 +479,7 @@ LIMIT 50
             Query plan as dictionary
         """
         with self.driver.session() as session:
-            result = session.run(f"EXPLAIN {query}")
+            result = session.run(f'EXPLAIN {query}')
             summary = result.consume()
             plan = summary.plan
             return plan
@@ -505,9 +505,9 @@ LIMIT 50
                 if show_details:
                     print(query)
                     print()
-                    # print("Result sample:")
+                    # print('Result sample:')
                     print(result.data())
-                    print("-"*40)
+                    print('-'*40)
 
                 result.consume()  # Ensure full execution
                 end_time = time.time()
@@ -548,8 +548,8 @@ LIMIT 50
         # Generate queries
         queries = self.generate_workload_queries(num_queries)
 
-        print(f"\nExecuting {len(queries)} queries...")
-        print(f"Each query will be executed {num_runs_per_query} times for averaging.\n")
+        print(f'\nExecuting {len(queries)} queries...')
+        print(f'Each query will be executed {num_runs_per_query} times for averaging.\n')
 
         all_plans = []
         all_times = []
@@ -563,18 +563,18 @@ LIMIT 50
                 all_times.append(exec_time)
 
                 if i % 100 == 0 and i > 0:
-                    print(f"Extracted {i} / {len(queries)} plans...")
+                    print(f'Extracted {i} / {len(queries)} plans...')
 
             except Exception as e:
-                print(f" ERROR: {str(e)}")
+                print(f' ERROR: {str(e)}')
                 continue
 
-        print(f"\n{'='*60}")
-        print(f"Workload collection complete!")
-        print(f"  Total queries: {len(queries)}")
-        print(f"  Average execution time: {np.mean(all_times):.4f}s")
-        print(f"  Min/Max execution time: {np.min(all_times):.4f}s / {np.max(all_times):.4f}s")
-        print(f"{'='*60}\n")
+        print(f'\n{'='*60}')
+        print(f'Workload collection complete!')
+        print(f'  Total queries: {len(queries)}')
+        print(f'  Average execution time: {np.mean(all_times):.4f}s')
+        print(f'  Min/Max execution time: {np.min(all_times):.4f}s / {np.max(all_times):.4f}s')
+        print(f'{'='*60}\n')
 
         return queries, all_plans, all_times
 
