@@ -4,16 +4,13 @@ import pickle
 import argparse
 import time
 
+from datasets.tpch.neo4j import TpchNeo4j
 from common.config import Config
-from common.databases import Neo4j
+from common.drivers import Neo4jDriver
 from plan_extractor import PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
-from training import (
-    Neo4jQueryPlanDataset,
-    PlanStructuredTrainer,
-    train_model
-)
+from training import Neo4jQueryPlanDataset, PlanStructuredTrainer, train_model
 
 def save_workload_data(
     queries: list[str],
@@ -88,14 +85,15 @@ def main():
     print()
 
     config = Config.load()
-    neo4j = Neo4j(config.neo4j)
+    neo4j = Neo4jDriver(config.neo4j)
+    database = TpchNeo4j()
 
     if args.load_workload:
         print(f'Loading workload data from {args.load_workload}...')
         queries, plans, execution_times = load_workload_data(args.load_workload)
     else:
         print('Connecting to Neo4j and collecting workload...')
-        extractor = PlanExtractor(neo4j)
+        extractor = PlanExtractor(neo4j, database)
 
         try:
             queries, plans, execution_times = extractor.collect_workload(

@@ -1,10 +1,10 @@
 from common.config import Config
-from common.database_provider import DatabaseProvider
+from common.driver_provider import DriverProvider
 from query_engine import QueryEngine
 
 def main():
     config = Config.load()
-    dbs = DatabaseProvider.default(config)
+    dbs = DriverProvider.default(config)
     # TODO
     schema_mapping = {
         'region': 'postgres',

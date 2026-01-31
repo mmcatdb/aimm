@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from collections import defaultdict
-from common.databases import Neo4j
+from common.drivers import Neo4jDriver
 from plan_structured_network import PlanStructuredNetwork
 from feature_extractor import FeatureExtractor
 
@@ -41,7 +41,6 @@ class Neo4jQueryPlanDataset(Dataset):
             'execution_time': self.execution_times[idx]
         }
 
-
 def compute_plan_structure_hash(plan: dict) -> str:
     """
     Compute a hash representing the structure of a query plan.
@@ -65,7 +64,6 @@ def compute_plan_structure_hash(plan: dict) -> str:
         return f'{op_type}({",".join(child_sigs)})'
 
     return structure_sig(plan)
-
 
 def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
     """
@@ -94,7 +92,7 @@ class PlanStructuredTrainer:
     """
 
     def __init__(self,
-        neo4j: Neo4j,
+        neo4j: Neo4jDriver,
         model: PlanStructuredNetwork,
         learning_rate: float = 0.001,
         weight_decay: float = 1e-5,
@@ -214,8 +212,7 @@ class PlanStructuredTrainer:
             epoch_losses.append(loss)
 
             if (batch_idx + 1) % 10 == 0:
-                print(f'  Batch {batch_idx + 1}/{len(dataloader)}, '
-                      f'Loss: {loss:.6f}')
+                print(f'  Batch {batch_idx + 1}/{len(dataloader)}, Loss: {loss:.6f}')
 
         avg_loss = np.mean(epoch_losses).item()
         self.train_losses.append(avg_loss)
@@ -332,7 +329,7 @@ class PlanStructuredTrainer:
         return checkpoint
 
 def train_model(
-    neo4j: Neo4j,
+    neo4j: Neo4jDriver,
     train_dataset: Neo4jQueryPlanDataset,
     val_dataset: Neo4jQueryPlanDataset | None,
     feature_extractor: FeatureExtractor,
@@ -402,6 +399,7 @@ def train_model(
         print(f'Training Loss: {train_loss:.6f}')
 
         # Validate
+        val_metrics = None
         if val_dataset is not None:
             val_metrics = trainer.evaluate(val_dataset, batch_size=batch_size)
             val_loss = val_metrics['mse']
@@ -424,7 +422,7 @@ def train_model(
                 print('  Best model saved!')
 
         if (epoch + 1) % 10 == 0:
-            metrics = val_metrics if val_dataset else {'train_loss': train_loss}
+            metrics = val_metrics if val_metrics else {'train_loss': train_loss}
             trainer.save_checkpoint(
                 checkpoint_path.replace('.pt', f'_epoch{epoch+1}.pt'),
                 epoch,

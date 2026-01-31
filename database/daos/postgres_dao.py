@@ -3,10 +3,10 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from .base_dao import BaseDAO
-from common.databases import Postgres
+from common.drivers import PostgresDriver
 
 class PostgresDAO(BaseDAO):
-    def __init__(self, postgres: Postgres):
+    def __init__(self, postgres: PostgresDriver):
         self.postgres = postgres
 
     def _execute_query(self, query, params=None):
@@ -127,8 +127,7 @@ class PostgresDAO(BaseDAO):
 
         # Identify primary key columns from the primary_key flag
         pk_cols = [col['name'] for col in schema if col.get('primary_key')]
-        if not pk_cols:
-            raise ValueError(f'No primary key defined for entity "{entity_name}". Please specify a primary key(s) in the schema.')
+        assert pk_cols is not None, f'No primary key defined for entity "{entity_name}". Please specify a primary key(s) in the schema.'
 
         pk_def = f', PRIMARY KEY ({", ".join(pk_cols)})'
 

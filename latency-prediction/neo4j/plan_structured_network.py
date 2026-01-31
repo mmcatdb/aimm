@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from neural_units import create_neural_unit, NeuralUnit
+from neural_units import Prediction, create_neural_unit, NeuralUnit
 from feature_extractor import FeatureExtractor
 
 class PlanStructuredNetwork(nn.Module):
@@ -10,9 +10,7 @@ class PlanStructuredNetwork(nn.Module):
     Dynamically assembles neural units to match query plan structure.
     """
 
-    def __init__(self, feature_extractor: FeatureExtractor,
-                 hidden_dim: int = 128, num_layers: int = 5,
-                 data_vec_dim: int = 32):
+    def __init__(self, feature_extractor: FeatureExtractor, hidden_dim: int = 128, num_layers: int = 5, data_vec_dim: int = 32):
         """
         Args:
             feature_extractor: FeatureExtractor instance for converting operators to features
@@ -35,7 +33,7 @@ class PlanStructuredNetwork(nn.Module):
         # Track which operator types we've seen
         self.operator_types = set()
 
-    def _get_unit_key(self, operator_type: str, num_children: int) -> str:
+    def get_unit_key(self, operator_type: str, num_children: int) -> str:
         """
         Generate a unique key for a neural unit based on operator type and number of children.
 
@@ -50,7 +48,7 @@ class PlanStructuredNetwork(nn.Module):
         operator_type = operator_type.replace('@neo4j', '')
         return f'{operator_type}_{num_children}'
 
-    def _ensure_unit_exists(self, operator_type: str, num_children: int, feature_dim: int) -> str:
+    def __ensure_unit_exists(self, operator_type: str, num_children: int, feature_dim: int) -> str:
         """
         Ensure a neural unit exists for the given operator configuration.
         Creates it if it doesn't exist.
@@ -64,7 +62,7 @@ class PlanStructuredNetwork(nn.Module):
             Key for accessing the unit
         """
         operator_type = operator_type.replace('@neo4j', '')
-        key = self._get_unit_key(operator_type, num_children)
+        key = self.get_unit_key(operator_type, num_children)
 
         if key not in self.units:
             # Create new neural unit
@@ -81,16 +79,13 @@ class PlanStructuredNetwork(nn.Module):
 
         return key
 
-    def _process_node(self, node: dict, cache: dict | None = None) -> dict[str, torch.Tensor]:
+    def __process_node(self, node: dict, cache: dict[int, Prediction] | None = None) -> Prediction:
         """
         Recursively process a query plan node.
 
         Args:
             node: Neo4j query plan node
             cache: Optional cache for node outputs (for batch processing)
-
-        Returns:
-            Dictionary with 'data' and optionally 'latency' tensors
         """
         # Generate a unique ID for this node (for caching)
         node_id = id(node)
@@ -109,9 +104,9 @@ class PlanStructuredNetwork(nn.Module):
 
         child_outputs = []
         for child in children:
-            child_output = self._process_node(child, cache)
+            child_output = self.__process_node(child, cache)
             # Extract data vector from child
-            child_outputs.append(child_output['data'])
+            child_outputs.append(child_output.data)
 
         # Concatenate operator features with children data vectors
         if child_outputs:
@@ -129,7 +124,7 @@ class PlanStructuredNetwork(nn.Module):
 
         # Get or create neural unit
         feature_dim = len(operator_features)
-        unit_key = self._ensure_unit_exists(operator_type, num_children, feature_dim)
+        unit_key = self.__ensure_unit_exists(operator_type, num_children, feature_dim)
         unit = self.units[unit_key]
 
         # Forward pass through neural unit
@@ -152,13 +147,13 @@ class PlanStructuredNetwork(nn.Module):
             Predicted latency as tensor [1, 1]
         """
         # Process the entire plan tree
-        output = self._process_node(plan)
+        output = self.__process_node(plan)
 
         # Root should have predicted latency
-        if 'latency' not in output:
+        if output.latency is None:
             raise ValueError(f'Root operator {plan.get("operatorType")} did not predict latency. Make sure root is ProduceResults.')
 
-        return output['latency']
+        return output.latency
 
     def forward_batch(self, plans: list[dict]) -> torch.Tensor:
         """
@@ -202,7 +197,7 @@ class PlanStructuredNetwork(nn.Module):
             feature_dim = len(features)
 
             # Ensure unit exists
-            self._ensure_unit_exists(operator_type, num_children, feature_dim)
+            self.__ensure_unit_exists(operator_type, num_children, feature_dim)
 
             # Recursively scan children
             for child in children:

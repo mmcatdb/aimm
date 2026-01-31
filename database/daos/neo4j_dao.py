@@ -1,8 +1,8 @@
-from common.databases import Neo4j, cypher
+from common.drivers import Neo4jDriver, cypher
 from .base_dao import BaseDAO
 
 class Neo4jDAO(BaseDAO):
-    def __init__(self, neo4j: Neo4j):
+    def __init__(self, neo4j: Neo4jDriver):
         self.neo4j = neo4j
 
     def _execute_query(self, query: str, params=None):

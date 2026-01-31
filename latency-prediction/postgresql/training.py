@@ -1,6 +1,7 @@
 """
 Training pipeline for plan-structured neural networks.
 """
+from typing import cast
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -101,9 +102,7 @@ class PlanStructuredTrainer:
     Implements optimized training with batching and caching.
     """
 
-    def __init__(self, model: PlanStructuredNetwork,
-                 learning_rate: float = 0.001,
-                 momentum: float = 0.9):
+    def __init__(self, model: PlanStructuredNetwork, learning_rate: float = 0.001, momentum: float = 0.9):
         """
         Args:
             model: Plan-structured neural network
@@ -116,7 +115,7 @@ class PlanStructuredTrainer:
             lr=learning_rate,
             momentum=momentum
         )
-        self.loss_history = []
+        self.loss_history: list[float] = []
 
 
     def compute_loss(self, batch: list[dict]) -> torch.Tensor:
@@ -156,7 +155,7 @@ class PlanStructuredTrainer:
 
         # Return RMSE
         if total_nodes > 0:
-            mse = total_squared_error / total_nodes
+            mse = cast(torch.Tensor, total_squared_error) / total_nodes
             # return torch.sqrt(mse)
             return torch.sqrt(mse + 1e-8)
         else:
@@ -210,8 +209,7 @@ class PlanStructuredTrainer:
         avg_loss = total_loss / total_weight if total_weight > 0 else 0.0
         return avg_loss
 
-    def train_epoch(self, dataset: QueryPlanDataset,
-                    batch_size: int = 32) -> float:
+    def train_epoch(self, dataset: QueryPlanDataset, batch_size: int = 32) -> float:
         """
         Train for one epoch over the dataset.
 
@@ -235,7 +233,7 @@ class PlanStructuredTrainer:
             loss = self.train_batch(batch)
             epoch_losses.append(loss)
 
-        avg_loss = np.mean(epoch_losses)
+        avg_loss = np.mean(epoch_losses).item()
         self.loss_history.append(avg_loss)
 
         return avg_loss
@@ -267,8 +265,8 @@ class PlanStructuredTrainer:
         actuals = np.array(actuals)
 
         # Compute metrics
-        mae = np.mean(np.abs(predictions - actuals))
-        relative_error = np.mean(np.abs(predictions - actuals) / (actuals + 1e-8))
+        mae = np.mean(np.abs(predictions - actuals)).item()
+        relative_error = np.mean(np.abs(predictions - actuals) / (actuals + 1e-8)).item()
 
         # R(q) metric
         r_values = np.maximum(
@@ -279,9 +277,9 @@ class PlanStructuredTrainer:
         metrics = {
             'mae': mae,
             'relative_error': relative_error,
-            'median_r': np.median(r_values),
-            'r_within_1.5': np.mean(r_values <= 1.5),
-            'r_within_2.0': np.mean(r_values <= 2.0),
+            'median_r': np.median(r_values).item(),
+            'r_within_1.5': np.mean(r_values <= 1.5).item(),
+            'r_within_2.0': np.mean(r_values <= 2.0).item(),
         }
 
         return metrics
