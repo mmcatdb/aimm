@@ -11,12 +11,13 @@ import pickle
 import argparse
 import sys
 
+from datasets.database import Database
+from datasets.tpch.neo4j import TpchNeo4j
 from common.config import Config
-from plan_extractor import Neo4j, PlanExtractor
+from plan_extractor import Neo4jDriver, PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
 from neural_units import create_neural_unit
-
 
 class LatencyEstimator:
     """
@@ -24,8 +25,8 @@ class LatencyEstimator:
     Uses EXPLAIN to get the query plan and neural network for prediction.
     """
 
-    def __init__(self, neo4j: Neo4j, checkpoint_path: str, feature_extractor_path: str | None = None, device: str = 'cpu', num_layers: int = 5, hidden_dim: int = 128):
-        self.extractor = PlanExtractor(neo4j)
+    def __init__(self, neo4j: Neo4jDriver, database: Database, checkpoint_path: str, feature_extractor_path: str | None = None, device: str = 'cpu', num_layers: int = 5, hidden_dim: int = 128):
+        self.extractor = PlanExtractor(neo4j, database)
         self.device = device
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
@@ -96,7 +97,7 @@ class LatencyEstimator:
                         hidden_dim=self.hidden_dim,
                         num_layers=self.num_layers
                     )
-                    key = self.model._get_unit_key(operator_type, num_children)
+                    key = self.model.get_unit_key(operator_type, num_children)
                     self.model.units[key] = unit
                     self.model.operator_types.add(operator_type)
 
@@ -150,7 +151,6 @@ class LatencyEstimator:
             except Exception as e:
                 results.append((query, None, {'error': str(e)}))
         return results
-
 
 def parse_queries_from_file(filepath: str) -> list[str]:
     with open(filepath, 'r') as f:
@@ -246,9 +246,11 @@ def main():
             print('Loading model...', file=sys.stderr)
 
         config = Config.load()
-        neo4j = Neo4j(config.neo4j)
+        neo4j = Neo4jDriver(config.neo4j)
+        database = TpchNeo4j()
         estimator = LatencyEstimator(
             neo4j=neo4j,
+            database=database,
             checkpoint_path=args.checkpoint,
             feature_extractor_path=args.feature_extractor,
             device=args.device,
@@ -271,7 +273,7 @@ def main():
             import json
             output = []
             for query, latency, plan in results:
-                item = {
+                item: dict = {
                     'query': query,
                     'estimated_latency_seconds': latency,
                     'estimated_latency_formatted': format_latency(latency) if latency else None

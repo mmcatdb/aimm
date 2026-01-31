@@ -1,7 +1,7 @@
 from __future__ import annotations
 import random
 from common.config import Config
-from common.database_provider import DatabaseProvider
+from common.driver_provider import DriverProvider
 from query_engine import QueryEngine
 import math
 
@@ -111,7 +111,7 @@ class MCTSNode:
         return random.choice(best_children)
 
 class MCTS:
-    def __init__(self, dbs: DatabaseProvider, tables: tuple[str, ...]):
+    def __init__(self, dbs: DriverProvider, tables: tuple[str, ...]):
         self.dbs = dbs
         self.ALL_TABLES = tables
         self.explored_states = set()
@@ -189,7 +189,7 @@ class MCTS:
 def main():
     tables = ('customer', 'orders', 'supplier', 'part', 'partsupp', 'lineitem')
     initial_mapping = tuple(['postgres'] * len(tables))
-    dbs = DatabaseProvider.default(Config.load())
+    dbs = DriverProvider.default(Config.load())
     mcts = MCTS(dbs, tables)
     best_mapping, best_time = mcts.run(initial_mapping, iterations=50)
     print(f'Final best mapping: {best_mapping} with time {best_time}s')

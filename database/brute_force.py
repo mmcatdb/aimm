@@ -1,15 +1,15 @@
 from common.config import Config
-from common.database_provider import DatabaseProvider
+from common.driver_provider import DriverProvider
 from query_engine import QueryEngine
 
-def test_mapping_performance(dbs: DatabaseProvider, mapping: dict[str, str]) -> float:
+def test_mapping_performance(dbs: DriverProvider, mapping: dict[str, str]) -> float:
     query_engine = QueryEngine(dbs, schema_mapping=mapping)
     return query_engine.run_queries(verbose=False)
 
 def main():
     options = ['postgres', 'mongo', 'neo4j']
     config = Config.load()
-    dbs = DatabaseProvider.default(config)
+    dbs = DriverProvider.default(config)
 
     best_time = float('inf')
     best_mapping = None

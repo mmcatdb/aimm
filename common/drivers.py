@@ -1,4 +1,5 @@
-from typing import Generator, cast
+from collections.abc import Generator
+from typing import cast
 from contextlib import contextmanager
 from typing_extensions import LiteralString
 from psycopg2.pool import SimpleConnectionPool
@@ -18,7 +19,7 @@ class PostgresConfig:
         self.user = user
         self.password = password
 
-class Postgres():
+class PostgresDriver():
     """
     Usage:
     with postgres.cursor() as cursor:
@@ -69,7 +70,7 @@ class MongoConfig:
         self.port = port
         self.database = database
 
-class Mongo():
+class MongoDriver():
     """
     Usage:
     database = mongo.database()
@@ -90,7 +91,7 @@ class Neo4jConfig:
         self.user = user
         self.password = password
 
-class Neo4j():
+class Neo4jDriver():
     """
     Usage:
     with neo4j.session() as session:

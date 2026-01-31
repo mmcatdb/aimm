@@ -1,10 +1,10 @@
 from pymongo import ASCENDING
 
-from common.databases import Mongo
+from common.drivers import MongoDriver
 from .base_dao import BaseDAO
 
 class MongoDAO(BaseDAO):
-    def __init__(self, mongo: Mongo):
+    def __init__(self, mongo: MongoDriver):
         self.mongo = mongo
         self.db = mongo.database()
 

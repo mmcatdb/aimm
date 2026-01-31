@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 
-
 class NeuralUnit(nn.Module):
     """
     Base class for operator-level neural units.
@@ -13,8 +12,7 @@ class NeuralUnit(nn.Module):
     - Data vector output (d values)
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int = 128,
-                 num_layers: int = 5, data_vec_dim: int = 32):
+    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 5, data_vec_dim: int = 32):
         """
         Args:
             input_dim: Dimension of input features (including children outputs)
@@ -70,7 +68,6 @@ class NeuralUnit(nn.Module):
 
         return output
 
-
 class GenericUnit(NeuralUnit):
     """
     Generic neural unit for all operator types.
@@ -78,8 +75,7 @@ class GenericUnit(NeuralUnit):
     total input dimension correctly.
     """
 
-    def __init__(self, input_dim: int, num_children: int = 0,
-                 data_vec_dim: int = 32, **kwargs):
+    def __init__(self, input_dim: int, num_children: int = 0, data_vec_dim: int = 32, **kwargs):
         """
         Args:
             input_dim: Feature dimension of *this operator only*

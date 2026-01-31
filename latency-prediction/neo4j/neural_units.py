@@ -10,6 +10,13 @@ Key differences from PostgreSQL implementation:
 import torch
 import torch.nn as nn
 
+class Prediction:
+    def __init__(self, data: torch.Tensor, latency: torch.Tensor | None):
+        self.data = data
+        """Data vector output [batch_size, data_vec_dim]"""
+        self.latency = latency
+        """Latency prediction [batch_size, 1] (only if is_root=True)"""
+
 class NeuralUnit(nn.Module):
     """
     Base class for operator-level neural units.
@@ -18,9 +25,7 @@ class NeuralUnit(nn.Module):
     Only the root unit (ProduceResults) outputs latency prediction.
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int = 128,
-                 data_vec_dim: int = 32, num_layers: int = 5,
-                 is_root: bool = False):
+    def __init__(self, input_dim: int, hidden_dim: int = 128, data_vec_dim: int = 32, num_layers: int = 5, is_root: bool = False):
         """
         Args:
             input_dim: Size of input feature vector
@@ -56,17 +61,12 @@ class NeuralUnit(nn.Module):
             # Use softplus to ensure positive latency predictions
             self.latency_activation = nn.Softplus()
 
-    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Prediction:
         """
         Forward pass through the neural unit.
 
         Args:
             x: Input tensor [batch_size, input_dim]
-
-        Returns:
-            Dictionary with:
-                - 'data': Data vector output [batch_size, data_vec_dim]
-                - 'latency': Latency prediction [batch_size, 1] (only if is_root=True)
         """
         # Pass through hidden layers
         h = self.hidden_layers(x)
@@ -74,15 +74,12 @@ class NeuralUnit(nn.Module):
         # Always output data vector
         data_vec = self.data_output(h)
 
-        result = {'data': data_vec}
-
         # Only root unit predicts latency
+        latency = None
         if self.is_root:
             latency = self.latency_activation(self.latency_output(h))
-            result['latency'] = latency
 
-        return result
-
+        return Prediction(data_vec, latency)
 
 class GenericUnit(NeuralUnit):
     """
@@ -92,8 +89,7 @@ class GenericUnit(NeuralUnit):
     with the operator's own features.
     """
 
-    def __init__(self, input_dim: int, num_children: int = 0,
-                 data_vec_dim: int = 32, is_root: bool = False, **kwargs):
+    def __init__(self, input_dim: int, num_children: int = 0, data_vec_dim: int = 32, is_root: bool = False, **kwargs):
         """
         Args:
             input_dim: Size of operator's feature vector (without children)
@@ -105,15 +101,12 @@ class GenericUnit(NeuralUnit):
         # Total input = operator features + (data_vec_dim * num_children)
         total_input_dim = input_dim + (data_vec_dim * num_children)
 
-        super().__init__(total_input_dim, data_vec_dim=data_vec_dim,
-                        is_root=is_root, **kwargs)
+        super().__init__(total_input_dim, data_vec_dim=data_vec_dim, is_root=is_root, **kwargs)
 
         self.num_children = num_children
         self.operator_feature_dim = input_dim
 
-
-def create_neural_unit(operator_type: str, input_dim: int, num_children: int = 0,
-                      data_vec_dim: int = 32, is_root: bool = False, **kwargs) -> NeuralUnit:
+def create_neural_unit(operator_type: str, input_dim: int, num_children: int = 0, data_vec_dim: int = 32, is_root: bool = False, **kwargs) -> NeuralUnit:
     """
     Factory function to create a neural unit for a given operator type.
 

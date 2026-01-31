@@ -12,10 +12,10 @@ import torch
 import numpy as np
 import pickle
 import copy
-import json
 import argparse
+from datasets.tpch.postgres import TpchPostgres
 from common.config import Config
-from common.databases import Postgres
+from common.drivers import PostgresDriver
 from plan_extractor import PlanExtractor
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
@@ -50,8 +50,9 @@ def main():
     # Step 1: Initialize database connection
     print('\n[1/7] Connecting to database...')
     config = Config.load()
-    postgres = Postgres(config.postgres)
-    extractor = PlanExtractor(postgres)
+    postgres = PostgresDriver(config.postgres)
+    database = TpchPostgres()
+    extractor = PlanExtractor(postgres, database)
 
     # Step 2: Collect query plans
     print(f'\n[2/7] Collecting {NUM_QUERIES} query plans...')

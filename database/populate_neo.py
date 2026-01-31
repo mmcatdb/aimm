@@ -2,13 +2,13 @@ import argparse
 import os
 import shutil
 from common.config import Config
-from common.databases import Neo4j, cypher
+from common.drivers import Neo4jDriver, cypher
 
 class TpchLoader:
     """
     A class to load TPC-H data into a Neo4j database.
     """
-    def __init__(self, neo4j: Neo4j):
+    def __init__(self, neo4j: Neo4jDriver):
         try:
             self._neo4j = neo4j
             neo4j.verify()
@@ -404,7 +404,7 @@ def main():
     print(f'Connecting to Neo4j at: {config.neo4j.host}:{config.neo4j.port}')
     print('----------------------------\n')
 
-    neo4j = Neo4j(config.neo4j)
+    neo4j = Neo4jDriver(config.neo4j)
     try:
         try:
             neo4j.verify()

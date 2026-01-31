@@ -2,8 +2,8 @@ import csv
 import os
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
-from common.database_provider import DatabaseProvider
-from common.databases import Mongo, Neo4j, Postgres
+from common.driver_provider import DriverProvider
+from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
 from database.daos.mongo_dao import MongoDAO
 from database.daos.neo4j_dao import Neo4jDAO
 from database.daos.postgres_dao import PostgresDAO
@@ -34,18 +34,18 @@ def convert_value(value, data_type):
 
 
 class Populator:
-    def __init__(self, dbs: DatabaseProvider, schema_mapping: dict[str, str]):
+    def __init__(self, dbs: DriverProvider, schema_mapping: dict[str, str]):
         self.schema_mapping = schema_mapping
         self.daos = {
-            'postgres': PostgresDAO(dbs.get_typed('postgres', Postgres)),
-            'mongo': MongoDAO(dbs.get_typed('mongo', Mongo)),
-            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4j)),
+            'postgres': PostgresDAO(dbs.get_typed('postgres', PostgresDriver)),
+            'mongo': MongoDAO(dbs.get_typed('mongo', MongoDriver)),
+            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4jDriver)),
         }
 
     def get_dao_for_entity(self, entity_name):
         db_type = self.schema_mapping[entity_name]
-        if not db_type:
-            raise ValueError(f'Entity "{entity_name}" not found in schema mapping. Add it to config.yaml under schema_mapping.')
+        assert db_type is not None, f'Entity "{entity_name}" not found in schema mapping. Add it to config.yaml under schema_mapping.'
+
         return self.daos[db_type]
 
     def populate_from_tbl(self, entity_name, file_path, schema):
@@ -82,7 +82,7 @@ class Populator:
 
 def main():
     config = Config.load()
-    dbs = DatabaseProvider.default(config)
+    dbs = DriverProvider.default(config)
     # TODO
     schema_mapping = {
         'region': 'postgres',

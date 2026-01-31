@@ -3,7 +3,7 @@ from typing_extensions import Self
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from .databases import PostgresConfig, MongoConfig, Neo4jConfig
+from .drivers import PostgresConfig, MongoConfig, Neo4jConfig
 
 def _string(key: str) -> str:
     value = os.getenv(key)
@@ -26,7 +26,7 @@ class Config:
     DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / '.env'
 
     @staticmethod
-    def load(path: str | None = None):
+    def load(path: str | None = None) -> 'Config':
         try:
             load_dotenv(path or Config.DEFAULT_CONFIG_PATH)
         except ImportError:

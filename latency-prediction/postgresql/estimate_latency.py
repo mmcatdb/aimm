@@ -6,12 +6,13 @@ Usage:
     # Multiple queries from a file (one query per line or separated by semicolons)
     python estimate_latency.py --file queries.txt
 """
+from typing import Any
 import torch
 import argparse
 import sys
 
 from common.config import Config
-from common.databases import Postgres
+from common.drivers import PostgresDriver
 from feature_extractor import FeatureExtractor
 from plan_structured_network import PlanStructuredNetwork
 from neural_units import GenericUnit
@@ -34,7 +35,7 @@ class LatencyEstimator:
     Uses EXPLAIN to get the query plan and neural network for prediction.
     """
 
-    def __init__(self, postgres: Postgres, checkpoint_path: str, device: str = 'cpu', num_layers: int | None = None, hidden_dim: int | None = None):
+    def __init__(self, postgres: PostgresDriver, checkpoint_path: str, device: str = 'cpu', num_layers: int | None = None, hidden_dim: int | None = None):
         self.postgres = postgres
         self.device = device
 
@@ -275,7 +276,7 @@ def main():
             print('Loading model...', file=sys.stderr)
 
         config = Config.load(args.config)
-        postgres = Postgres(config.postgres)
+        postgres = PostgresDriver(config.postgres)
         estimator = LatencyEstimator(
             postgres=postgres,
             checkpoint_path=args.checkpoint,
@@ -301,7 +302,7 @@ def main():
             import json
             output = []
             for query, latency, plan in results:
-                item = {
+                item: dict[str, Any] = {
                     'query': query,
                     'estimated_latency_seconds': latency,
                     'estimated_latency_formatted': format_latency(latency) if latency else None

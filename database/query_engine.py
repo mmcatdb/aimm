@@ -1,17 +1,17 @@
 import time
-from common.database_provider import DatabaseProvider
-from common.databases import Mongo, Neo4j, Postgres
+from common.driver_provider import DriverProvider
+from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
 from daos.mongo_dao import MongoDAO
 from daos.neo4j_dao import Neo4jDAO
 from daos.postgres_dao import PostgresDAO
 
 class QueryEngine:
-    def __init__(self, dbs: DatabaseProvider, schema_mapping: dict[str, str]):
+    def __init__(self, dbs: DriverProvider, schema_mapping: dict[str, str]):
         self.schema_mapping = schema_mapping
         self.daos = {
-            'postgres': PostgresDAO(dbs.get_typed('postgres', Postgres)),
-            'mongo': MongoDAO(dbs.get_typed('mongo', Mongo)),
-            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4j)),
+            'postgres': PostgresDAO(dbs.get_typed('postgres', PostgresDriver)),
+            'mongo': MongoDAO(dbs.get_typed('mongo', MongoDriver)),
+            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4jDriver)),
         }
 
     def get_dao_for_entity(self, entity_name):
@@ -24,7 +24,6 @@ class QueryEngine:
     def find(self, entity_name, query_params):
         dao = self.get_dao_for_entity(entity_name)
         return dao.find(entity_name, query_params)
-
 
     def find_lineitems_for_customer(self, customer_name):
         # Find the customer
@@ -47,8 +46,6 @@ class QueryEngine:
 
         return all_lineitems
 
-
-
     def run_queries(self, customer_name='Customer#000000007', verbose=True) -> float:
         # Queries from: https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/mysql/queries.md
 
@@ -67,7 +64,6 @@ class QueryEngine:
         customer_dao = self.get_dao_for_entity('customer')
         order_dao = self.get_dao_for_entity('orders')
 
-
         # -----------  A1  -----------
         lineitems = lineitem_dao.get_all_lineitems()
         if verbose:
@@ -84,7 +80,6 @@ class QueryEngine:
             print('-' * 50)
         checkpoint = time.time()
 
-
         # -----------  A3  -----------
         customers = customer_dao.get_all_customers()
         if verbose:
@@ -93,7 +88,6 @@ class QueryEngine:
             print('-' * 50)
         checkpoint = time.time()
 
-
         # -----------  A4  -----------
         orders = order_dao.get_orders_by_keyrange('1000', '50000')
         if verbose:
@@ -101,7 +95,6 @@ class QueryEngine:
             print(f'Time taken for A4: {time.time() - checkpoint:.2f} seconds')
             print('-' * 50)
         checkpoint = time.time()
-
 
         # -----------  B1  -----------
         orders_by_month = order_dao.count_orders_by_month()
