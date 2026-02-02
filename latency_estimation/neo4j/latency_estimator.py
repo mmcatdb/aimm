@@ -43,6 +43,6 @@ class LatencyEstimator:
 
         # Estimate latency using the trained model
         with torch.no_grad():
-            estimated_latency = self.model.estimate_plan_latency(plan)
+            estimated_latency = self.model(plan)
 
         return estimated_latency.item(), plan

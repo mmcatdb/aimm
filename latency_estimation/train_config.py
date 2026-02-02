@@ -11,21 +11,6 @@ class ModelConfig:
         self.num_layers = num_layers
         self.data_vec_dim = data_vec_dim
 
-    def to_dict(self) -> dict[str, int]:
-        return {
-            'hidden_dim': self.hidden_dim,
-            'num_layers': self.num_layers,
-            'data_vec_dim': self.data_vec_dim,
-        }
-
-    @staticmethod
-    def from_dict(d: dict[str, int]) -> 'ModelConfig':
-        return ModelConfig(
-            hidden_dim = d['hidden_dim'],
-            num_layers = d['num_layers'],
-            data_vec_dim = d['data_vec_dim'],
-        )
-
 class TrainConfig:
     """Parameters for training and data collection."""
     def __init__(self,

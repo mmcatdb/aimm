@@ -13,6 +13,7 @@ class Config:
         self.import_directory: str = rest['import_directory']
         self.cache_directory: str = rest['cache_directory']
         self.checkpoint_directory: str = rest['checkpoint_directory']
+        self.results_directory: str = rest['results_directory']
         self.device: str = rest['device']
 
     # Load .env manually if needed (outside Docker).
@@ -66,6 +67,7 @@ class Config:
             'import_directory': _string('IMPORT_DIRECTORY', 'data/inputs'),
             'cache_directory': _string('CACHE_DIRECTORY', 'data/cache'),
             'checkpoint_directory': _string('CHECKPOINT_DIRECTORY', 'data/checkpoints'),
+            'results_directory': _string('RESULTS_DIRECTORY', 'data'),
             'device': _string('DEVICE'),
         }
 

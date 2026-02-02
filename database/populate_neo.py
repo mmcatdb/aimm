@@ -9,13 +9,7 @@ class TpchLoader:
     A class to load TPC-H data into a Neo4j database.
     """
     def __init__(self, neo4j: Neo4jDriver):
-        try:
-            self._neo4j = neo4j
-            neo4j.verify()
-            print('Successfully connected to Neo4j.')
-        except Exception as e:
-            print(f'Failed to connect to Neo4j: {e}')
-            raise
+        self._neo4j = neo4j
 
     def run_query(self, query: str, parameters=None):
         """
@@ -101,8 +95,8 @@ class TpchLoader:
             'CREATE CONSTRAINT IF NOT EXISTS FOR (o:Order) REQUIRE o.o_orderkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (p:Part) REQUIRE p.p_partkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (s:Supplier) REQUIRE s.s_suppkey IS UNIQUE',
-            'CREATE CONSTRAINT IF NOT EXISTS FOR (ps:PartSupp) REQUIRE (ps.p_partkey, ps.s_suppkey) IS UNIQUE',
-            'CREATE CONSTRAINT IF NOT EXISTS FOR (li:LineItem) REQUIRE (li.o_orderkey, li.l_linenumber) IS UNIQUE'
+            'CREATE CONSTRAINT IF NOT EXISTS FOR (ps:PartSupp) REQUIRE (ps.ps_partkey, ps.ps_suppkey) IS UNIQUE',
+            'CREATE CONSTRAINT IF NOT EXISTS FOR (li:LineItem) REQUIRE (li.l_orderkey, li.l_linenumber) IS UNIQUE'
         ]
         for query in queries:
             self.run_query(query)
@@ -247,6 +241,8 @@ class TpchLoader:
             MATCH (p:Part {p_partkey: toInteger(row[0])})
             MATCH (s:Supplier {s_suppkey: toInteger(row[1])})
             CREATE (p)<-[:IS_FOR_PART]-(ps:PartSupp {
+                ps_partkey: toInteger(row[0]),
+                ps_suppkey: toInteger(row[1]),
                 ps_availqty: toInteger(row[2]),
                 ps_supplycost: toFloat(row[3]),
                 ps_comment: row[4]
@@ -265,6 +261,9 @@ class TpchLoader:
             MATCH (s:Supplier {s_suppkey: toInteger(row[2])})
             MATCH (p)<-[:IS_FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s)
             CREATE (o)-[:CONTAINS_ITEM]->(li:LineItem {
+                l_orderkey: toInteger(row[0]),
+                l_partkey: toInteger(row[1]),
+                l_suppkey: toInteger(row[2]),
                 l_linenumber: toInteger(row[3]),
                 l_quantity: toFloat(row[4]),
                 l_extendedprice: toFloat(row[5]),

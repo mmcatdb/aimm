@@ -1,7 +1,10 @@
+from math import nan
 import torch
 import numpy as np
 from tabulate import tabulate
 import matplotlib.pyplot as plt
+from dataclasses import dataclass, asdict
+import json
 from common.utils import EPSILON
 from datasets.database import TestQuery
 from latency_estimation.postgres.plan_extractor import PlanExtractor
@@ -87,7 +90,7 @@ class ModelEvaluator:
             actual.error_vs_actual = abs(estimated_time - actual_mean)
             actual.relative_error_vs_actual = abs(estimated_time - actual_mean) / (actual_mean + EPSILON)
             actual.r_vs_actual = max(estimated_time / (actual_mean + EPSILON), actual_mean / (estimated_time + EPSILON))
-            actual.estimated_rati = actual_mean / (estimated_time + EPSILON)
+            actual.estimated_ratio = actual_mean / (estimated_time + EPSILON)
 
             # Also compare EXPLAIN ANALYZE vs Actual
             actual.explain_vs_actual_error = abs(explain_time - actual_mean)
@@ -122,7 +125,7 @@ class ModelEvaluator:
             ]
             if r.actual:
                 row.extend([
-                    f'{r.actual.estimated_rati:.2f}',
+                    f'{r.actual.estimated_ratio:.2f}',
                     f'{r.actual.r_vs_actual:.2f}',
                 ])
             table_data.append(row)
@@ -183,7 +186,7 @@ class ModelEvaluator:
             print(f'  Median Absolute Error: {np.median(explain_vs_actual):.2f} ms')
             print(f'  Mean Relative Error: {np.mean(explain_vs_actual_rel):.4f}')
 
-    def plot_results(self, results: list['Result'], save_path: str = 'evaluation_plots.png'):
+    def plot_results(self, results: list['Result'], save_path: str):
         """Create visualization plots comparing estimations and actual times."""
 
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -262,29 +265,27 @@ class ModelEvaluator:
 
         return fig
 
+@dataclass
 class ActualResult:
-    def __init__(self):
-        self.time_mean: float
-        self.time_min: float
-        self.time_max: float
-        self.error_vs_actual: float
-        self.relative_error_vs_actual: float
-        self.r_vs_actual: float
-        self.estimated_rati: float
-        self.explain_vs_actual_error: float
-        self.explain_vs_actual_relative: float
+    time_mean: float = nan
+    time_min: float = nan
+    time_max: float = nan
+    error_vs_actual: float = nan
+    relative_error_vs_actual: float = nan
+    r_vs_actual: float = nan
+    estimated_ratio: float = nan
+    explain_vs_actual_error: float = nan
+    explain_vs_actual_relative: float = nan
 
+@dataclass
 class Result:
     """Holds a single query evaluation result."""
-    def __init__(self, name: str, content: str):
-        self.name = name
-        self.content = content
-
-        self.estimated_time: float
-        self.explain_analyze_time: float
-        self.error_vs_explain: float
-        self.relative_error_vs_explain: float
-        self.r_vs_explain: float
-        self.explain_estimated_ratio: float
-
-        self.actual: ActualResult | None = None
+    name: str
+    content: str
+    estimated_time: float = nan
+    explain_analyze_time: float = nan
+    error_vs_explain: float = nan
+    relative_error_vs_explain: float = nan
+    r_vs_explain: float = nan
+    explain_estimated_ratio: float = nan
+    actual: ActualResult | None = None

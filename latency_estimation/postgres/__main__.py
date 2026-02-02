@@ -1,8 +1,10 @@
+import os
 import traceback
 import sys
 import numpy as np
 import argparse
 import json
+from common.utils import JsonEncoder
 from datasets.database import TestQuery
 from latency_estimation.common import format_latency, load_queries, parse_queries, print_dataset_summary, truncate_query
 from latency_estimation.train_config import TrainConfig
@@ -137,7 +139,6 @@ def evaluate_args(parser: argparse.ArgumentParser):
     parser.add_argument('--checkpoint', '-c', type=str, required=True, help='Path to trained model')
     parser.add_argument('--no-actual', action='store_true', help='Skip actual execution time measurement')
     parser.add_argument('--runs', type=int, default=10, help='Number of runs for actual execution measurement')
-    parser.add_argument('--save-results', type=str, default='evaluation_results.json', help='Path to save results JSON')
     parser.add_argument('--no-plots', action='store_true', help='Skip generating plots')
     parser.add_argument('--query', '-q', type=str, action='append', dest='queries', help='Additional SQL query to evaluate (can be used multiple times)')
     parser.add_argument('--query-only', '-qo', action='store_true', help='Only evaluate the provided --query arguments, skip built-in test queries')
@@ -170,15 +171,18 @@ def evaluate_run(args: argparse.Namespace, ctx: Context):
     )
     evaluator.print_summary(results)
 
+    results_path = os.path.join(ctx.config.results_directory, 'evaluation_results.json')
+    plot_path = os.path.join(ctx.config.results_directory, 'evaluation_plots.png')
+
     # Save results
-    print(f'\nSaving results to {args.save_results}...')
-    with open(args.save_results, 'w') as f:
-        json.dump(results, f, indent=2)
+    print(f'\nSaving results to {results_path}...')
+    with open(results_path, 'w') as file:
+        json.dump(results, file, indent=2, cls=JsonEncoder)
 
     # Generate plots
     if not args.no_plots:
         try:
-            evaluator.plot_results(results)
+            evaluator.plot_results(results, save_path=plot_path)
         except Exception as e:
             print(f'Error: Could not generate plots: {e}')
 
