@@ -52,8 +52,8 @@ class Populator:
         dao = self.get_dao_for_entity(entity_name)
         db_type = self.schema_mapping[entity_name]
 
-        with open(file_path, 'r') as f:
-            reader = csv.reader(f, delimiter='|')
+        with open(file_path, 'r') as file:
+            reader = csv.reader(file, delimiter='|')
             for row in reader:
                 # Skip empty or malformed rows
                 if not row or all(col == '' for col in row):

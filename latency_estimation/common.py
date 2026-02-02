@@ -19,21 +19,6 @@ class NnOperator:
         """Get a unique key for this operator."""
         return f'{self.type}_{self.num_children}'
 
-    def to_dict(self) -> dict:
-        return {
-            'type': self.type,
-            'num_children': self.num_children,
-            'feature_dim': self.feature_dim
-        }
-
-    @staticmethod
-    def from_dict(data: dict) -> 'NnOperator':
-        return NnOperator(
-            type=data['type'],
-            num_children=data['num_children'],
-            feature_dim=data['feature_dim']
-        )
-
 TDataset = TypeVar('TDataset', bound = BaseDataset)
 
 def load_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset:
@@ -73,8 +58,8 @@ def load_queries(args: Namespace, parser: Callable[[str], list[str]]) -> list[st
         sys.exit(1)
 
     try:
-        with open(args.file, 'r') as f:
-            content = f.read()
+        with open(args.file, 'r') as file:
+            content = file.read()
     except FileNotFoundError:
         print(f'Error: File not found: {args.file}', file=sys.stderr)
         sys.exit(1)

@@ -33,11 +33,15 @@ class PlanStructuredNetwork(nn.Module):
     @staticmethod
     def from_checkpoint(checkpoint: dict, device: str) -> 'PlanStructuredNetwork':
         """Load model from checkpoint, including neural units."""
-        config = ModelConfig.from_dict(checkpoint['config'])
-        feature_extractor = checkpoint['feature_extractor']
+        config: ModelConfig = checkpoint['config']
+        feature_extractor: FeatureExtractor = checkpoint['feature_extractor']
+
         model = PlanStructuredNetwork(config, feature_extractor)
 
-        # Load trained weights
+        operators: dict[str, NnOperator] = checkpoint['operators']
+        for operator in operators.values():
+            model._add_unit_if_not_exists(operator)
+
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(device)
         model.eval()
@@ -47,9 +51,8 @@ class PlanStructuredNetwork(nn.Module):
     def to_checkpoint(self) -> dict:
         """Serialization to a file-friendly dictionary."""
         return {
-            # TODO The to_dict method might not be needed if we save the entire model using torch.save.
-            'config': self.config.to_dict(),
-            'operators': [op.to_dict() for op in self.operators.values()],
+            'config': self.config,
+            'operators': self.operators,
             'feature_extractor': self.feature_extractor,
             # Learned parameters of the model.
             'model_state_dict': self.state_dict(),
@@ -63,10 +66,9 @@ class PlanStructuredNetwork(nn.Module):
         """Count total number of parameters in the model."""
         return sum(p.numel() for p in self.parameters())
 
-    def estimate_plan_latency(self, plan: dict) -> torch.Tensor:
-        # FIXME make this return number instead of tensor?
+    def forward(self, plan: dict) -> torch.Tensor:
         """
-        Estimate latency for a query plan.
+        Implements the model's forward pass. Estimate latency for a query plan.
         Args:
             plan: Query plan dictionary (root node)
         Returns:

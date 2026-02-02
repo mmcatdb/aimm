@@ -58,7 +58,7 @@ class PlanStructuredTrainer:
         with torch.no_grad():
             for batch in dataloader:
                 for item in batch:
-                    estimated_latency = self.__model.estimate_plan_latency(item['plan']).item()
+                    estimated_latency = self.__model(item['plan']).item()
                     estimations.append(estimated_latency)
                     actuals.append(item['execution_time'])
 
@@ -172,7 +172,7 @@ class PlanStructuredTrainer:
                 execution_time = batch[idx]['execution_time']
 
                 # Forward pass through model
-                estimated_latency = self.__model.estimate_plan_latency(plan)
+                estimated_latency = self.__model(plan)
 
                 estimations.append(estimated_latency)
                 targets.append(torch.tensor([[execution_time]], dtype=torch.float32))

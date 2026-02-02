@@ -18,9 +18,9 @@ class FeatureExtractor:
 
         # Statistics for normalization
         # Changed from lambda to dict to enable pickling
-        self.stats = defaultdict(self.__default_stats)
+        self.stats = defaultdict(self._default_stats)
 
-    def __default_stats(self):
+    def _default_stats(self):
         """Default statistics dictionary for normalization."""
         return {'min': float('inf'), 'max': float('-inf'), 'mean': 0, 'count': 0}
 

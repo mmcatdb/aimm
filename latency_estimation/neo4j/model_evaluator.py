@@ -123,7 +123,7 @@ class ModelEvaluator:
 
     def __estimate_latency(self, plan: dict) -> float:
         with torch.no_grad():
-            return self.model.estimate_plan_latency(plan).item()
+            return self.model(plan).item()
 
 class Result:
     """Holds a single query evaluation result."""
