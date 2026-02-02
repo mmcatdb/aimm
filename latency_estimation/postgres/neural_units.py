@@ -1,6 +1,6 @@
-
 import torch
 import torch.nn as nn
+from latency_estimation.train_config import ModelConfig
 
 class NeuralUnit(nn.Module):
     """
@@ -12,7 +12,7 @@ class NeuralUnit(nn.Module):
     - Data vector output (d values)
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 5, data_vec_dim: int = 32):
+    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, data_vec_dim: int):
         """
         Args:
             input_dim: Dimension of input features (including children outputs)
@@ -48,10 +48,8 @@ class NeuralUnit(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass through neural unit.
-
         Args:
             x: Input tensor [batch_size, input_dim]
-
         Returns:
             Output tensor [batch_size, 1 + data_vec_dim]
             where output[:, 0] is latency and output[:, 1:] is data vector
@@ -75,14 +73,24 @@ class GenericUnit(NeuralUnit):
     total input dimension correctly.
     """
 
-    def __init__(self, input_dim: int, num_children: int = 0, data_vec_dim: int = 32, **kwargs):
+    def __init__(self, input_dim: int, num_children: int, data_vec_dim: int, **kwargs):
         """
         Args:
             input_dim: Feature dimension of *this operator only*
             num_children: Number of children this operator has
             data_vec_dim: Dimension of data output vectors
-            **kwargs: Passed to NeuralUnit (hidden_dim, num_layers)
+            **kwargs: Passed to NeuralUnit (hidden_dim, num_layers, etc.)
         """
         total_input_dim = input_dim + num_children * (1 + data_vec_dim)
 
         super().__init__(total_input_dim, data_vec_dim=data_vec_dim, **kwargs)
+
+def create_neural_unit(op_type: str, input_dim: int, num_children: int, config: ModelConfig):
+    """Create a neural unit for a given operator type."""
+    return GenericUnit(
+        input_dim=input_dim,
+        num_children=num_children,
+        data_vec_dim=config.data_vec_dim,
+        hidden_dim=config.hidden_dim,
+        num_layers=config.num_layers
+    )

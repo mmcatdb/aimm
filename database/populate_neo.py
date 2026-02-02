@@ -46,13 +46,7 @@ class TpchLoader:
         """
         print('Resetting database...')
 
-        def get_constraint_names():
-            query = 'SHOW CONSTRAINTS YIELD name'
-            with self._neo4j.session() as session:
-                result = session.run(query)
-                return [record['name'] for record in result]
-
-        existing_constraints = get_constraint_names()
+        existing_constraints = self.__get_constraint_names()
         constraints = [f'DROP CONSTRAINT {name} IF EXISTS' for name in existing_constraints]
         for constraint in constraints:
             try:
@@ -88,6 +82,12 @@ class TpchLoader:
             print(f'Database has been cleared. Nodes: {remaining_nodes}, Relationships: {remaining_rels}')
         else:
             print(f'Warning: Database not empty after reset. Nodes: {remaining_nodes}, Relationships: {remaining_rels}')
+
+    def __get_constraint_names(self):
+        query = 'SHOW CONSTRAINTS YIELD name'
+        with self._neo4j.session() as session:
+            result = session.run(query)
+            return [record['name'] for record in result]
 
     def create_constraints(self):
         """
@@ -336,7 +336,7 @@ def main():
         help='Path to the directory containing the TPC-H .tbl files. Files will be copied from there to the Neo4j import directory. If not specified, the files are expected to be already present in the Neo4j import directory.'
     )
     parser.add_argument(
-        '--neo4j-import-dir',
+        '--import-dir',
         type=str,
         default=None,
         help=(
@@ -344,7 +344,8 @@ def main():
             'Common locations:\n'
             '  - Linux (Debian/RPM): /var/lib/neo4j/import\n'
             '  - macOS (Homebrew):   /usr/local/var/neo4j/import or /opt/homebrew/var/neo4j/import\n'
-            '  - Docker:             Mapped volume (often /import inside container)\n'
+            '  - Docker (compose):   Leave empty (check the compose file)\n'
+            '  - Docker (custom):    Mapped volume (often /import inside container)\n'
             '  - Neo4j Desktop:      Open App -> Manage -> Open Folder -> Import'
         )
     )
@@ -360,11 +361,7 @@ def main():
     config = Config.load()
 
     # Get Neo4j import directory
-    import_directory = args.neo4j_import_dir or config.import_directory
-    if not import_directory:
-        print('Error: Neo4j import directory must be specified via --neo4j-import-dir or "IMPORT_DIRECTORY" in .env')
-        return
-
+    import_directory = args.import_dir or config.import_directory
     if not os.path.isdir(import_directory):
         print(f'Error: Neo4j import directory does not exist: {import_directory}')
         return

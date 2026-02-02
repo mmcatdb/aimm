@@ -1,18 +1,8 @@
 from typing import Any
-from typing_extensions import Self
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 from .drivers import PostgresConfig, MongoConfig, Neo4jConfig
-
-def _string(key: str) -> str:
-    value = os.getenv(key)
-    if value is None:
-        raise ValueError(f'Environment variable "{key}" is not set.')
-    return value
-
-def _int(key: str) -> int:
-    return int(_string(key))
 
 class Config:
     def __init__(self, postgres: PostgresConfig, mongo: MongoConfig, neo4j: Neo4jConfig, rest: dict[str, Any] = {}):
@@ -21,6 +11,9 @@ class Config:
         self.neo4j = neo4j
 
         self.import_directory: str = rest['import_directory']
+        self.cache_directory: str = rest['cache_directory']
+        self.checkpoint_directory: str = rest['checkpoint_directory']
+        self.device: str = rest['device']
 
     # Load .env manually if needed (outside Docker).
     DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / '.env'
@@ -70,12 +63,24 @@ class Config:
     @staticmethod
     def loadRest() -> dict[str, Any]:
         return {
-            'import_directory': _string('IMPORT_DIRECTORY')
+            'import_directory': _string('IMPORT_DIRECTORY', 'data/inputs'),
+            'cache_directory': _string('CACHE_DIRECTORY', 'data/cache'),
+            'checkpoint_directory': _string('CHECKPOINT_DIRECTORY', 'data/checkpoints'),
+            'device': _string('DEVICE'),
         }
 
-    @staticmethod
-    def _string(key: str) -> str:
-        value = os.getenv(key)
-        if value is None:
-            raise ValueError(f'Environment variable "{key}" is not set.')
-        return value
+def _string(key: str, default: str | None = None) -> str:
+    value = os.getenv(key, default)
+    if value is None:
+        raise ValueError(f'Environment variable "{key}" is not set.')
+    return value
+
+def _string_optional(key: str) -> str | None:
+    return os.getenv(key)
+
+def _int(key: str, default: str | None = None) -> int:
+    return int(_string(key, default))
+
+def _int_optional(key: str) -> int | None:
+    value = os.getenv(key)
+    return int(value) if value is not None else None

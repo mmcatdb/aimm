@@ -64,6 +64,9 @@ class PostgresDriver():
     def put_connection(self, connection: PostgresConnection):
         self._pool.putconn(connection)
 
+    def close(self):
+        self._pool.closeall()
+
 class MongoConfig:
     def __init__(self, host: str, port: int, database: str):
         self.host = host
@@ -83,6 +86,9 @@ class MongoDriver():
 
     def database(self):
         return self._database
+
+    def close(self):
+        self._client.close()
 
 class Neo4jConfig:
     def __init__(self, host: str, port: int, user: str, password: str):

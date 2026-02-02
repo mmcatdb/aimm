@@ -1,16 +1,22 @@
 import random
+from typing_extensions import override
 from datasets.database import Database
 
 class TpchPostgres(Database):
     NUM_QUERY_TYPES = 6 # Total number of different query types implemented
 
-    def __generate_train_queries(self, num_queries: int):
+    @override
+    def id(self) -> str:
+        return 'tpch_postgres'
+
+    @override
+    def _generate_train_queries(self, num_queries: int):
         queries_per_type = num_queries // TpchPostgres.NUM_QUERY_TYPES
 
         # TPC-H Query 1 variations
         for _ in range(queries_per_type):
             delta = random.randint(60, 120)
-            self.__train_query(f'''
+            self._train_query(f'''
                 SELECT
                     l_returnflag,
                     l_linestatus,
@@ -32,7 +38,7 @@ class TpchPostgres(Database):
         for _ in range(queries_per_type):
             segment = random.choice(['BUILDING', 'AUTOMOBILE', 'MACHINERY', 'HOUSEHOLD', 'FURNITURE'])
             date = f'1995-03-{random.randint(1, 31):02d}'
-            self.__train_query(f'''
+            self._train_query(f'''
                 SELECT
                     l_orderkey,
                     SUM(l_extendedprice * (1 - l_discount)) as revenue,
@@ -52,7 +58,7 @@ class TpchPostgres(Database):
         # TPC-H Query 5 variations
         for _ in range(queries_per_type):
             year = random.randint(1993, 1997)
-            self.__train_query(f'''
+            self._train_query(f'''
                 SELECT
                     SUM(l_extendedprice * (1 - l_discount)) as revenue
                 FROM customer, orders, lineitem, supplier
@@ -71,7 +77,7 @@ class TpchPostgres(Database):
             year = random.randint(1993, 1997)
             discount = random.uniform(0.02, 0.09)
             quantity = random.randint(20, 30)
-            self.__train_query(f'''
+            self._train_query(f'''
                 SELECT
                     SUM(l_extendedprice * l_discount) as revenue
                 FROM lineitem
@@ -85,7 +91,7 @@ class TpchPostgres(Database):
         for _ in range(queries_per_type):
             year = random.randint(1993, 1997)
             month = random.randint(1, 12)
-            self.__train_query(f'''
+            self._train_query(f'''
                 SELECT
                     c_custkey,
                     c_name,
@@ -110,7 +116,7 @@ class TpchPostgres(Database):
             year = random.randint(1993, 1997)
             mode1 = random.choice(['MAIL', 'SHIP', 'AIR', 'TRUCK'])
             mode2 = random.choice(['RAIL', 'FOB', 'REG AIR'])
-            self.__train_query(f'''
+            self._train_query(f'''
                 SELECT
                     l_shipmode,
                     SUM(CASE WHEN o_orderpriority = '1-URGENT' OR o_orderpriority = '2-HIGH'
@@ -128,12 +134,13 @@ class TpchPostgres(Database):
                 ORDER BY l_shipmode
             ''')
 
-    def __generate_test_queries(self):
+    @override
+    def _generate_test_queries(self):
         # ========================================================================
         # CATEGORY 1: Simple Aggregation Queries
         # ========================================================================
 
-        self.__test_query('Simple Agg 1: Lineitem Summary', '''
+        self._test_query('Simple Agg 1: Lineitem Summary', '''
             SELECT
                 l_returnflag,
                 COUNT(*) as count,
@@ -144,7 +151,7 @@ class TpchPostgres(Database):
             GROUP BY l_returnflag
         ''')
 
-        self.__test_query('Simple Agg 2: Order Statistics', '''
+        self._test_query('Simple Agg 2: Order Statistics', '''
             SELECT
                 o_orderpriority,
                 COUNT(*) as order_count,
@@ -156,7 +163,7 @@ class TpchPostgres(Database):
             GROUP BY o_orderpriority
         ''')
 
-        self.__test_query('Simple Agg 3: Customer Segments', '''
+        self._test_query('Simple Agg 3: Customer Segments', '''
             SELECT
                 c_mktsegment,
                 COUNT(*) as customer_count,
@@ -168,7 +175,7 @@ class TpchPostgres(Database):
             ORDER BY customer_count DESC
         ''')
 
-        self.__test_query('Simple Agg 4: Part Analysis', '''
+        self._test_query('Simple Agg 4: Part Analysis', '''
             SELECT
                 p_brand,
                 p_type,
@@ -180,7 +187,7 @@ class TpchPostgres(Database):
             HAVING COUNT(*) > 5
         ''')
 
-        self.__test_query('Simple Agg 5: Supplier Stats', '''
+        self._test_query('Simple Agg 5: Supplier Stats', '''
             SELECT
                 r.r_name AS region_name,
                 n.n_name AS nation_name,
@@ -195,7 +202,7 @@ class TpchPostgres(Database):
             ORDER BY supplier_count DESC
         ''')
 
-        self.__test_query('Simple Agg 6: Discount Analysis', '''
+        self._test_query('Simple Agg 6: Discount Analysis', '''
             SELECT
                 l_linestatus,
                 AVG(l_discount) as avg_discount,
@@ -211,7 +218,7 @@ class TpchPostgres(Database):
         # CATEGORY 2: Simple Join Queries
         # ========================================================================
 
-        self.__test_query('Join 1: Customer Orders', '''
+        self._test_query('Join 1: Customer Orders', '''
             SELECT
                 c_name,
                 c_mktsegment,
@@ -225,7 +232,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Join 2: Parts and Suppliers', '''
+        self._test_query('Join 2: Parts and Suppliers', '''
             SELECT
                 p_partkey,
                 p_name,
@@ -239,7 +246,7 @@ class TpchPostgres(Database):
             LIMIT 200
         ''')
 
-        self.__test_query('Join 3: Order Details', '''
+        self._test_query('Join 3: Order Details', '''
             SELECT
                 o_orderkey,
                 o_orderdate,
@@ -254,7 +261,7 @@ class TpchPostgres(Database):
             LIMIT 500
         ''')
 
-        self.__test_query('Join 4: Supplier Orders', '''
+        self._test_query('Join 4: Supplier Orders', '''
             SELECT
                 s_name,
                 s_address,
@@ -269,7 +276,7 @@ class TpchPostgres(Database):
             LIMIT 50
         ''')
 
-        self.__test_query('Join 5: Customer Nation Analysis', '''
+        self._test_query('Join 5: Customer Nation Analysis', '''
             SELECT
                 r.r_name AS region_name,
                 n.n_name AS nation_name,
@@ -285,7 +292,7 @@ class TpchPostgres(Database):
             ORDER BY total_orders DESC
         ''')
 
-        self.__test_query('Join 6: Part Lineitem Summary', '''
+        self._test_query('Join 6: Part Lineitem Summary', '''
             SELECT
                 p_brand,
                 p_container,
@@ -304,7 +311,7 @@ class TpchPostgres(Database):
         # CATEGORY 3: Complex Multi-table Joins
         # ========================================================================
 
-        self.__test_query('Complex Join 1: Customer Segment Revenue', '''
+        self._test_query('Complex Join 1: Customer Segment Revenue', '''
             SELECT
                 c_mktsegment,
                 AVG(l_extendedprice * (1 - l_discount)) as avg_revenue,
@@ -319,7 +326,7 @@ class TpchPostgres(Database):
             GROUP BY c_mktsegment
         ''')
 
-        self.__test_query('Complex Join 2: Supplier Revenue Analysis', '''
+        self._test_query('Complex Join 2: Supplier Revenue Analysis', '''
             SELECT
                 r.r_name AS region_name,
                 sn.n_name AS supplier_nation,
@@ -339,7 +346,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Complex Join 3: Part Supplier Customer Chain', '''
+        self._test_query('Complex Join 3: Part Supplier Customer Chain', '''
             SELECT
                 p_brand,
                 c_mktsegment,
@@ -357,7 +364,7 @@ class TpchPostgres(Database):
             ORDER BY order_count DESC
         ''')
 
-        self.__test_query('Complex Join 4: Multi-way with Partsupp', '''
+        self._test_query('Complex Join 4: Multi-way with Partsupp', '''
             SELECT
                 p_partkey,
                 s_name,
@@ -375,7 +382,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Complex Join 5: Full Chain Analysis', '''
+        self._test_query('Complex Join 5: Full Chain Analysis', '''
             SELECT
                 c_mktsegment,
                 p_brand,
@@ -392,7 +399,7 @@ class TpchPostgres(Database):
             HAVING COUNT(*) > 5
         ''')
 
-        self.__test_query('Complex Join 6: Regional Supply Chain', '''
+        self._test_query('Complex Join 6: Regional Supply Chain', '''
             SELECT
                 sn.n_name AS supplier_nation,
                 cn.n_name AS customer_nation,
@@ -419,7 +426,7 @@ class TpchPostgres(Database):
         # CATEGORY 4: Selective Scans with Filters
         # ========================================================================
 
-        self.__test_query('Selective 1: Discount Range', '''
+        self._test_query('Selective 1: Discount Range', '''
             SELECT
                 l_orderkey,
                 l_linenumber,
@@ -435,7 +442,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Selective 2: High Value Orders', '''
+        self._test_query('Selective 2: High Value Orders', '''
             SELECT
                 o_orderkey,
                 o_custkey,
@@ -449,7 +456,7 @@ class TpchPostgres(Database):
             LIMIT 50
         ''')
 
-        self.__test_query('Selective 3: Premium Customers', '''
+        self._test_query('Selective 3: Premium Customers', '''
             SELECT
                 c_custkey,
                 c_name,
@@ -462,7 +469,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Selective 4: Specific Part Types', '''
+        self._test_query('Selective 4: Specific Part Types', '''
             SELECT
                 p_partkey,
                 p_name,
@@ -475,7 +482,7 @@ class TpchPostgres(Database):
             ORDER BY p_retailprice DESC
         ''')
 
-        self.__test_query('Selective 5: Late Shipments', '''
+        self._test_query('Selective 5: Late Shipments', '''
             SELECT
                 l_orderkey,
                 l_linenumber,
@@ -490,7 +497,7 @@ class TpchPostgres(Database):
             LIMIT 200
         ''')
 
-        self.__test_query('Selective 6: Low Supply Cost', '''
+        self._test_query('Selective 6: Low Supply Cost', '''
             SELECT
                 ps_partkey,
                 ps_suppkey,
@@ -507,7 +514,7 @@ class TpchPostgres(Database):
         # CATEGORY 5: Subquery Patterns
         # ========================================================================
 
-        self.__test_query('Subquery 1: High Value Customers', '''
+        self._test_query('Subquery 1: High Value Customers', '''
             SELECT
                 c_custkey,
                 c_name,
@@ -524,7 +531,7 @@ class TpchPostgres(Database):
             LIMIT 50
         ''')
 
-        self.__test_query('Subquery 2: Frequent Buyers', '''
+        self._test_query('Subquery 2: Frequent Buyers', '''
             SELECT
                 c_custkey,
                 c_name,
@@ -541,7 +548,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Subquery 3: Popular Parts', '''
+        self._test_query('Subquery 3: Popular Parts', '''
             SELECT
                 p_partkey,
                 p_name,
@@ -559,7 +566,7 @@ class TpchPostgres(Database):
             ORDER BY p_retailprice DESC
         ''')
 
-        self.__test_query('Subquery 4: Top Suppliers by Volume', '''
+        self._test_query('Subquery 4: Top Suppliers by Volume', '''
             SELECT
                 s_suppkey,
                 s_name,
@@ -576,7 +583,7 @@ class TpchPostgres(Database):
             ORDER BY s_name
         ''')
 
-        self.__test_query('Subquery 5: Orders Above Average', '''
+        self._test_query('Subquery 5: Orders Above Average', '''
             SELECT
                 o_orderkey,
                 o_custkey,
@@ -593,7 +600,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Subquery 6: Customers with Recent Large Orders', '''
+        self._test_query('Subquery 6: Customers with Recent Large Orders', '''
             SELECT
                 c_custkey,
                 c_name,
@@ -614,7 +621,7 @@ class TpchPostgres(Database):
         # CATEGORY 6: Large Scans with Sorting
         # ========================================================================
 
-        self.__test_query('Large Scan 1: Sorted Lineitem by Price', '''
+        self._test_query('Large Scan 1: Sorted Lineitem by Price', '''
             SELECT
                 l_orderkey,
                 l_partkey,
@@ -628,7 +635,7 @@ class TpchPostgres(Database):
             LIMIT 200
         ''')
 
-        self.__test_query('Large Scan 2: Orders by Date', '''
+        self._test_query('Large Scan 2: Orders by Date', '''
             SELECT
                 o_orderkey,
                 o_custkey,
@@ -642,7 +649,7 @@ class TpchPostgres(Database):
             LIMIT 500
         ''')
 
-        self.__test_query('Large Scan 3: Parts by Price', '''
+        self._test_query('Large Scan 3: Parts by Price', '''
             SELECT
                 p_partkey,
                 p_name,
@@ -655,7 +662,7 @@ class TpchPostgres(Database):
             LIMIT 300
         ''')
 
-        self.__test_query('Large Scan 4: Customer Balance Ranking', '''
+        self._test_query('Large Scan 4: Customer Balance Ranking', '''
             SELECT
                 c.c_custkey,
                 c.c_name,
@@ -671,7 +678,7 @@ class TpchPostgres(Database):
             LIMIT 400
         ''')
 
-        self.__test_query('Large Scan 5: Lineitem Quantity Sort', '''
+        self._test_query('Large Scan 5: Lineitem Quantity Sort', '''
             SELECT
                 l_orderkey,
                 l_partkey,
@@ -686,7 +693,7 @@ class TpchPostgres(Database):
             LIMIT 250
         ''')
 
-        self.__test_query('Large Scan 6: Recent Shipments', '''
+        self._test_query('Large Scan 6: Recent Shipments', '''
             SELECT
                 l_orderkey,
                 l_linenumber,
@@ -703,7 +710,7 @@ class TpchPostgres(Database):
         # CATEGORY 7: Aggregation with HAVING
         # ========================================================================
 
-        self.__test_query('Having 1: Large Order Aggregates', '''
+        self._test_query('Having 1: Large Order Aggregates', '''
             SELECT
                 l_orderkey,
                 SUM(l_quantity) as total_qty,
@@ -716,7 +723,7 @@ class TpchPostgres(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Having 2: High Volume Customers', '''
+        self._test_query('Having 2: High Volume Customers', '''
             SELECT
                 o_custkey,
                 COUNT(*) as order_count,
@@ -730,7 +737,7 @@ class TpchPostgres(Database):
             LIMIT 50
         ''')
 
-        self.__test_query('Having 3: Popular Parts by Brand', '''
+        self._test_query('Having 3: Popular Parts by Brand', '''
             SELECT
                 p_brand,
                 COUNT(*) as part_count,
@@ -743,7 +750,7 @@ class TpchPostgres(Database):
             ORDER BY avg_price DESC
         ''')
 
-        self.__test_query('Having 4: High Revenue Suppliers', '''
+        self._test_query('Having 4: High Revenue Suppliers', '''
             SELECT
                 l_suppkey,
                 COUNT(DISTINCT l_orderkey) as order_count,
@@ -757,7 +764,7 @@ class TpchPostgres(Database):
             LIMIT 75
         ''')
 
-        self.__test_query('Having 5: Part Categories with High Sales', '''
+        self._test_query('Having 5: Part Categories with High Sales', '''
             SELECT
                 p_type,
                 COUNT(DISTINCT l_orderkey) as order_count,
@@ -773,7 +780,7 @@ class TpchPostgres(Database):
             LIMIT 25
         ''')
 
-        self.__test_query('Having 6: Customer Segments with Volume', '''
+        self._test_query('Having 6: Customer Segments with Volume', '''
             SELECT
                 c_mktsegment,
                 COUNT(DISTINCT c_custkey) as customer_count,
