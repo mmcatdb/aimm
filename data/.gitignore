@@ -1,2 +1,8 @@
-*
-!.gitignore 
+/*
+!.gitignore
+# We have to separately re-include all subdirectories.
+!*/
+
+# Ignore all files in subdirectories except .gitkeep.
+/*/*
+!.gitkeep

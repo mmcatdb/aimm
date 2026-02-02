@@ -103,7 +103,7 @@ class MCTSNode:
             # Generalized formula for DAGs. For trees it has the same effect as the above formula
             exploration = math.sqrt(math.log(1 + total_visits_in_children) / child.visits) if child.visits > 0 else float('inf')
 
-            return exploitation + exploration_weight*exploration
+            return exploitation + exploration_weight * exploration
 
         # In case of ties, select randomly among the highest-scored children
         best_score = max(ucb1(child) for child in viable_children)
@@ -129,7 +129,7 @@ class MCTS:
         root = MCTSNode(self, cur_state, None)
 
         for i in range(iterations):
-            print(f'Iteration {i+1}')
+            print(f'Iteration {i + 1}')
 
             # TODO? Make path a set straight away, since there are several to-set conversions in MCTSNode methods
             path = [root]

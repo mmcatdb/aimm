@@ -1,3 +1,4 @@
+from typing_extensions import override
 from datasets.database import Database
 import datetime
 import random
@@ -5,7 +6,12 @@ import random
 class TpchNeo4j(Database):
     NUM_QUERY_TYPES = 32 # Total number of different query types implemented
 
-    def __generate_train_queries(self, num_queries: int):
+    @override
+    def id(self) -> str:
+        return 'tpch_neo4j'
+
+    @override
+    def _generate_train_queries(self, num_queries: int):
         # This will now be smaller, distributing the total num_queries over all 32 types
         queries_per_type = num_queries // TpchNeo4j.NUM_QUERY_TYPES
 
@@ -20,11 +26,6 @@ class TpchNeo4j(Database):
         ORDER_STATUS_CHOICES = ['F', 'O', 'P']
         ORDER_PRIORITY_CHOICES = ['1-URGENT', '2-HIGH', '3-MEDIUM', '4-NOT SPECIFIED', '5-LOW']
 
-        def get_random_name(table_name: str, max_id: int, min_id = 1, id_length = 9) -> str:
-            num = random.randint(min_id, max_id)
-            num_padding_zeroes = id_length - len(str(num))
-            return f'{table_name}#{"0" * num_padding_zeroes}{num}'
-
         # Q1: Pricing Summary Report
         for _ in range(queries_per_type):
             delta = random.randint(60, 120)
@@ -32,7 +33,7 @@ class TpchNeo4j(Database):
             target_date = base_date - datetime.timedelta(days=delta)
             date_str = target_date.strftime('%Y-%m-%d')
 
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (li:LineItem)
                 WHERE li.l_shipdate <= date('{date_str}')
                 WITH li.l_returnflag AS returnflag, li.l_linestatus AS linestatus, li
@@ -55,9 +56,9 @@ class TpchNeo4j(Database):
             region = random.choice(REGION_CHOICES)
             year = random.randint(1993, 1997)
             start_date = f'{year}-01-01'
-            end_date = f'{year+1}-01-01'
+            end_date = f'{year + 1}-01-01'
 
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (r:Region {{r_name: '{region}'}})<-[:IS_IN_REGION]-(n:Nation)
                 MATCH (n)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
                 MATCH (n)<-[:IS_IN_NATION]-(s:Supplier)<-[:SUPPLIED_BY]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(li)
@@ -79,10 +80,10 @@ class TpchNeo4j(Database):
 
             quantity = random.randint(24, 25)
 
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (li:LineItem)
                 WHERE li.l_shipdate >= date('{year}-01-01')
-                AND li.l_shipdate < date('{year+1}-01-01')
+                AND li.l_shipdate < date('{year + 1}-01-01')
                 AND li.l_discount >= {discount_low:.2f}
                 AND li.l_discount <= {discount_high:.2f}
                 AND li.l_quantity < {quantity}
@@ -104,7 +105,7 @@ class TpchNeo4j(Database):
                 end_year += 1
             end_date = f'{end_year}-{end_month:02d}-01'
 
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
                 WHERE o.o_orderdate >= date('{start_date}')
                 AND o.o_orderdate < date('{end_date}')
@@ -128,13 +129,13 @@ class TpchNeo4j(Database):
             shipmodes = random.sample(SHIPMODES_ALL, 2)
             year = random.randint(1993, 1997)
 
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
                 WHERE li.l_shipmode IN {shipmodes}
                 AND li.l_commitdate < li.l_receiptdate
                 AND li.l_shipdate < li.l_commitdate
                 AND li.l_receiptdate >= date('{year}-01-01')
-                AND li.l_receiptdate < date('{year+1}-01-01')
+                AND li.l_receiptdate < date('{year + 1}-01-01')
                 WITH li.l_shipmode AS shipmode, o.o_orderpriority AS priority
                 RETURN
                 shipmode,
@@ -164,7 +165,7 @@ class TpchNeo4j(Database):
                 end_year += 1
             end_date = f'{end_year}-{end_month:02d}-01'
 
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
                 WHERE li.l_shipdate >= date('{start_date}')
                 AND li.l_shipdate < date('{end_date}')
@@ -189,7 +190,7 @@ class TpchNeo4j(Database):
             qty2 = random.randint(10, 20)
             qty3 = random.randint(20, 30)
 
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
                 WHERE li.l_shipinstruct = 'DELIVER IN PERSON'
                 AND li.l_shipmode IN ['AIR', 'AIR REG']
@@ -197,17 +198,17 @@ class TpchNeo4j(Database):
                     (
                     p.p_brand = '{brand1}'
                     AND p.p_container IN ['SM CASE', 'SM BOX', 'SM PACK', 'SM PKG']
-                    AND li.l_quantity >= {qty1} AND li.l_quantity <= {qty1+10}
+                    AND li.l_quantity >= {qty1} AND li.l_quantity <= {qty1 + 10}
                     AND p.p_size >= 1 AND p.p_size <= 5
                     ) OR (
                     p.p_brand = '{brand2}'
                     AND p.p_container IN ['MED BAG', 'MED BOX', 'MED PKG', 'MED PACK']
-                    AND li.l_quantity >= {qty2} AND li.l_quantity <= {qty2+10}
+                    AND li.l_quantity >= {qty2} AND li.l_quantity <= {qty2 + 10}
                     AND p.p_size >= 1 AND p.p_size <= 10
                     ) OR (
                     p.p_brand = '{brand3}'
                     AND p.p_container IN ['LG CASE', 'LG BOX', 'LG PACK', 'LG PKG']
-                    AND li.l_quantity >= {qty3} AND li.l_quantity <= {qty3+10}
+                    AND li.l_quantity >= {qty3} AND li.l_quantity <= {qty3 + 10}
                     AND p.p_size >= 1 AND p.p_size <= 15
                     )
                 )
@@ -216,31 +217,31 @@ class TpchNeo4j(Database):
 
         # Custom Q1: Simple Scan (All Nodes of a Label)
         for _ in range(queries_per_type):
-            self.__train_query('MATCH (n:Nation) RETURN n.n_name, n.n_comment LIMIT 100')
+            self._train_query('MATCH (n:Nation) RETURN n.n_name, n.n_comment LIMIT 100')
 
         # Custom Q2: Scan with Exact Property Match
         for _ in range(queries_per_type):
-            name = get_random_name('Customer', 30000)
-            self.__train_query(f'MATCH (c:Customer {{c_name: \'{name}\'}}) RETURN c.c_address, c.c_phone')
+            name = TpchNeo4j.__get_random_name('Customer', 30000)
+            self._train_query(f'MATCH (c:Customer {{c_name: \'{name}\'}}) RETURN c.c_address, c.c_phone')
 
         # Custom Q3: Scan with Numeric Filter
         for _ in range(queries_per_type):
             balance = random.randint(5000, 9500)
-            self.__train_query(f'MATCH (s:Supplier) WHERE s.s_acctbal > {balance} RETURN s.s_name, s.s_acctbal')
+            self._train_query(f'MATCH (s:Supplier) WHERE s.s_acctbal > {balance} RETURN s.s_name, s.s_acctbal')
 
         # Custom Q4: Scan with Sort
         for _ in range(queries_per_type):
-            self.__train_query('MATCH (p:Part) RETURN p.p_name, p.p_retailprice ORDER BY p.p_retailprice DESC LIMIT 50')
+            self._train_query('MATCH (p:Part) RETURN p.p_name, p.p_retailprice ORDER BY p.p_retailprice DESC LIMIT 50')
 
         # Custom Q5: Scan with Sort + Limit
         for _ in range(queries_per_type):
             limit = random.randint(10, 50)
-            self.__train_query(f'MATCH (o:Order) RETURN o.o_orderkey, o.o_totalprice ORDER BY o.o_totalprice DESC LIMIT {limit}')
+            self._train_query(f'MATCH (o:Order) RETURN o.o_orderkey, o.o_totalprice ORDER BY o.o_totalprice DESC LIMIT {limit}')
 
         # Custom Q6: Scan with IN list
         for _ in range(queries_per_type):
             containers = random.sample(CONTAINER_CHOICES_SM + CONTAINER_CHOICES_LG, 3)
-            self.__train_query(f'MATCH (p:Part) WHERE p.p_container IN {containers} RETURN p.p_name, p.p_container')
+            self._train_query(f'MATCH (p:Part) WHERE p.p_container IN {containers} RETURN p.p_name, p.p_container')
 
         # Custom Q7: Scan with STARTS WITH
         TYPE_CHOICES = [
@@ -253,52 +254,52 @@ class TpchNeo4j(Database):
         ]
         for _ in range(queries_per_type):
             type_start = random.choice(TYPE_CHOICES)
-            self.__train_query(f'MATCH (p:Part) WHERE p.p_type STARTS WITH \'{type_start.upper()}\' RETURN p.p_name, p.p_type')
+            self._train_query(f'MATCH (p:Part) WHERE p.p_type STARTS WITH \'{type_start.upper()}\' RETURN p.p_name, p.p_type')
 
         # Custom Q8: Scan with Date Filter
         for _ in range(queries_per_type):
             year = random.randint(1996, 1998)
             month = random.randint(1, 12)
             day = random.randint(1, 28)
-            self.__train_query(f'MATCH (o:Order) WHERE o.o_orderdate > date(\'{year}-{month:02d}-{day:02d}\') RETURN o.o_orderkey, o.o_orderdate')
+            self._train_query(f'MATCH (o:Order) WHERE o.o_orderdate > date(\'{year}-{month:02d}-{day:02d}\') RETURN o.o_orderkey, o.o_orderdate')
 
         # Custom Q9: Count Aggregation (All)
         for _ in range(queries_per_type):
-            self.__train_query('MATCH (c:Customer) RETURN count(c) AS total_customers')
+            self._train_query('MATCH (c:Customer) RETURN count(c) AS total_customers')
 
         # Custom Q10: Group-by Aggregation (Simple)
         for _ in range(queries_per_type):
-            self.__train_query('MATCH (o:Order) RETURN o.o_orderstatus, count(o) AS order_count ORDER BY order_count DESC')
+            self._train_query('MATCH (o:Order) RETURN o.o_orderstatus, count(o) AS order_count ORDER BY order_count DESC')
 
         # Custom Q11: Simple AVG/SUM Aggregation
         for _ in range(queries_per_type):
-            self.__train_query('MATCH (li:LineItem) RETURN sum(li.l_quantity) AS total_qty, avg(li.l_extendedprice) AS avg_price, min(li.l_discount) AS min_discount')
+            self._train_query('MATCH (li:LineItem) RETURN sum(li.l_quantity) AS total_qty, avg(li.l_extendedprice) AS avg_price, min(li.l_discount) AS min_discount')
 
         # Custom Q12: Simple DISTINCT
         for _ in range(queries_per_type):
-            self.__train_query('MATCH (c:Customer) RETURN count(DISTINCT c.c_mktsegment) AS market_segments')
+            self._train_query('MATCH (c:Customer) RETURN count(DISTINCT c.c_mktsegment) AS market_segments')
 
         # Custom Q13: Scan with AND
         for _ in range(queries_per_type):
             size = random.randint(10, 40)
             price = random.randint(1000, 1500)
-            self.__train_query(f'MATCH (p:Part) WHERE p.p_size > {size} AND p.p_retailprice < {price} RETURN p.p_name, p.p_size, p.p_retailprice')
+            self._train_query(f'MATCH (p:Part) WHERE p.p_size > {size} AND p.p_retailprice < {price} RETURN p.p_name, p.p_size, p.p_retailprice')
 
         # Custom Q14: Scan with OR
         for _ in range(queries_per_type):
             region1 = random.choice(REGION_CHOICES)
             region2 = random.choice(list(set(REGION_CHOICES) - {region1}))
-            self.__train_query(f'MATCH (r:Region) WHERE r.r_name = \'{region1}\' OR r.r_name = \'{region2}\' RETURN r.r_name')
+            self._train_query(f'MATCH (r:Region) WHERE r.r_name = \'{region1}\' OR r.r_name = \'{region2}\' RETURN r.r_name')
 
         # Custom Q15: Scan with NOT
         for _ in range(queries_per_type):
             status = random.choice(ORDER_STATUS_CHOICES)
-            self.__train_query(f'MATCH (o:Order) WHERE NOT o.o_orderstatus = \'{status}\' RETURN o.o_orderkey, o.o_orderstatus LIMIT 100')
+            self._train_query(f'MATCH (o:Order) WHERE NOT o.o_orderstatus = \'{status}\' RETURN o.o_orderkey, o.o_orderstatus LIMIT 100')
 
         # Custom Q16: 1-Hop Traversal (Find orders for a customer)
         for _ in range(queries_per_type):
-            name = get_random_name('Customer', 30000)
-            self.__train_query(f'''
+            name = TpchNeo4j.__get_random_name('Customer', 30000)
+            self._train_query(f'''
                 MATCH (c:Customer)-[:PLACED]->(o:Order)
                 WHERE c.c_name = '{name}'
                 RETURN o.o_orderkey, o.o_orderdate, o.o_totalprice
@@ -307,7 +308,7 @@ class TpchNeo4j(Database):
         # Custom Q17: 1-Hop with Filter and Aggregation (Count items in high-priority orders)
         for _ in range(queries_per_type):
             priority = random.choice(ORDER_PRIORITY_CHOICES[:2]) # '1-URGENT' or '2-HIGH'
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
                 WHERE o.o_orderpriority = '{priority}'
                 RETURN o.o_orderkey, count(li) AS items
@@ -317,8 +318,8 @@ class TpchNeo4j(Database):
 
         # Custom Q18: 2-Hop Traversal (Find items for a customer)
         for _ in range(queries_per_type):
-            name = get_random_name('Customer', 30000)
-            self.__train_query(f'''
+            name = TpchNeo4j.__get_random_name('Customer', 30000)
+            self._train_query(f'''
                 MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
                 WHERE c.c_name = '{name}'
                 RETURN c.c_name, count(li) AS total_items
@@ -327,7 +328,7 @@ class TpchNeo4j(Database):
         # Custom Q19: 2-Hop with Aggregation (Count orders per nation)
         for _ in range(queries_per_type):
             nation = random.choice(NATIONS)
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)
                 WHERE n.n_name = '{nation}'
                 RETURN n.n_name, count(o) AS orders_from_nation
@@ -335,8 +336,8 @@ class TpchNeo4j(Database):
 
         # Custom Q20: 3-Hop Traversal (Find parts from a supplier)
         for _ in range(queries_per_type):
-            name = get_random_name('Supplier', 2000)
-            self.__train_query(f'''
+            name = TpchNeo4j.__get_random_name('Supplier', 2000)
+            self._train_query(f'''
                 MATCH (s:Supplier)<-[:SUPPLIED_BY]-(:PartSupp)-[:IS_FOR_PART]->(p:Part)
                 WHERE s.s_name = '{name}'
                 RETURN p.p_name, p.p_mfgr, p.p_retailprice
@@ -346,7 +347,7 @@ class TpchNeo4j(Database):
         # Custom Q21: 3-Hop with Property Filter (Customers in a region)
         for _ in range(queries_per_type):
             region = random.choice(REGION_CHOICES)
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (r:Region)<-[:IS_IN_REGION]-(n:Nation)<-[:IS_IN_NATION]-(c:Customer)
                 WHERE r.r_name = '{region}'
                 RETURN c.c_name, n.n_name
@@ -356,7 +357,7 @@ class TpchNeo4j(Database):
         # Custom Q22: Complex Path (4-Hop) and Aggregation
         for _ in range(queries_per_type):
             key = random.randint(1, 15000) # Assuming 150k customers, SF=1
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
                 WHERE c.c_custkey = {key}
                 RETURN p.p_name, count(p) AS part_count
@@ -367,7 +368,7 @@ class TpchNeo4j(Database):
         # Custom Q23: Multi-hop with CONTAINS (Find orders for a part type)
         for _ in range(queries_per_type):
             word = random.choice(P_NAME_WORDS)
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (p:Part)<-[:IS_FOR_PART]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(:LineItem)<-[:CONTAINS_ITEM]-(o:Order)
                 WHERE p.p_name CONTAINS '{word}'
                 RETURN o.o_orderkey, o.o_orderdate, o.o_totalprice
@@ -377,7 +378,7 @@ class TpchNeo4j(Database):
         # Custom Q24: Aggregation on Traversal (Supplier stock value)
         for _ in range(queries_per_type):
             balance = random.randint(0, 1000)
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (s:Supplier)<-[:SUPPLIED_BY]-(ps:PartSupp)
                 WHERE s.s_acctbal < {balance}
                 RETURN s.s_name, sum(ps.ps_supplycost * ps.ps_availqty) AS stock_value
@@ -390,16 +391,23 @@ class TpchNeo4j(Database):
             nation = random.choice(NATIONS)
             price = random.randint(1500, 2000)
             qty = random.randint(5000, 8000)
-            self.__train_query(f'''
+            self._train_query(f'''
                 MATCH (n:Nation {{n_name: '{nation}'}})<-[:IS_IN_NATION]-(s:Supplier)<-[:SUPPLIED_BY]-(ps:PartSupp)-[:IS_FOR_PART]->(p:Part)
                 WHERE p.p_retailprice > {price} AND ps.ps_availqty > {qty}
                 RETURN s.s_name, p.p_name, ps.ps_supplycost, p.p_retailprice
                 LIMIT 50
             ''')
 
-    def __generate_test_queries(self):
+    @staticmethod
+    def __get_random_name(table_name: str, max_id: int, min_id = 1, id_length = 9) -> str:
+        num = random.randint(min_id, max_id)
+        num_padding_zeroes = id_length - len(str(num))
+        return f'{table_name}#{"0" * num_padding_zeroes}{num}'
+
+    @override
+    def _generate_test_queries(self):
         # Q1 variants (Original)
-        self.__test_query('Q1-Test-1', '''
+        self._test_query('Q1-Test-1', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate <= date('1998-10-15')
             WITH li.l_returnflag AS returnflag, li.l_linestatus AS linestatus, li
@@ -413,7 +421,7 @@ class TpchNeo4j(Database):
         ''')
 
         # Q5 variant (Original)
-        self.__test_query('Q5-Test-1', '''
+        self._test_query('Q5-Test-1', '''
             MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
                 (li)-[:IS_PRODUCT_SUPPLY]->(ps:PartSupp)-[:SUPPLIED_BY]->(s:Supplier),
                 (c)-[:IS_IN_NATION]->(n:Nation)-[:IS_IN_REGION]->(r:Region)
@@ -428,7 +436,7 @@ class TpchNeo4j(Database):
         ''')
 
         # Q6 variant (Original)
-        self.__test_query('Q6-Test-1', '''
+        self._test_query('Q6-Test-1', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate >= date('1994-01-01')
             AND li.l_shipdate < date('1995-01-01')
@@ -439,7 +447,7 @@ class TpchNeo4j(Database):
         ''')
 
         # Q10 variant (Original)
-        self.__test_query('Q10-Test-1', '''
+        self._test_query('Q10-Test-1', '''
             MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
                 (c)-[:IS_IN_NATION]->(n:Nation)
             WHERE o.o_orderdate >= date('1993-07-01')
@@ -457,14 +465,14 @@ class TpchNeo4j(Database):
         ''')
 
         # Simple aggregation query (Original)
-        self.__test_query('Simple-Agg-1', '''
+        self._test_query('Simple-Agg-1', '''
             MATCH (li:LineItem)
             WHERE li.l_quantity > 30
             RETURN count(li) AS count, avg(li.l_extendedprice) AS avg_price
         ''')
 
         # Simple scan with limit (Original)
-        self.__test_query('Simple-Scan-1', '''
+        self._test_query('Simple-Scan-1', '''
             MATCH (c:Customer)
             WHERE c.c_acctbal > 5000
             RETURN c.c_name, c.c_acctbal
@@ -476,7 +484,7 @@ class TpchNeo4j(Database):
         # CATEGORY 1: Simple Aggregation Queries
         # ========================================================================
 
-        self.__test_query('Simple Agg 1: Lineitem Summary', '''
+        self._test_query('Simple Agg 1: Lineitem Summary', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate <= date('1998-08-01')
             RETURN
@@ -487,7 +495,7 @@ class TpchNeo4j(Database):
             ORDER BY returnflag
         ''')
 
-        self.__test_query('Simple Agg 2: Order Statistics', '''
+        self._test_query('Simple Agg 2: Order Statistics', '''
             MATCH (o:Order)
             WHERE o.o_orderdate >= date('1996-01-01')
             RETURN
@@ -499,7 +507,7 @@ class TpchNeo4j(Database):
             ORDER BY orderpriority
         ''')
 
-        self.__test_query('Simple Agg 3: Customer Segments', '''
+        self._test_query('Simple Agg 3: Customer Segments', '''
             MATCH (c:Customer)
             WHERE c.c_acctbal > 0
             WITH
@@ -515,7 +523,7 @@ class TpchNeo4j(Database):
             ORDER BY customer_count DESC
         ''')
 
-        self.__test_query('Simple Agg 4: Part Analysis', '''
+        self._test_query('Simple Agg 4: Part Analysis', '''
             MATCH (p:Part)
             WHERE p.p_size >= 10 AND p.p_size <= 30
             WITH
@@ -532,7 +540,7 @@ class TpchNeo4j(Database):
             ORDER BY brand, type
         ''')
 
-        self.__test_query('Simple Agg 5: Supplier Stats', '''
+        self._test_query('Simple Agg 5: Supplier Stats', '''
             MATCH (s:Supplier)-[:IS_IN_NATION]->(n:Nation)-[:IS_IN_REGION]->(r:Region)
             WHERE s.s_acctbal > 1000
             WITH
@@ -550,7 +558,7 @@ class TpchNeo4j(Database):
             ORDER BY supplier_count DESC
         ''')
 
-        self.__test_query('Simple Agg 6: Discount Analysis', '''
+        self._test_query('Simple Agg 6: Discount Analysis', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate >= date('1997-01-01') AND li.l_shipdate < date('1998-01-01')
             RETURN
@@ -565,7 +573,7 @@ class TpchNeo4j(Database):
         # CATEGORY 2: Simple Join Queries
         # ========================================================================
 
-        self.__test_query('Join 1: Customer Orders', '''
+        self._test_query('Join 1: Customer Orders', '''
             MATCH (c:Customer)-[:PLACED]->(o:Order)
             WHERE o.o_orderdate >= date('1995-01-01')
             WITH
@@ -582,7 +590,7 @@ class TpchNeo4j(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Join 2: Parts and Suppliers', '''
+        self._test_query('Join 2: Parts and Suppliers', '''
             MATCH (ps:PartSupp)-[:IS_FOR_PART]->(p:Part)
             WHERE p.p_size > 20 AND ps.ps_supplycost < 100
             RETURN
@@ -594,7 +602,7 @@ class TpchNeo4j(Database):
             LIMIT 200
         ''')
 
-        self.__test_query('Join 3: Order Details', '''
+        self._test_query('Join 3: Order Details', '''
             MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
             WHERE o.o_orderdate >= date('1996-01-01') AND o.o_orderdate <= date('1996-03-31')
             AND li.l_quantity > 30
@@ -608,7 +616,7 @@ class TpchNeo4j(Database):
             LIMIT 500
         ''')
 
-        self.__test_query('Join 4: Supplier Orders', '''
+        self._test_query('Join 4: Supplier Orders', '''
             MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(ps:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)
             WHERE li.l_shipdate >= date('1996-01-01') AND li.l_shipdate < date('1997-01-01')
             WITH
@@ -625,7 +633,7 @@ class TpchNeo4j(Database):
             LIMIT 50
         ''')
 
-        self.__test_query('Join 5: Customer Nation Analysis', '''
+        self._test_query('Join 5: Customer Nation Analysis', '''
             MATCH (r:Region)<-[:IS_IN_REGION]-(n:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.o_orderdate >= date('1997-01-01')
             WITH
@@ -643,7 +651,7 @@ class TpchNeo4j(Database):
             ORDER BY total_orders DESC
         ''')
 
-        self.__test_query('Join 6: Part Lineitem Summary', '''
+        self._test_query('Join 6: Part Lineitem Summary', '''
             MATCH (p:Part)<-[:IS_FOR_PART]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(li:LineItem)
             WHERE li.l_shipdate >= date('1995-01-01') AND p.p_size < 15
             WITH
@@ -666,7 +674,7 @@ class TpchNeo4j(Database):
         # CATEGORY 3: Complex Multi-table Joins
         # ========================================================================
 
-        self.__test_query('Complex Join 1: Customer Segment Revenue', '''
+        self._test_query('Complex Join 1: Customer Segment Revenue', '''
             MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
             WHERE li.l_shipdate >= date('1995-06-01')
             AND li.l_shipdate < date('1995-09-01')
@@ -678,7 +686,7 @@ class TpchNeo4j(Database):
                 count(DISTINCT c) AS customer_count
         ''')
 
-        self.__test_query('Complex Join 2: Supplier Revenue Analysis', '''
+        self._test_query('Complex Join 2: Supplier Revenue Analysis', '''
             MATCH (r:Region)<-[:IS_IN_REGION]-(cn:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
                 (li)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)-[:IS_IN_NATION]->(sn:Nation)-[:IS_IN_REGION]->(r)
             WHERE o.o_orderdate >= date('1994-01-01')
@@ -695,7 +703,7 @@ class TpchNeo4j(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Complex Join 3: Part Supplier Customer Chain', '''
+        self._test_query('Complex Join 3: Part Supplier Customer Chain', '''
             MATCH (p:Part)<-[:IS_FOR_PART]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(li:LineItem)<-[:CONTAINS_ITEM]-(o:Order)<-[:PLACED]-(c:Customer)
             WHERE p.p_type CONTAINS 'BRASS'
             AND o.o_orderdate >= date('1996-01-01')
@@ -715,7 +723,7 @@ class TpchNeo4j(Database):
             ORDER BY order_count DESC
         ''')
 
-        self.__test_query('Complex Join 4: Multi-way with Partsupp', '''
+        self._test_query('Complex Join 4: Multi-way with Partsupp', '''
             MATCH (p:Part)<-[:IS_FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s:Supplier),
                 (li:LineItem)-[:IS_PRODUCT_SUPPLY]->(ps)
             WHERE li.l_shipdate >= date('1996-01-01')
@@ -736,7 +744,7 @@ class TpchNeo4j(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Complex Join 5: Full Chain Analysis', '''
+        self._test_query('Complex Join 5: Full Chain Analysis', '''
             MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
             WHERE o.o_orderdate >= date('1997-01-01')
             AND o.o_orderdate < date('1997-07-01')
@@ -755,7 +763,7 @@ class TpchNeo4j(Database):
             ORDER BY mktsegment, brand
         ''')
 
-        self.__test_query('Complex Join 6: Regional Supply Chain', '''
+        self._test_query('Complex Join 6: Regional Supply Chain', '''
             MATCH (r:Region)<-[:IS_IN_REGION]-(cn:Nation)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
                 (li)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)-[:IS_IN_NATION]->(sn:Nation)-[:IS_IN_REGION]->(r)
             WHERE o.o_orderdate >= date('1995-01-01')
@@ -781,7 +789,7 @@ class TpchNeo4j(Database):
         # CATEGORY 4: Selective Scans with Filters
         # ========================================================================
 
-        self.__test_query('Selective 1: Discount Range', '''
+        self._test_query('Selective 1: Discount Range', '''
             MATCH (li:LineItem)
             WHERE li.l_discount >= 0.05 AND li.l_discount <= 0.07
             AND li.l_quantity < 24
@@ -798,7 +806,7 @@ class TpchNeo4j(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Selective 2: High Value Orders', '''
+        self._test_query('Selective 2: High Value Orders', '''
             MATCH (o:Order)
             WHERE o.o_totalprice > 300000
             AND o.o_orderdate >= date('1995-01-01')
@@ -812,7 +820,7 @@ class TpchNeo4j(Database):
             LIMIT 50
         ''')
 
-        self.__test_query('Selective 3: Premium Customers', '''
+        self._test_query('Selective 3: Premium Customers', '''
             MATCH (c:Customer)
             WHERE c.c_acctbal > 8000
             AND c.c_mktsegment IN ['AUTOMOBILE', 'MACHINERY']
@@ -825,7 +833,7 @@ class TpchNeo4j(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Selective 4: Specific Part Types', '''
+        self._test_query('Selective 4: Specific Part Types', '''
             MATCH (p:Part)
             WHERE p.p_brand = 'Brand#23'
             AND p.p_container IN ['SM BOX', 'SM PACK']
@@ -838,7 +846,7 @@ class TpchNeo4j(Database):
             ORDER BY retailprice DESC
         ''')
 
-        self.__test_query('Selective 5: Late Shipments', '''
+        self._test_query('Selective 5: Late Shipments', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate > li.l_commitdate
             AND li.l_receiptdate >= date('1996-01-01')
@@ -853,7 +861,7 @@ class TpchNeo4j(Database):
             LIMIT 200
         ''')
 
-        self.__test_query('Selective 6: Low Supply Cost', '''
+        self._test_query('Selective 6: Low Supply Cost', '''
             MATCH (ps:PartSupp)
             WHERE ps.ps_supplycost < 50
             AND ps.ps_availqty > 5000
@@ -870,7 +878,7 @@ class TpchNeo4j(Database):
         # CATEGORY 5: Large Scans with Sorting
         # ========================================================================
 
-        self.__test_query('Large Scan 1: Sorted Lineitem by Price', '''
+        self._test_query('Large Scan 1: Sorted Lineitem by Price', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate >= date('1997-01-01')
             AND li.l_shipdate < date('1997-04-01')
@@ -884,7 +892,7 @@ class TpchNeo4j(Database):
             LIMIT 200
         ''')
 
-        self.__test_query('Large Scan 2: Orders by Date', '''
+        self._test_query('Large Scan 2: Orders by Date', '''
             MATCH (o:Order)
             WHERE o.o_orderdate >= date('1996-01-01')
             AND o.o_orderdate < date('1997-01-01')
@@ -898,7 +906,7 @@ class TpchNeo4j(Database):
             LIMIT 500
         ''')
 
-        self.__test_query('Large Scan 3: Parts by Price', '''
+        self._test_query('Large Scan 3: Parts by Price', '''
             MATCH (p:Part)
             WHERE p.p_retailprice > 1000
             RETURN
@@ -911,7 +919,7 @@ class TpchNeo4j(Database):
             LIMIT 300
         ''')
 
-        self.__test_query('Large Scan 4: Customer Balance Ranking', '''
+        self._test_query('Large Scan 4: Customer Balance Ranking', '''
             MATCH (c:Customer)-[:IS_IN_NATION]->(n:Nation)-[:IS_IN_REGION]->(r:Region)
             WHERE c.c_acctbal > 0
             RETURN
@@ -925,7 +933,7 @@ class TpchNeo4j(Database):
             LIMIT 400
         ''')
 
-        self.__test_query('Large Scan 5: Lineitem Quantity Sort', '''
+        self._test_query('Large Scan 5: Lineitem Quantity Sort', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate >= date('1996-06-01')
             AND li.l_shipdate < date('1996-09-01')
@@ -940,7 +948,7 @@ class TpchNeo4j(Database):
             LIMIT 250
         ''')
 
-        self.__test_query('Large Scan 6: Recent Shipments', '''
+        self._test_query('Large Scan 6: Recent Shipments', '''
             MATCH (li:LineItem)
             WHERE li.l_shipdate >= date('1998-06-01')
             WITH li, (li.l_extendedprice * (1 - li.l_discount)) as net_price
@@ -958,7 +966,7 @@ class TpchNeo4j(Database):
         # CATEGORY 6: Aggregation with HAVING
         # ========================================================================
 
-        self.__test_query('Having 1: Large Order Aggregates', '''
+        self._test_query('Having 1: Large Order Aggregates', '''
             MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
             WITH
                 o.o_orderkey AS orderkey,
@@ -975,7 +983,7 @@ class TpchNeo4j(Database):
             LIMIT 100
         ''')
 
-        self.__test_query('Having 2: High Volume Customers', '''
+        self._test_query('Having 2: High Volume Customers', '''
             MATCH (c:Customer)-[:PLACED]->(o:Order)
             WHERE o.o_orderdate >= date('1996-01-01')
             WITH
@@ -993,7 +1001,7 @@ class TpchNeo4j(Database):
             LIMIT 50
         ''')
 
-        self.__test_query('Having 3: Popular Parts by Brand', '''
+        self._test_query('Having 3: Popular Parts by Brand', '''
             MATCH (p:Part)
             WITH
                 p.p_brand AS brand,
@@ -1011,7 +1019,7 @@ class TpchNeo4j(Database):
             ORDER BY avg_price DESC
         ''')
 
-        self.__test_query('Having 4: High Revenue Suppliers', '''
+        self._test_query('Having 4: High Revenue Suppliers', '''
             MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:SUPPLIED_BY]->(s:Supplier)
             WHERE li.l_shipdate >= date('1997-01-01')
             WITH
@@ -1029,7 +1037,7 @@ class TpchNeo4j(Database):
             LIMIT 75
         ''')
 
-        self.__test_query('Having 5: Part Categories with High Sales', '''
+        self._test_query('Having 5: Part Categories with High Sales', '''
             MATCH (o:Order)-[:CONTAINS_ITEM]->(li:LineItem)-[:IS_PRODUCT_SUPPLY]->(:PartSupp)-[:IS_FOR_PART]->(p:Part)
             WHERE li.l_shipdate >= date('1996-01-01')
             AND li.l_shipdate < date('1997-01-01')
@@ -1048,7 +1056,7 @@ class TpchNeo4j(Database):
             LIMIT 25
         ''')
 
-        self.__test_query('Having 6: Customer Segments with Volume', '''
+        self._test_query('Having 6: Customer Segments with Volume', '''
             MATCH (c:Customer)-[:PLACED]->(o:Order)
             WHERE o.o_orderdate >= date('1997-01-01')
             WITH
