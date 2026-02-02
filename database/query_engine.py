@@ -1,17 +1,17 @@
 import time
 from common.driver_provider import DriverProvider
 from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
-from daos.mongo_dao import MongoDAO
-from daos.neo4j_dao import Neo4jDAO
-from daos.postgres_dao import PostgresDAO
+from datasets.tpch.postgres_dao import TpchPostgresDAO
+from datasets.tpch.mongo_dao import TpchMongoDAO
+from datasets.tpch.neo4j_dao import TpchNeo4jDAO
 
 class QueryEngine:
     def __init__(self, dbs: DriverProvider, schema_mapping: dict[str, str]):
         self.schema_mapping = schema_mapping
         self.daos = {
-            'postgres': PostgresDAO(dbs.get_typed('postgres', PostgresDriver)),
-            'mongo': MongoDAO(dbs.get_typed('mongo', MongoDriver)),
-            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4jDriver)),
+            'postgres': TpchPostgresDAO(dbs.get_typed('postgres', PostgresDriver)),
+            'mongo': TpchMongoDAO(dbs.get_typed('mongo', MongoDriver)),
+            'neo4j': TpchNeo4jDAO(dbs.get_typed('neo4j', Neo4jDriver)),
         }
 
     def get_dao_for_entity(self, entity_name):

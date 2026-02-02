@@ -5,7 +5,7 @@ import numpy as np
 import argparse
 import json
 from common.utils import JsonEncoder
-from datasets.database import TestQuery
+from common.database import TestQuery
 from latency_estimation.common import format_latency, load_queries, parse_queries, print_dataset_summary, truncate_query
 from latency_estimation.train_config import TrainConfig
 from latency_estimation.postgres.context import Context

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from tabulate import tabulate
-from datasets.database import TestQuery
+from common.database import TestQuery
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
 

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass, asdict
 import json
 from common.utils import EPSILON
-from datasets.database import TestQuery
+from common.database import TestQuery
 from latency_estimation.postgres.plan_extractor import PlanExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 

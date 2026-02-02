@@ -1,7 +1,7 @@
 import time
 from typing import Any
 import numpy as np
-from datasets.database import Database
+from common.database import Database
 from common.drivers import Neo4jDriver, cypher
 from latency_estimation.abstract import BaseDataset
 

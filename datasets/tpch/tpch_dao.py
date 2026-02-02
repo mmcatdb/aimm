@@ -1,32 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-class BaseDAO(ABC):
-    @abstractmethod
-    def find(self, entity_name: str, query_params) -> Any:
-        """
-        Handles simple conditional queries
-        Supports exact matches (key1 = val1 AND key2 = val2...), and IN clauses (key__in = [v1, v2,...])
-        """
-        pass
-
-    @abstractmethod
-    def insert(self, entity_name, data):
-        pass
-
-    @abstractmethod
-    def create_schema(self, entity_name, schema):
-        pass
-
-    @abstractmethod
-    def delete_all_from(self, entity_name):
-        pass
-
-    @abstractmethod
-    def drop_entity(self, entity_name):
-        pass
-
-    #region A) Selection, Projection, Source (of data)
+class TpchDAO(ABC):
+    #region Selection, Projection, Source (of data)
 
     @abstractmethod
     def get_all_lineitems(self) -> Any:
@@ -79,7 +55,7 @@ class BaseDAO(ABC):
         pass
 
     #endregion
-    #region B) Aggregation
+    #region Aggregation
 
     @abstractmethod
     def count_orders_by_month(self) -> Any:

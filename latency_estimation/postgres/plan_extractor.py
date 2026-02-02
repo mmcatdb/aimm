@@ -1,6 +1,6 @@
 import numpy as np
 import time
-from datasets.database import Database
+from common.database import Database
 from common.drivers import PostgresDriver
 from latency_estimation.postgres.trainer import PostgresDataset
 

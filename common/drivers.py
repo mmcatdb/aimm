@@ -9,7 +9,7 @@ from pymongo import MongoClient
 from neo4j import GraphDatabase
 
 # These classes manage database configurations and connections.
-# They should be created one per application and reused.
+# They should be created once per application and reused.
 
 class PostgresConfig:
     def __init__(self, host: str, port: int, database: str, user: str, password: str):
@@ -26,7 +26,7 @@ class PostgresDriver():
         cursor.execute('SELECT 1')
     """
     def __init__(self, config: PostgresConfig):
-        self._config = config
+        self.config = config
         self._pool = SimpleConnectionPool(
             minconn = 1,
             maxconn = 10,
@@ -80,7 +80,7 @@ class MongoDriver():
     database.myCollection.find({ ... })
     """
     def __init__(self, config: MongoConfig):
-        self._config = config
+        self.config = config
         self._client = MongoClient(f'mongodb://{config.host}:{config.port}')
         self._database = self._client[config.database]
 
@@ -104,7 +104,7 @@ class Neo4jDriver():
         result = session.run('MATCH (n) RETURN n LIMIT 1')
     """
     def __init__(self, config: Neo4jConfig):
-        self._config = config
+        self.config = config
         self._driver = GraphDatabase.driver(
             f'bolt://{config.host}:{config.port}',
             auth = (config.user, config.password)

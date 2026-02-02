@@ -40,3 +40,7 @@ class DriverProvider:
             'mongo': config.mongo,
             'neo4j': config.neo4j,
         })
+
+    def close(self):
+        for db in self.dbs.values():
+            db.close()

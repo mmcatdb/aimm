@@ -2,7 +2,7 @@ from typing import Any
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from .drivers import PostgresConfig, MongoConfig, Neo4jConfig
+from common.drivers import PostgresConfig, MongoConfig, Neo4jConfig
 
 class Config:
     def __init__(self, postgres: PostgresConfig, mongo: MongoConfig, neo4j: Neo4jConfig, rest: dict[str, Any] = {}):
