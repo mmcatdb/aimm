@@ -1,6 +1,6 @@
 from common.config import Config
 from common.drivers import Neo4jDriver
-from datasets.tpch.neo4j import TpchNeo4j
+from datasets.tpch.neo4j_database import TpchNeo4jDatabase
 from latency_estimation.common import load_checkpoint_file, load_dataset, save_checkpoint_file
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
@@ -11,7 +11,7 @@ class Context:
         self.quiet = quiet
         self.config: Config
         self.neo4j: Neo4jDriver
-        self.database: TpchNeo4j
+        self.database: TpchNeo4jDatabase
         self.extractor: PlanExtractor
 
     @staticmethod
@@ -20,7 +20,7 @@ class Context:
         ctx.quiet = quiet
         ctx.config = Config.load()
         ctx.neo4j = Neo4jDriver(ctx.config.neo4j)
-        ctx.database = TpchNeo4j()
+        ctx.database = TpchNeo4jDatabase()
         ctx.extractor = PlanExtractor(ctx.neo4j, ctx.database)
         return ctx
 

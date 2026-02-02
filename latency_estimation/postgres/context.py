@@ -1,6 +1,6 @@
 from common.config import Config
 from common.drivers import PostgresDriver
-from datasets.tpch.postgres import TpchPostgres
+from datasets.tpch.postgres_database import TpchPostgresDatabase
 from latency_estimation.common import load_checkpoint_file, load_dataset, save_checkpoint_file
 from latency_estimation.postgres.plan_extractor import PlanExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
@@ -11,7 +11,7 @@ class Context:
         self.quiet = quiet
         self.config: Config
         self.postgres: PostgresDriver
-        self.database: TpchPostgres
+        self.database: TpchPostgresDatabase
         self.extractor: PlanExtractor
 
     @staticmethod
@@ -20,7 +20,7 @@ class Context:
         ctx.quiet = quiet
         ctx.config = Config.load()
         ctx.postgres = PostgresDriver(ctx.config.postgres)
-        ctx.database = TpchPostgres()
+        ctx.database = TpchPostgresDatabase()
         ctx.extractor = PlanExtractor(ctx.postgres, ctx.database)
         return ctx
 

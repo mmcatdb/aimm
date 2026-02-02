@@ -1,8 +1,8 @@
 import random
 from typing_extensions import override
-from datasets.database import Database
+from common.database import Database
 
-class TpchPostgres(Database):
+class TpchPostgresDatabase(Database):
     NUM_QUERY_TYPES = 6 # Total number of different query types implemented
 
     @override
@@ -11,7 +11,7 @@ class TpchPostgres(Database):
 
     @override
     def _generate_train_queries(self, num_queries: int):
-        queries_per_type = num_queries // TpchPostgres.NUM_QUERY_TYPES
+        queries_per_type = num_queries // TpchPostgresDatabase.NUM_QUERY_TYPES
 
         # TPC-H Query 1 variations
         for _ in range(queries_per_type):

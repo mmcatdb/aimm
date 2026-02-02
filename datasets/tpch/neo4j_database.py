@@ -1,9 +1,9 @@
 from typing_extensions import override
-from datasets.database import Database
+from common.database import Database
 import datetime
 import random
 
-class TpchNeo4j(Database):
+class TpchNeo4jDatabase(Database):
     NUM_QUERY_TYPES = 32 # Total number of different query types implemented
 
     @override
@@ -13,7 +13,7 @@ class TpchNeo4j(Database):
     @override
     def _generate_train_queries(self, num_queries: int):
         # This will now be smaller, distributing the total num_queries over all 32 types
-        queries_per_type = num_queries // TpchNeo4j.NUM_QUERY_TYPES
+        queries_per_type = num_queries // TpchNeo4jDatabase.NUM_QUERY_TYPES
 
         # --- Define constant lists for parameters (from PostgreSQL version) ---
         SHIPMODES_ALL = ['MAIL', 'SHIP', 'AIR', 'TRUCK', 'RAIL', 'FOB', 'REG AIR']
@@ -221,7 +221,7 @@ class TpchNeo4j(Database):
 
         # Custom Q2: Scan with Exact Property Match
         for _ in range(queries_per_type):
-            name = TpchNeo4j.__get_random_name('Customer', 30000)
+            name = TpchNeo4jDatabase.__get_random_name('Customer', 30000)
             self._train_query(f'MATCH (c:Customer {{c_name: \'{name}\'}}) RETURN c.c_address, c.c_phone')
 
         # Custom Q3: Scan with Numeric Filter
@@ -298,7 +298,7 @@ class TpchNeo4j(Database):
 
         # Custom Q16: 1-Hop Traversal (Find orders for a customer)
         for _ in range(queries_per_type):
-            name = TpchNeo4j.__get_random_name('Customer', 30000)
+            name = TpchNeo4jDatabase.__get_random_name('Customer', 30000)
             self._train_query(f'''
                 MATCH (c:Customer)-[:PLACED]->(o:Order)
                 WHERE c.c_name = '{name}'
@@ -318,7 +318,7 @@ class TpchNeo4j(Database):
 
         # Custom Q18: 2-Hop Traversal (Find items for a customer)
         for _ in range(queries_per_type):
-            name = TpchNeo4j.__get_random_name('Customer', 30000)
+            name = TpchNeo4jDatabase.__get_random_name('Customer', 30000)
             self._train_query(f'''
                 MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
                 WHERE c.c_name = '{name}'
@@ -336,7 +336,7 @@ class TpchNeo4j(Database):
 
         # Custom Q20: 3-Hop Traversal (Find parts from a supplier)
         for _ in range(queries_per_type):
-            name = TpchNeo4j.__get_random_name('Supplier', 2000)
+            name = TpchNeo4jDatabase.__get_random_name('Supplier', 2000)
             self._train_query(f'''
                 MATCH (s:Supplier)<-[:SUPPLIED_BY]-(:PartSupp)-[:IS_FOR_PART]->(p:Part)
                 WHERE s.s_name = '{name}'
