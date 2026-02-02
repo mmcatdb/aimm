@@ -13,8 +13,8 @@ class PlanExtractor:
     - Parsing the plan structure
     - Recording ground truth latencies
     """
-    def __init__(self, neo4j: Neo4jDriver, database: Database):
-        self.neo4j = neo4j
+    def __init__(self, driver: Neo4jDriver, database: Database):
+        self.driver = driver
         self.database = database
 
     def collect_training_dataset(self, num_queries: int, num_runs_per_query: int, show_details: bool = False) -> BaseDataset:
@@ -84,7 +84,7 @@ class PlanExtractor:
         Returns:
             Query plan as dictionary
         """
-        with self.neo4j.session() as session:
+        with self.driver.session() as session:
             result = session.run(cypher(f'EXPLAIN {query}'))
             plan = result.consume().plan
             assert plan is not None, 'Failed to retrieve query plan.'
@@ -102,7 +102,7 @@ class PlanExtractor:
         """
         execution_times = []
 
-        with self.neo4j.session() as session:
+        with self.driver.session() as session:
             for _ in range(num_runs):
                 start_time = time.time()
                 result = session.run(cypher(query))

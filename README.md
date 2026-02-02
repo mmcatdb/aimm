@@ -31,6 +31,12 @@ pip install -r requirements.txt
 python -m path.to.file
 ```
 
+## Generate data
+
+```bash
+python -m datasets.edbt.data_generator --scale 1
+```
+
 ## Input data
 
 - Download [TPC-H data](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) and extract it into the `data/inputs` directory.

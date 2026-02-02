@@ -10,7 +10,7 @@ class Context:
     def __init__(self, quiet: bool):
         self.quiet = quiet
         self.config: Config
-        self.neo4j: Neo4jDriver
+        self.driver: Neo4jDriver
         self.database: TpchNeo4jDatabase
         self.extractor: PlanExtractor
 
@@ -19,13 +19,13 @@ class Context:
         ctx = Context(quiet)
         ctx.quiet = quiet
         ctx.config = Config.load()
-        ctx.neo4j = Neo4jDriver(ctx.config.neo4j)
+        ctx.driver = Neo4jDriver(ctx.config.neo4j)
         ctx.database = TpchNeo4jDatabase()
-        ctx.extractor = PlanExtractor(ctx.neo4j, ctx.database)
+        ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
         return ctx
 
     def close(self):
-        self.neo4j.close()
+        self.driver.close()
 
     def load_dataset(self, num_queries: int, num_runs: int):
         cache_path = f'{self.config.cache_directory}/{self.database.id()}_{num_queries}_{num_runs}.pkl'

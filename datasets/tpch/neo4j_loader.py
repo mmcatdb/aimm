@@ -4,8 +4,8 @@ from common.drivers import Neo4jDriver
 from common.loaders.neo4j_loader import Neo4jLoader
 
 class TpchNeo4jLoader(Neo4jLoader):
-    def __init__(self, config: Config, neo4j: Neo4jDriver):
-        super().__init__(config, neo4j)
+    def __init__(self, config: Config, driver: Neo4jDriver):
+        super().__init__(config, driver)
 
     @override
     def name(self) -> str:
@@ -28,7 +28,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             'CREATE CONSTRAINT IF NOT EXISTS FOR (li:LineItem) REQUIRE (li.l_orderkey, li.l_linenumber) IS UNIQUE'
         ]
         for query in queries:
-            self._run_query(query)
+            self._dao.execute(query)
 
     @override
     def _load_data(self):
@@ -158,31 +158,30 @@ class TpchNeo4jLoader(Neo4jLoader):
         # Create relationships for simple foreign keys
 
         print('Creating Nation -> Region relationships...')
-        self._run_query('''
+        self._dao.execute('''
         MATCH (n:Nation), (r:Region {r_regionkey: n.n_regionkey})
         CREATE (n)-[:IS_IN_REGION]->(r);
         ''')
         # Remove redundant foreign key property
-        self._run_query('MATCH (n:Nation) REMOVE n.n_regionkey;')
+        self._dao.execute('MATCH (n:Nation) REMOVE n.n_regionkey;')
 
         print('Creating Customer -> Nation relationships...')
-        self._run_query('''
+        self._dao.execute('''
         MATCH (c:Customer), (n:Nation {n_nationkey: c.c_nationkey})
         CREATE (c)-[:IS_IN_NATION]->(n);
         ''')
-        self._run_query('MATCH (c:Customer) REMOVE c.c_nationkey;')
+        self._dao.execute('MATCH (c:Customer) REMOVE c.c_nationkey;')
 
         print('Creating Supplier -> Nation relationships...')
-        self._run_query('''
+        self._dao.execute('''
         MATCH (s:Supplier), (n:Nation {n_nationkey: s.s_nationkey})
         CREATE (s)-[:IS_IN_NATION]->(n);
         ''')
-        self._run_query('MATCH (s:Supplier) REMOVE s.s_nationkey;')
+        self._dao.execute('MATCH (s:Supplier) REMOVE s.s_nationkey;')
 
         print('Creating Customer -> Order relationships...')
-        self._run_query('''
+        self._dao.execute('''
         MATCH (c:Customer), (o:Order {o_custkey: c.c_custkey})
         CREATE (c)-[:PLACED]->(o);
         ''')
-        self._run_query('MATCH (o:Order) REMOVE o.o_custkey;')
-
+        self._dao.execute('MATCH (o:Order) REMOVE o.o_custkey;')

@@ -14,16 +14,16 @@ class QueryEngine:
             'neo4j': TpchNeo4jDAO(dbs.get_typed('neo4j', Neo4jDriver)),
         }
 
-    def get_dao_for_entity(self, entity_name):
-        db_type = self.schema_mapping[entity_name]
+    def get_dao_for_entity(self, entity: str):
+        db_type = self.schema_mapping[entity]
         if not db_type:
-            raise ValueError(f'Entity "{entity_name}" not found in schema mapping.')
+            raise ValueError(f'Entity "{entity}" not found in schema mapping.')
         return self.daos[db_type]
 
 
-    def find(self, entity_name, query_params):
-        dao = self.get_dao_for_entity(entity_name)
-        return dao.find(entity_name, query_params)
+    def find(self, entity: str, query_params):
+        dao = self.get_dao_for_entity(entity)
+        return dao.find(entity, query_params)
 
     def find_lineitems_for_customer(self, customer_name):
         # Find the customer

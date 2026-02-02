@@ -7,8 +7,8 @@ from latency_estimation.postgres.trainer import PostgresDataset
 class PlanExtractor:
     """Extracts query plans and execution statistics from PostgreSQL."""
 
-    def __init__(self, postgres: PostgresDriver, database: Database):
-        self.postgres = postgres
+    def __init__(self, driver: PostgresDriver, database: Database):
+        self.driver = driver
         self.database = database
 
     def collect_training_dataset(self, num_queries: int, clear_cache: bool = True) -> PostgresDataset:
@@ -57,7 +57,7 @@ class PlanExtractor:
         Returns:
             Tuple of (plan_dict, execution_time_ms)
         """
-        connection = self.postgres.get_connection()
+        connection = self.driver.get_connection()
         # Set autocommit to avoid transaction block issues
         connection.autocommit = True
 
@@ -81,7 +81,7 @@ class PlanExtractor:
                 plan_json = result[0][0]
                 return plan_json['Plan'], plan_json['Execution Time']
         finally:
-            self.postgres.put_connection(connection)
+            self.driver.put_connection(connection)
 
     def explain_plan(self, query: str) -> dict:
         """
@@ -91,7 +91,7 @@ class PlanExtractor:
         Returns:
             Query plan dictionary
         """
-        connection = self.postgres.get_connection()
+        connection = self.driver.get_connection()
         # Set autocommit to avoid transaction block issues
         connection.autocommit = True
 
@@ -105,7 +105,7 @@ class PlanExtractor:
                 # EXPLAIN returns list of plans
                 return result[0][0]['Plan']
         finally:
-            self.postgres.put_connection(connection)
+            self.driver.put_connection(connection)
 
     def measure_query(self, query: str, num_runs: int) -> tuple[float, float, float]:
         """
@@ -119,7 +119,7 @@ class PlanExtractor:
         times_ms = []
 
         for _ in range(num_runs):
-            connection = self.postgres.get_connection()
+            connection = self.driver.get_connection()
             connection.autocommit = True
 
             try:
@@ -132,6 +132,6 @@ class PlanExtractor:
 
                     times_ms.append((end_s - start_s) * 1000)
             finally:
-                self.postgres.put_connection(connection)
+                self.driver.put_connection(connection)
 
         return np.mean(times_ms).item(), np.min(times_ms), np.max(times_ms)

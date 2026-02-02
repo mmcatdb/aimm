@@ -37,7 +37,7 @@ def main():
 
 class Populator:
     def __init__(self, config, dbs: DriverProvider, schema_mapping: dict[str, str]):
-        self.config = config
+        self._config = config
         self.schema_mapping = schema_mapping
         self.daos = {
             'postgres': PostgresDAO(dbs.get_typed('postgres', PostgresDriver)),
@@ -52,22 +52,24 @@ class Populator:
 
         self.create_data(populate_order, schemas)
 
-
     def drop_all(self, populate_order: list[str]):
-        for entity in reversed(populate_order):
-            if entity in self.schema_mapping:
-                try:
-                    dao = self.get_dao_for_entity(entity)
-                    dao.delete_all_from(entity)
-                    dao.drop_entity(entity)
-                except Exception as e:
-                    print(f'Skip delete for {entity}: {e}')
+        by_schema = dict()
+        for entity in populate_order:
+            db_type = self.schema_mapping.get(entity)
+            if db_type:
+                if db_type not in by_schema:
+                    by_schema[db_type] = []
+                by_schema[db_type].append(entity)
+
+        for db_type, entity_populate_order in by_schema.items():
+            dao = self.daos[db_type]
+            dao.drop_kinds(entity_populate_order)
 
     def create_schemas(self, schemas: dict[str, list[dict]]):
         for entity, schema in schemas.items():
             if entity in self.schema_mapping:
                 dao = self.get_dao_for_entity(entity)
-                dao.create_schema(entity, schema)
+                dao.create_kind_schema(entity, schema)
             else:
                 print(f'Skipping schema creation for {entity}; not in schema_mapping.')
 
@@ -78,9 +80,9 @@ class Populator:
             else:
                 print(f'Skipping {entity}; add to schema_mapping to populate.')
 
-    def populate_from_tbl(self, entity, schema):
+    def populate_from_tbl(self, entity: str, schema: list[dict]):
         filename = entity + '.tbl'
-        path = os.path.join(self.config.import_directory, filename)
+        path = os.path.join(self._config.import_directory, filename)
 
         with open(path, 'r') as file:
             reader = csv.reader(file, delimiter='|')
@@ -97,6 +99,7 @@ class Populator:
                         db_type = self.schema_mapping[entity]
                         if db_type == 'mongodb':
                             value = convert_value(value, column['type'])
+
                         data[column['name']] = value
 
                 # Drop potential empty key from final delimiter
@@ -113,7 +116,7 @@ class Populator:
 
         return self.daos[db_type]
 
-def convert_value(value, data_type):
+def convert_value(value, data_type: str):
     """Convert a string value to the appropriate Python type based on schema type."""
     if value is None or value == '':
         return None
@@ -149,7 +152,6 @@ def define_schemas():
         {'name': 'n_regionkey', 'type': 'INTEGER'},
         {'name': 'n_comment', 'type': 'VARCHAR(152)'}
     ]
-
 
     customer = [
         {'name': 'c_custkey', 'type': 'INTEGER', 'primary_key': True},

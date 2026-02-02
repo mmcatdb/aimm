@@ -4,9 +4,10 @@ from datasets.tpch.neo4j_loader import TpchNeo4jLoader
 
 def main():
     config = Config.load()
-    neo4j = Neo4jDriver(config.neo4j)
 
-    loader = TpchNeo4jLoader(config, neo4j)
+    driver = Neo4jDriver(config.neo4j)
+
+    loader = TpchNeo4jLoader(config, driver)
 
     loader.run()
 
