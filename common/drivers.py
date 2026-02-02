@@ -51,9 +51,9 @@ class PostgresDriver():
         try:
             yield connection
             connection.commit()
-        except Exception:
+        except Exception as e:
             connection.rollback()
-            raise
+            raise e
         finally:
             self._pool.putconn(connection)
 

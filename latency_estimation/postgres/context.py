@@ -10,7 +10,7 @@ class Context:
     def __init__(self, quiet: bool):
         self.quiet = quiet
         self.config: Config
-        self.postgres: PostgresDriver
+        self.driver: PostgresDriver
         self.database: TpchPostgresDatabase
         self.extractor: PlanExtractor
 
@@ -19,13 +19,13 @@ class Context:
         ctx = Context(quiet)
         ctx.quiet = quiet
         ctx.config = Config.load()
-        ctx.postgres = PostgresDriver(ctx.config.postgres)
+        ctx.driver = PostgresDriver(ctx.config.postgres)
         ctx.database = TpchPostgresDatabase()
-        ctx.extractor = PlanExtractor(ctx.postgres, ctx.database)
+        ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
         return ctx
 
     def close(self):
-        self.postgres.close()
+        self.driver.close()
 
     def load_dataset(self, num_queries: int):
         cache_path = f'{self.config.cache_directory}/{self.database.id()}_{num_queries}.pkl'

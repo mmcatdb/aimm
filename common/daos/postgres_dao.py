@@ -10,8 +10,8 @@ class PostgresDAO(BaseDAO):
         self.driver = driver
 
     @override
-    def find(self, entity_name, query_params) -> list[dict[Any, Any]]:
-        query = f'SELECT * FROM {entity_name} WHERE '
+    def find(self, entity: str, query_params) -> list[dict[Any, Any]]:
+        query = f'SELECT * FROM {entity} WHERE '
         conditions = []
         params = []
         for key, value in query_params.items():
@@ -35,54 +35,66 @@ class PostgresDAO(BaseDAO):
         return results
 
     @override
-    def insert(self, entity_name, data):
+    def insert(self, entity: str, data: dict):
         columns = ', '.join(data.keys())
         placeholders = ', '.join(['%s'] * len(data))
-        query = f'INSERT INTO {entity_name} ({columns}) VALUES ({placeholders})'
+        query = f'INSERT INTO {entity} ({columns}) VALUES ({placeholders})'
 
         with self.driver.cursor() as cursor:
             cursor.execute(query, list(data.values()))
 
     @override
-    def create_schema(self, entity_name, schema):
+    def create_kind_schema(self, entity: str, schema: list[dict]):
         columns_def = [f'{col["name"]} {col["type"].replace("PRIMARY KEY", "").strip()}' for col in schema]
 
         # Identify primary key columns from the primary_key flag
         pk_cols = [col['name'] for col in schema if col.get('primary_key')]
-        assert pk_cols is not None, f'No primary key defined for entity "{entity_name}". Please specify a primary key(s) in the schema.'
+        assert pk_cols is not None, f'No primary key defined for entity "{entity}". Please specify a primary key(s) in the schema.'
 
         pk_def = f', PRIMARY KEY ({", ".join(pk_cols)})'
 
         # Build and execute the final query
-        query = f'CREATE TABLE IF NOT EXISTS {entity_name} ({", ".join(columns_def)}{pk_def})'
+        query = f'CREATE TABLE IF NOT EXISTS {entity} ({", ".join(columns_def)}{pk_def})'
 
         with self.driver.cursor() as cursor:
             cursor.execute(query)
-            print(f'Table "{entity_name}" created or already exists in PostgreSQL.')
+            print(f'Table "{entity}" created or already exists in PostgreSQL.')
 
     @override
-    def delete_all_from(self, entity_name):
-        connection = self.driver.get_connection()
-        try:
-            with connection.cursor() as cursor:
-                query = f'TRUNCATE TABLE {entity_name} RESTART IDENTITY'
-                cursor.execute(query)
-            connection.commit()
-            print(f'All data from "{entity_name}" has been deleted in PostgreSQL.')
-        except UndefinedTable:
-            connection.rollback()
-            print(f'Table "{entity_name}" does not exist, skipping TRUNCATE.')
-        finally:
-            self.driver.put_connection(connection)
+    def drop_kinds(self, populate_order: list[str]) -> None:
+        for entity in reversed(populate_order):
+            try:
+                with self.driver.cursor() as cursor:
+                    cursor.execute(f'DROP TABLE IF EXISTS {entity}')
+                    print(f'Table "{entity}" has been dropped in PostgreSQL.')
+            except Exception as e:
+                print(f'Skipping delete for {entity}: {e}')
 
     @override
-    def drop_entity(self, entity_name):
+    def reset_database(self) -> None:
+        query = """
+        DO $$
+        DECLARE
+            s RECORD;
+        BEGIN
+            FOR s IN
+                SELECT nspname
+                FROM pg_namespace
+                WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+                AND nspname NOT LIKE 'pg_temp_%'
+            LOOP
+                EXECUTE format('DROP SCHEMA %I CASCADE', s.nspname);
+            END LOOP;
+
+            EXECUTE 'CREATE SCHEMA public';
+            EXECUTE 'GRANT ALL ON SCHEMA public TO public';
+        END $$;
+        """
         with self.driver.cursor() as cursor:
-            query = f'DROP TABLE IF EXISTS {entity_name}'
             cursor.execute(query)
-            print(f'Table "{entity_name}" has been dropped in PostgreSQL.')
+            print('PostgreSQL database has been reset.')
 
-    def _execute_query(self, query, params=None):
+    def execute(self, query: str, params=None):
         with self.driver.cursor(cursor_factory = RealDictCursor) as cursor:
             cursor.execute(query, params)
             if cursor.description:

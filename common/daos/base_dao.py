@@ -3,7 +3,7 @@ from typing import Any
 
 class BaseDAO(ABC):
     @abstractmethod
-    def find(self, entity_name: str, query_params) -> Any:
+    def find(self, entity: str, query_params) -> Any:
         """
         Handles simple conditional queries
         Supports exact matches (key1 = val1 AND key2 = val2...), and IN clauses (key__in = [v1, v2,...])
@@ -11,17 +11,19 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def insert(self, entity_name, data) -> None:
+    def insert(self, entity: str, data: dict) -> None:
         pass
 
     @abstractmethod
-    def create_schema(self, entity_name, schema) -> None:
+    def create_kind_schema(self, entity: str, schema: list[dict]) -> None:
         pass
 
     @abstractmethod
-    def delete_all_from(self, entity_name) -> None:
+    def drop_kinds(self, populate_order: list[str]) -> None:
+        """Drops just the kinds (tables/collections/nodes/edges) specified in populate_order."""
         pass
 
     @abstractmethod
-    def drop_entity(self, entity_name) -> None:
+    def reset_database(self) -> None:
+        """Resets the entire database, dropping all kinds."""
         pass
