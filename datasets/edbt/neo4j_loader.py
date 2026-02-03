@@ -13,181 +13,155 @@ class EdbtNeo4jLoader(Neo4jLoader):
 
     @override
     def _get_kinds(self):
-        # TODO
-        # return ['region', 'nation', 'part', 'supplier', 'customer', 'orders', 'partsupp', 'lineitem']
-        return []
+        return ['category', 'follows', 'has_category', 'has_interest', 'order_item', 'order', 'product', 'review', 'seller', 'similar', 'user']
 
     @override
-    def _create_constraints(self):
-        queries = [
-            # TODO
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (r:Region) REQUIRE r.r_regionkey IS UNIQUE',
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Nation) REQUIRE n.n_nationkey IS UNIQUE',
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (c:Customer) REQUIRE c.c_custkey IS UNIQUE',
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (o:Order) REQUIRE o.o_orderkey IS UNIQUE',
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (p:Part) REQUIRE p.p_partkey IS UNIQUE',
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (s:Supplier) REQUIRE s.s_suppkey IS UNIQUE',
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (ps:PartSupp) REQUIRE (ps.ps_partkey, ps.ps_suppkey) IS UNIQUE',
-            # 'CREATE CONSTRAINT IF NOT EXISTS FOR (li:LineItem) REQUIRE (li.l_orderkey, li.l_linenumber) IS UNIQUE'
+    def _define_constraints(self):
+        return [
+            # Unique keys
+            'CREATE CONSTRAINT user_id_unique IF NOT EXISTS FOR (u:User) REQUIRE u.user_id IS UNIQUE',
+            'CREATE CONSTRAINT seller_id_unique IF NOT EXISTS FOR (s:Seller) REQUIRE s.seller_id IS UNIQUE',
+            'CREATE CONSTRAINT product_id_unique IF NOT EXISTS FOR (p:Product) REQUIRE p.product_id IS UNIQUE',
+            'CREATE CONSTRAINT category_id_unique IF NOT EXISTS FOR (c:Category) REQUIRE c.category_id IS UNIQUE',
+            'CREATE CONSTRAINT order_id_unique IF NOT EXISTS FOR (o:Order) REQUIRE o.order_id IS UNIQUE',
+            # Useful indexes
+            'CREATE INDEX product_active IF NOT EXISTS FOR (p:Product) ON (p.is_active)',
+            'CREATE INDEX order_buyer IF NOT EXISTS FOR (o:Order) ON (o.buyer_user_id)',
+            'CREATE INDEX category_path IF NOT EXISTS FOR (c:Category) ON (c.path)',
         ]
-        for query in queries:
-            self._dao.execute(query)
 
     @override
     def _load_data(self):
         # Load nodes first
 
-        pass
+        self._load_csv('user', '''
+            CREATE (:User {
+                user_id: toInteger(row[0]),
+                handle: row[1],
+                email: row[2],
+                created_at: datetime(row[3]),
+                country_code: row[4],
+                is_active: (row[5] = 'true'),
+                profile: row[6]
+            })
+        ''')
 
-        # TODO
-        # self._create_node('region', '''
-        # CREATE (:Region {
-        #     r_regionkey: toInteger(row[0]),
-        #     r_name: row[1],
-        #     r_comment: row[2]
-        # });
-        # ''')
+        self._load_csv('seller', '''
+            CREATE (:Seller {
+                seller_id: toInteger(row[0]),
+                display_name: row[1],
+                created_at: datetime(row[2]),
+                country_code: row[3],
+                is_active: (row[4] = 'true')
+            })
+        ''')
 
-        # self._create_node('nation', '''
-        # CREATE (:Nation {
-        #     n_nationkey: toInteger(row[0]),
-        #     n_name: row[1],
-        #     n_regionkey: toInteger(row[2]),
-        #     n_comment: row[3]
-        # });
-        # ''')
+        self._load_csv('category', '''
+            CREATE (:Category {
+                category_id: toInteger(row[0]),
+                name: row[1],
+                path: row[2]
+            })
+        ''')
 
-        # self._create_node('part', '''
-        # CALL (row) {
-        #     CREATE (:Part {
-        #         p_partkey: toInteger(row[0]),
-        #         p_name: row[1],
-        #         p_mfgr: row[2],
-        #         p_brand: row[3],
-        #         p_type: row[4],
-        #         p_size: toInteger(row[5]),
-        #         p_container: row[6],
-        #         p_retailprice: toFloat(row[7]),
-        #         p_comment: row[8]
-        #     })
-        # } IN TRANSACTIONS OF 500 ROWS
-        # ''')
+        self._load_csv('product', '''
+            CREATE (:Product {
+                product_id: toInteger(row[0]),
+                seller_id: toInteger(row[1]),
+                sku: row[2],
+                title: row[3],
+                description: row[4],
+                price_cents: toInteger(row[5]),
+                currency: row[6],
+                stock_qty: toInteger(row[7]),
+                is_active: (row[8] = 'true'),
+                created_at: datetime(row[9]),
+                updated_at: datetime(row[10]),
+                attributes: row[11]
+            })
+        ''')
 
-        # self._create_node('supplier', '''
-        # CALL (row) {
-        #     CREATE (:Supplier {
-        #         s_suppkey: toInteger(row[0]),
-        #         s_name: row[1],
-        #         s_address: row[2],
-        #         s_nationkey: toInteger(row[3]),
-        #         s_phone: row[4],
-        #         s_acctbal: toFloat(row[5]),
-        #         s_comment: row[6]
-        #     })
-        # } IN TRANSACTIONS OF 500 ROWS
-        # ''')
-
-        # self._create_node('customer', '''
-        # CALL (row) {
-        #     CREATE (:Customer {
-        #         c_custkey: toInteger(row[0]),
-        #         c_name: row[1],
-        #         c_address: row[2],
-        #         c_nationkey: toInteger(row[3]),
-        #         c_phone: row[4],
-        #         c_acctbal: toFloat(row[5]),
-        #         c_mktsegment: row[6],
-        #         c_comment: row[7]
-        #     })
-        # } IN TRANSACTIONS OF 500 ROWS
-        # ''')
-
-        # self._create_node('orders', '''
-        # CALL (row) {
-        #     CREATE (:Order {
-        #         o_orderkey: toInteger(row[0]),
-        #         o_custkey: toInteger(row[1]),
-        #         o_orderstatus: row[2],
-        #         o_totalprice: toFloat(row[3]),
-        #         o_orderdate: date(row[4]),
-        #         o_orderpriority: row[5],
-        #         o_clerk: row[6],
-        #         o_shippriority: toInteger(row[7]),
-        #         o_comment: row[8]
-        #     })
-        # } IN TRANSACTIONS OF 500 ROWS
-        # ''')
+        self._load_csv('order', '''
+            CREATE (:Order {
+                order_id: toInteger(row[0]),
+                buyer_user_id: toInteger(row[1]),
+                order_ts: datetime(row[2]),
+                status: row[3],
+                total_cents: toInteger(row[4]),
+                currency: row[5],
+                shipping: row[6],
+                payment: row[7]
+            })
+        ''')
 
         # Load nodes and relationships for many-to-many tables
 
-        # self._create_node('partsupp', '''
-        # CALL (row) {
-        #     MATCH (p:Part {p_partkey: toInteger(row[0])})
-        #     MATCH (s:Supplier {s_suppkey: toInteger(row[1])})
-        #     CREATE (p)<-[:IS_FOR_PART]-(ps:PartSupp {
-        #         ps_partkey: toInteger(row[0]),
-        #         ps_suppkey: toInteger(row[1]),
-        #         ps_availqty: toInteger(row[2]),
-        #         ps_supplycost: toFloat(row[3]),
-        #         ps_comment: row[4]
-        #     })-[:SUPPLIED_BY]->(s)
-        # } IN TRANSACTIONS OF 500 ROWS
-        # ''', 'creating relationships to Part and Supplier')
+        self._load_csv('order_item', '''
+            MATCH (o:Order {order_id: toInteger(row[1])}),
+                (p:Product {product_id: toInteger(row[2])})
+            CREATE (o)-[:HAS_ITEM {
+                order_item_id: toInteger(row[0]),
+                seller_id: toInteger(row[3]),
+                unit_price_cents: toInteger(row[4]),
+                quantity: toInteger(row[5]),
+                line_total_cents: toInteger(row[6]),
+                created_at: datetime(row[7]),
+                product_snapshot: row[8]
+            }]->(p)
+        ''')
 
-        # self._create_node('lineitem', '''
-        # CALL (row) {
-        #     MATCH (o:Order {o_orderkey: toInteger(row[0])})
-        #     MATCH (p:Part {p_partkey: toInteger(row[1])})
-        #     MATCH (s:Supplier {s_suppkey: toInteger(row[2])})
-        #     MATCH (p)<-[:IS_FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s)
-        #     CREATE (o)-[:CONTAINS_ITEM]->(li:LineItem {
-        #         l_orderkey: toInteger(row[0]),
-        #         l_partkey: toInteger(row[1]),
-        #         l_suppkey: toInteger(row[2]),
-        #         l_linenumber: toInteger(row[3]),
-        #         l_quantity: toFloat(row[4]),
-        #         l_extendedprice: toFloat(row[5]),
-        #         l_discount: toFloat(row[6]),
-        #         l_tax: toFloat(row[7]),
-        #         l_returnflag: row[8],
-        #         l_linestatus: row[9],
-        #         l_shipdate: date(row[10]),
-        #         l_commitdate: date(row[11]),
-        #         l_receiptdate: date(row[12]),
-        #         l_shipinstruct: row[13],
-        #         l_shipmode: row[14],
-        #         l_comment: row[15]
-        #     })-[:IS_PRODUCT_SUPPLY]->(ps)
-        # } IN TRANSACTIONS OF 500 ROWS
-        # ''', 'creating relationships to Order and PartSupp')
+        self._load_csv('review', '''
+            MATCH (p:Product {product_id: toInteger(row[1])}),
+                (u:User {user_id: toInteger(row[2])})
+            CREATE (u)-[:REVIEWED {
+                review_id: toInteger(row[0]),
+                product_id: toInteger(row[1]),
+                user_id: toInteger(row[2]),
+                rating: toInteger(row[3]),
+                title: row[4],
+                body: row[5],
+                created_at: datetime(row[6]),
+                helpful_votes: toInteger(row[7])
+            }]->(p)
+        ''')
+
+        self._load_csv('has_category', '''
+            MATCH (p:Product {product_id: toInteger(row[0])}),
+                (c:Category {category_id: toInteger(row[1])})
+            CREATE (p)-[:HAS_CATEGORY {
+                assigned_at: datetime(row[2])
+            }]->(c)
+        ''')
+
+        self._load_csv('has_interest', '''
+            MATCH (u:User {user_id: toInteger(row[0])}),
+                (c:Category {category_id: toInteger(row[1])})
+            CREATE (u)-[:HAS_INTEREST {
+                strength: toInteger(row[2]),
+                created_at: datetime(row[3])
+            }]->(c)
+        ''')
+
+        self._load_csv('follows', '''
+            MATCH (a:User {user_id: toInteger(row[0])}),
+                (b:User {user_id: toInteger(row[1])})
+            CREATE (a)-[:FOLLOWS {
+                created_at: datetime(row[2])
+            }]->(b)
+        ''')
 
         # Create relationships for simple foreign keys
 
-        # print('Creating Nation -> Region relationships...')
-        # self._dao.execute('''
-        # MATCH (n:Nation), (r:Region {r_regionkey: n.n_regionkey})
-        # CREATE (n)-[:IS_IN_REGION]->(r);
-        # ''')
-        # # Remove redundant foreign key property
-        # self._dao.execute('MATCH (n:Nation) REMOVE n.n_regionkey;')
+        print("Creating Seller -> Product relationships...")
+        self._dao.execute("""
+            MATCH (p:Product), (s:Seller {seller_id: p.seller_id})
+            CREATE (s)-[:OFFERS]->(p)
+        """)
+        self._dao.execute("MATCH (p:Product) REMOVE p.seller_id")
 
-        # print('Creating Customer -> Nation relationships...')
-        # self._dao.execute('''
-        # MATCH (c:Customer), (n:Nation {n_nationkey: c.c_nationkey})
-        # CREATE (c)-[:IS_IN_NATION]->(n);
-        # ''')
-        # self._dao.execute('MATCH (c:Customer) REMOVE c.c_nationkey;')
-
-        # print('Creating Supplier -> Nation relationships...')
-        # self._dao.execute('''
-        # MATCH (s:Supplier), (n:Nation {n_nationkey: s.s_nationkey})
-        # CREATE (s)-[:IS_IN_NATION]->(n);
-        # ''')
-        # self._dao.execute('MATCH (s:Supplier) REMOVE s.s_nationkey;')
-
-        # print('Creating Customer -> Order relationships...')
-        # self._dao.execute('''
-        # MATCH (c:Customer), (o:Order {o_custkey: c.c_custkey})
-        # CREATE (c)-[:PLACED]->(o);
-        # ''')
-        # self._dao.execute('MATCH (o:Order) REMOVE o.o_custkey;')
+        print("Creating User -> Order relationships...")
+        self._dao.execute("""
+            MATCH (o:Order), (u:User {user_id: o.buyer_user_id})
+            CREATE (u)-[:PLACED]->(o)
+        """)
+        self._dao.execute("MATCH (o:Order) REMOVE o.buyer_user_id")

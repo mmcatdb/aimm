@@ -24,7 +24,7 @@ class Neo4jLoader(ABC):
         pass
 
     @abstractmethod
-    def _create_constraints(self) -> None:
+    def _define_constraints(self) -> list[str]:
         """Creates unique constraints for primary keys to speed up data loading."""
         pass
 
@@ -61,7 +61,8 @@ class Neo4jLoader(ABC):
                 print('Database reset complete.')
 
             print('Creating constraints...')
-            self._create_constraints()
+            for constraint in self._define_constraints():
+                self._dao.execute(constraint)
             print('Constraints created.')
 
             print('Loading data...')
@@ -154,12 +155,13 @@ class Neo4jLoader(ABC):
             if not os.path.isfile(filepath):
                 raise Exception(f'Required file not found in import directory: {filepath}')
 
-    def _create_node(self, entity: str, content: str, note: str | None = None):
+    def _load_csv(self, entity: str, content: str, note: str | None = None):
         if note:
             print(f'Loading {entity} and {note}...')
         else:
             print(f'Loading {entity}...')
 
-        prefix = f'LOAD CSV FROM \'file:///{entity}.tbl\' AS row FIELDTERMINATOR \'|\'\n'
-        query = prefix + content
-        self._dao.execute(query)
+        self._dao.execute(f'''
+        LOAD CSV FROM 'file:///{entity}.tbl' AS row FIELDTERMINATOR '|'
+        CALL (row) {{ {content} }} IN TRANSACTIONS OF 500 ROWS
+        ''')
