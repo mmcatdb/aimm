@@ -1,3 +1,4 @@
+from collections.abc import Callable
 import csv
 import os
 import random
@@ -12,6 +13,10 @@ class DataGenerator(ABC):
         self._config = config
         self._rng = random.Random(datetime.now().timestamp())
         self._now = datetime.now(timezone.utc)
+
+        self._rng_word = create_word_generator(self._rng, [ 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 11, 11, 11, 12, 12 ], 10000)
+        self._rng_name = create_word_generator(self._rng, [ 3, 4, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 10, 10 ], 2000)
+        self._rng_subdomain = create_word_generator(self._rng, [ 4, 5, 5, 6, 6, 7, 7, 8 ], 200)
 
     @abstractmethod
     def name(self) -> str:
@@ -64,13 +69,14 @@ class DataGenerator(ABC):
         path = os.path.join(self._data_directory, filename)
         f = open(path, "w", newline="", encoding="utf-8")
         w = csv.writer(f, delimiter = '|')
-        w.writerow(header)
+        # The header is skipped because loaders do not expect it.
+        # w.writerow(header)
         return f, w
 
     def _scaled(self, base: int, exp: float, min_v: int = 1) -> int:
         return max(min_v, int(round(base * (self._scale ** exp))))
 
-    def _rand_ts_between(self, start: datetime, end: datetime) -> datetime:
+    def _rng_timestamp_between(self, start: datetime, end: datetime) -> datetime:
         """Uniform timestamp between start and end."""
         delta = end - start
         seconds = int(delta.total_seconds())
@@ -78,10 +84,48 @@ class DataGenerator(ABC):
             return start
         return start + timedelta(seconds = self._rng.randint(0, seconds))
 
-    def _rand_ts_since(self, years: int) -> datetime:
+    def _rng_full_name(self) -> str:
+        """Generates a random full name."""
+        first_name = self._rng_name()
+        last_name = self._rng_name()
+        return f'{first_name} {last_name}'
+
+    def _rng_email(self, full_name: str) -> str:
+        """Generates a random email address based on the full name."""
+        name_part = full_name.lower().replace(' ', '.')
+        subdomain = self._rng_subdomain()
+        return f'{name_part}@{subdomain}.com'
+
+    def _rng_text(self, min_words: int, max_words: int) -> str:
+        """Generates a random text with a word count between min_words and max_words."""
+        word_count = self._rng.randint(min_words, max_words)
+        words = [self._rng_word() for _ in range(word_count)]
+        return ' '.join(words)
+
+    def _rng_timestamp_since(self, years: int) -> datetime:
         """Uniform timestamp between the specified start (in years) now."""
         seconds = years * 365 * 24 * 60 * 60
         return self._now - timedelta(seconds = self._rng.randint(0, seconds))
+
+    def _rng_country_code(self) -> str:
+        """Generates a random country code."""
+        countries = ['US', 'GB', 'DE', 'FR', 'CZ', 'PL', 'ES', 'IT', 'NL', 'SE', 'IN', 'BR', 'CA', 'AU']
+        return countries[self._rng.randrange(len(countries))]
+
+    def _rng_time_zone(self) -> str:
+        """Generates a random time zone."""
+        time_zones = ['UTC', 'America/New_York', 'Europe/London', 'Europe/Berlin', 'Asia/Kolkata', 'America/Sao_Paulo']
+        return time_zones[self._rng.randrange(len(time_zones))]
+
+    def _rng_locale(self) -> str:
+        """Generates a random locale."""
+        locales = ['en_US', 'en_GB', 'de_DE', 'fr_FR', 'es_ES', 'it_IT', 'nl_NL', 'sv_SE', 'pl_PL', 'pt_BR']
+        return locales[self._rng.randrange(len(locales))]
+
+    def _rng_currency(self) -> str:
+        """Generates a random currency code."""
+        currencies = ['USD', 'EUR', 'GBP', 'INR', 'BRL', 'CAD', 'AUD']
+        return currencies[self._rng.randrange(len(currencies))]
 
     def _weighted_choice_int(self, weights: list[float]) -> int:
         """Simple helper for small lists."""
@@ -142,3 +186,26 @@ class AliasSampler:
         if self._rng.random() < self.prob[i]:
             return i
         return self.alias[i]
+
+def create_word_generator(rng: random.Random, lengths: list[int], vocabulary_length: int, vocabulary: set[str] | None = None) -> Callable[[], str]:
+    """Creates a word generator function that produces random words."""
+    if vocabulary is None:
+        vocabulary = set()
+
+    vocabulary_list = list(vocabulary)
+
+    def generate_word() -> str:
+        if len(vocabulary_list) >= vocabulary_length:
+            return rng.choice(vocabulary_list)
+
+        while True:
+            length = rng.choice(lengths)
+            word = ''.join(rng.choices('abcdefghijklmnopqrstuvwxyz', k=length))
+            if word not in vocabulary:
+                vocabulary.add(word)
+                vocabulary_list.append(word)
+
+            return word
+
+    return generate_word
+
