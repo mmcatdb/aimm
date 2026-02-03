@@ -114,12 +114,3 @@ class PostgresLoader(ABC):
 
         print(f'Loaded data into table "{entity}".')
 
-    def _create_node(self, entity: str, content: str, note: str | None = None):
-        if note:
-            print(f'Loading {entity} and {note}...')
-        else:
-            print(f'Loading {entity}...')
-
-        prefix = f'LOAD CSV FROM \'file:///{entity}.tbl\' AS row FIELDTERMINATOR \'|\'\n'
-        query = prefix + content
-        self._dao.execute(query)

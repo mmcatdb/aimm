@@ -6,13 +6,17 @@ from dataclasses import dataclass
 from datetime import timedelta
 from common.data_generator import AliasSampler, DataGenerator, clamp_int, iso
 
+# TODO add isa user / person / customer
+# TODO now we add foreign keys in neo4j (and then we remove them for some kinds)
+# - they are probably used in some queries (in TPC-H) but they shouldn't (and after that, we should remove them)
+
 class EdbtDataGenerator(DataGenerator):
     """
     Data generator for the EDBT dataset.
     - Not all kinds scale the same (some grow faster).
     - Top ~1% products are "hot" and get more orders.
 
-    Kinds: users, sellers, products, categories, has_category, has_interest, follows, orders, order_items, reviews, similar.
+    Kinds: user, seller, product, category, has_category, has_interest, follows, order, order_item, review.
     """
     def __init__(self, config: Config):
         super().__init__(config)
@@ -29,26 +33,26 @@ class EdbtDataGenerator(DataGenerator):
         print('Counts:', c)
 
         # Base kinds
-        self._generate_users(c.users)
-        self._generate_sellers(c.sellers)
-        self._generate_categories(c.categories)
+        self._generate_users(c.user)
+        self._generate_sellers(c.seller)
+        self._generate_categories(c.category)
 
         # Products
-        seller_by_product, price_by_product, active_by_product = self._generate_products(c.products, c.sellers)
+        seller_by_product, price_by_product, active_by_product = self._generate_products(c.product, c.seller)
 
         # Many-to-many / graphy tables
-        self._generate_has_category(c.products, c.categories)
-        self._generate_has_interest(c.users, c.categories)
-        self._generate_follows(c.users, c.follows)
+        self._generate_has_category(c.product, c.category)
+        self._generate_has_interest(c.user, c.category)
+        self._generate_follows(c.user, c.follows)
 
         # Skewed sampler for product picks in orders
-        weights = self._build_product_weights(c.products)
+        weights = self._build_product_weights(c.product)
         product_sampler = self._create_sampler(weights)
 
         # Orders and order items (stream)
         self._generate_orders_and_items(
-            c.orders,
-            c.users,
+            c.order,
+            c.user,
             seller_by_product,
             price_by_product,
             active_by_product,
@@ -56,10 +60,7 @@ class EdbtDataGenerator(DataGenerator):
         )
 
         # Reviews
-        self._generate_reviews(c.reviews, c.users, c.products)
-
-        # Similar pairs
-        self._generate_similar(c.products, c.similar_pairs)
+        self._generate_reviews(c.review, c.user, c.product)
 
     def _generate_counts(self) -> 'Counts':
         """
@@ -68,18 +69,17 @@ class EdbtDataGenerator(DataGenerator):
         Not all kinds scale the same.
         """
         return Counts(
-            users = self._scaled(50_000, 1.00),
-            sellers = self._scaled(5_000, 0.90),
-            products = self._scaled(20_000, 0.95),
-            categories = self._scaled(2_000, 0.60),
-            orders = self._scaled(200_000, 1.05),
-            reviews = self._scaled(300_000, 1.00),
+            user = self._scaled(50_000, 1.00),
+            seller = self._scaled(5_000, 0.90),
+            product = self._scaled(20_000, 0.95),
+            category = self._scaled(2_000, 0.60),
+            order = self._scaled(200_000, 1.05),
+            review = self._scaled(300_000, 1.00),
             follows = self._scaled(200_000, 1.10),
-            similar_pairs = self._scaled(120_000, 0.90),
         )
 
     def _generate_users(self, n_users: int) -> None:
-        f, w = self._open_csv('users', ['user_id', 'handle', 'email', 'created_at', 'country_code', 'is_active', 'profile'])
+        f, w = self._open_csv('user', ['user_id', 'handle', 'email', 'created_at', 'country_code', 'is_active', 'profile'])
 
         for user_id in range(1, n_users + 1):
             handle = self._rng_full_name()
@@ -97,7 +97,7 @@ class EdbtDataGenerator(DataGenerator):
         f.close()
 
     def _generate_sellers(self, n_sellers: int) -> None:
-        f, w = self._open_csv('sellers', ['seller_id', 'display_name', 'created_at', 'country_code', 'is_active'])
+        f, w = self._open_csv('seller', ['seller_id', 'display_name', 'created_at', 'country_code', 'is_active'])
 
         for seller_id in range(1, n_sellers + 1):
             name = self._rng_full_name()
@@ -113,7 +113,7 @@ class EdbtDataGenerator(DataGenerator):
         Builds a simple tree.
         We store path as a slash path, like: /root12/sub3/sub1
         """
-        f, w = self._open_csv('categories', ['category_id', 'name', 'path'])
+        f, w = self._open_csv('category', ['category_id', 'name', 'path'])
 
         # Create roots first
         n_roots = clamp_int(int(round(math.sqrt(n_categories))), 10, 200)
@@ -164,7 +164,7 @@ class EdbtDataGenerator(DataGenerator):
         - price_cents_by_product
         - is_active_by_product
         """
-        f, w = self._open_csv('products', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency','stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes'])
+        f, w = self._open_csv('product', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency','stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes'])
 
         seller_id_by_product = [0] * n_products
         price_by_product = [0] * n_products
@@ -251,12 +251,12 @@ class EdbtDataGenerator(DataGenerator):
         Directed edges. No self follows.
         We keep duplicates low by making edges per user with a local set.
         """
-        f, w = self._open_csv('follows', ['follower_user_id', 'followee_user_id', 'created_at'])
+        f, w = self._open_csv('follows', ['from_id', 'to_id', 'created_at'])
 
         # Spread edges across users
         edges_written = 0
-        user_id = 1
-        while edges_written < n_edges and user_id <= n_users:
+        from_id = 1
+        while edges_written < n_edges and from_id <= n_users:
             # Each user follows a small number
             k = clamp_int(int((self._rng.random() ** 1.2) * 25), 0, 25)
             if edges_written + k > n_edges:
@@ -264,17 +264,17 @@ class EdbtDataGenerator(DataGenerator):
 
             chosen = set()
             while len(chosen) < k:
-                followee = self._rng.randint(1, n_users)
-                if followee != user_id:
-                    chosen.add(followee)
+                to_id = self._rng.randint(1, n_users)
+                if to_id != from_id:
+                    chosen.add(to_id)
 
-            for followee in chosen:
-                w.writerow([user_id, followee, iso(self._rng_timestamp_since(3))])
+            for to_id in chosen:
+                w.writerow([from_id, to_id, iso(self._rng_timestamp_since(3))])
                 edges_written += 1
                 if edges_written >= n_edges:
                     break
 
-            user_id += 1
+            from_id += 1
 
         f.close()
 
@@ -283,8 +283,8 @@ class EdbtDataGenerator(DataGenerator):
         Stream orders and items together.
         That avoids huge memory for totals.
         """
-        fo, wo = self._open_csv('orders', ['order_id', 'buyer_user_id', 'order_ts', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
-        fi, wi = self._open_csv('order_items', ['order_item_id', 'order_id', 'product_id', 'seller_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot']
+        fo, wo = self._open_csv('order', ['order_id', 'buyer_user_id', 'order_ts', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
+        fi, wi = self._open_csv('order_item', ['order_item_id', 'order_id', 'product_id', 'seller_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot']
         )
 
         statuses = ['paid', 'shipped', 'cancelled', 'refunded']
@@ -360,7 +360,7 @@ class EdbtDataGenerator(DataGenerator):
         We do per-product review counts, then pick users for that product.
         This avoids duplicates for (product_id, user_id).
         """
-        f, w = self._open_csv('reviews', ['review_id', 'product_id', 'user_id', 'rating', 'title', 'body', 'created_at', 'helpful_votes'])
+        f, w = self._open_csv('review', ['review_id', 'product_id', 'user_id', 'rating', 'title', 'body', 'created_at', 'helpful_votes'])
 
         years = 2
 
@@ -418,7 +418,7 @@ class EdbtDataGenerator(DataGenerator):
         while remaining > 0:
             iteration += 1
             if iteration == max_iterations:
-                print('Warning: reached max iterations while generating reviews. Continue with other products.')
+                print('Warning: reached max iterations while generating review. Continue with other product.')
                 max_product_id = n_products
 
             pid = 1 + (product_id % max(1, max_product_id))
@@ -443,80 +443,12 @@ class EdbtDataGenerator(DataGenerator):
 
         f.close()
 
-    def _generate_similar(self, n_products: int, n_pairs: int) -> None:
-        """
-        Similar is symmetric and stored once (a < b).
-        We generate a small number of neighbors per product for the first chunk,
-        then fill until we reach n_pairs.
-        """
-        f, w = self._open_csv('similar', ['product_id_a', 'product_id_b', 'score', 'source', 'updated_at'])
-
-        updated = self._now
-        pairs_written = 0
-
-        used_combinations = set[tuple[int, int]]()
-
-        # First pass: local neighbors
-        max_per_a = 8
-        for a in range(1, n_products + 1):
-            if pairs_written >= n_pairs:
-                break
-            k = clamp_int(int((self._rng.random() ** 0.6) * max_per_a), 0, max_per_a)
-
-            chosen_b = set()
-            tries = 0
-            while len(chosen_b) < k and tries < k * 10:
-                b = self._rng.randint(1, n_products)
-                if b != a:
-                    if a < b:
-                        chosen_b.add(b)
-                    else:
-                        chosen_b.add(a)  # will be fixed below
-                tries += 1
-
-            for raw_b in chosen_b:
-                b = raw_b
-                if b == a:
-                    continue
-                a2, b2 = (a, b) if a < b else (b, a)
-                if a2 == b2:
-                    continue
-                score = round(0.2 + (self._rng.random() ** 0.5) * 0.8, 6)
-                w.writerow([a2, b2, score, self._rng_word(), iso(updated)])
-                # No need to check here, we built chosen_b carefully.
-                used_combinations.add((a2, b2))
-
-                pairs_written += 1
-                if pairs_written >= n_pairs:
-                    break
-
-        # Fill remaining with random pairs
-        while pairs_written < n_pairs:
-            a = self._rng.randint(1, n_products)
-            b = self._rng.randint(1, n_products)
-            if a == b:
-                continue
-            a2, b2 = (a, b) if a < b else (b, a)
-
-            # However, here we have to check for duplicates.
-            combination = (a2, b2)
-            if combination in used_combinations:
-                continue
-            used_combinations.add(combination)
-
-            score = round(0.2 + (self._rng.random() ** 0.5) * 0.8, 6)
-            w.writerow([a2, b2, score, self._rng_word(), iso(updated)])
-            pairs_written += 1
-
-        f.close()
-
 @dataclass
 class Counts:
-    users: int
-    sellers: int
-    products: int
-    categories: int
-    orders: int
-    reviews: int
+    user: int
+    seller: int
+    product: int
+    category: int
+    order: int
+    review: int
     follows: int
-    similar_pairs: int
