@@ -81,18 +81,16 @@ class EdbtDataGenerator(DataGenerator):
     def _generate_users(self, n_users: int) -> None:
         f, w = self._open_csv('users', ['user_id', 'handle', 'email', 'created_at', 'country_code', 'is_active', 'profile'])
 
-        countries = ['US', 'GB', 'DE', 'FR', 'CZ', 'PL', 'ES', 'IT', 'NL', 'SE', 'IN', 'BR', 'CA', 'AU']
-
         for user_id in range(1, n_users + 1):
-            handle = f'user{user_id}'
-            email = f'{handle}@example.com'
-            created_at = self._rand_ts_since(3)
-            country = countries[self._rng.randrange(len(countries))]
+            handle = self._rng_full_name()
+            email = self._rng_email(handle)
+            created_at = self._rng_timestamp_since(3)
+            country = self._rng_country_code()
             is_active = True if self._rng.random() < 0.98 else False
             profile = {
-                'bio': f'Bio of {handle}',
-                'tz': 'UTC',
-                'lang': 'en',
+                'bio': self._rng_text(5, 20),
+                'tz': self._rng_time_zone(),
+                'lang': self._rng_locale(),
             }
             w.writerow([user_id, handle, email, iso(created_at), country, str(is_active).lower(), json.dumps(profile, ensure_ascii=False)])
 
@@ -101,12 +99,10 @@ class EdbtDataGenerator(DataGenerator):
     def _generate_sellers(self, n_sellers: int) -> None:
         f, w = self._open_csv('sellers', ['seller_id', 'display_name', 'created_at', 'country_code', 'is_active'])
 
-        countries = ['US', 'GB', 'DE', 'FR', 'CZ', 'PL', 'ES', 'IT', 'NL', 'SE']
-
         for seller_id in range(1, n_sellers + 1):
-            name = f'Seller {seller_id}'
-            created_at = self._rand_ts_since(5)
-            country = countries[self._rng.randrange(len(countries))]
+            name = self._rng_full_name()
+            created_at = self._rng_timestamp_since(5)
+            country = self._rng_country_code()
             is_active = True if self._rng.random() < 0.97 else False
             w.writerow([seller_id, name, iso(created_at), country, str(is_active).lower()])
 
@@ -117,27 +113,27 @@ class EdbtDataGenerator(DataGenerator):
         Builds a simple tree.
         We store path as a slash path, like: /root12/sub3/sub1
         """
-        f, w = self._open_csv('categories', ['category_id', 'parent_category_id', 'name', 'path'])
+        f, w = self._open_csv('categories', ['category_id', 'name', 'path'])
 
         # Create roots first
         n_roots = clamp_int(int(round(math.sqrt(n_categories))), 10, 200)
         roots = []
         for i in range(1, n_roots + 1):
             cid = i
-            name = f'Category {cid}'
+            name = self._rng_word()
             path = f'/cat{cid}'
             roots.append((cid, path))
-            w.writerow([cid, '', name, path])
+            w.writerow([cid, name, path])
 
         # Fill the rest by picking a parent from existing nodes
         paths = {cid: path for cid, path in roots}
         for cid in range(n_roots + 1, n_categories + 1):
             parent = self._rng.randrange(1, cid)  # parent among existing
             parent_path = paths[parent]
-            name = f'Category {cid}'
+            name = self._rng_word()
             path = f'{parent_path}/cat{cid}'
             paths[cid] = path
-            w.writerow([cid, parent, name, path])
+            w.writerow([cid, name, path])
 
         f.close()
 
@@ -168,8 +164,7 @@ class EdbtDataGenerator(DataGenerator):
         - price_cents_by_product
         - is_active_by_product
         """
-        f, w = self._open_csv('products', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency','stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes']
-        )
+        f, w = self._open_csv('products', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency','stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes'])
 
         seller_id_by_product = [0] * n_products
         price_by_product = [0] * n_products
@@ -178,12 +173,12 @@ class EdbtDataGenerator(DataGenerator):
         for product_id in range(1, n_products + 1):
             seller_id = self._rng.randint(1, n_sellers)
             sku = f'SKU-{product_id:09d}'
-            title = f'Product {product_id}'
-            description = f'Description for product {product_id}'
+            title = self._rng_text(2, 5)
+            description = self._rng_text(10, 20)
             # Price: mostly low, some higher
             base = int(round(500 + (self._rng.random() ** 2) * 20_000))  # cents
             price_cents = clamp_int(base, 100, 200_000)
-            currency = 'USD'
+            currency = self._rng_currency()
             # Stock: many small, some big
             stock_qty = int(round((self._rng.random() ** 1.7) * 200))
             # Make hot products have more stock so they can sell
@@ -191,11 +186,11 @@ class EdbtDataGenerator(DataGenerator):
                 stock_qty += 500 + self._rng.randint(0, 1500)
 
             is_active = True if self._rng.random() < 0.96 else False
-            created_at = self._rand_ts_since(5)
+            created_at = self._rng_timestamp_since(5)
             updated_at = created_at + timedelta(days=self._rng.randint(0, 60))
 
             attrs = {
-                'brand': f'Brand {self._rng.randint(1, 200)}',
+                'brand': self._rng_word(),
                 'color': self._rng.choice(['black', 'white', 'red', 'blue', 'green']),
                 'weight_g': int(50 + self._rng.random() * 2000),
             }
@@ -232,7 +227,7 @@ class EdbtDataGenerator(DataGenerator):
             while len(chosen) < k:
                 chosen.add(self._rng.randint(1, n_categories))
             for cid in chosen:
-                w.writerow([product_id, cid, iso(self._rand_ts_since(1))])
+                w.writerow([product_id, cid, iso(self._rng_timestamp_since(1))])
 
         f.close()
 
@@ -247,7 +242,7 @@ class EdbtDataGenerator(DataGenerator):
                 chosen.add(self._rng.randint(1, n_categories))
             for cid in chosen:
                 strength = clamp_int(int(1 + self._rng.random() * 10), 1, 10)
-                w.writerow([user_id, cid, strength, iso(self._rand_ts_since(2))])
+                w.writerow([user_id, cid, strength, iso(self._rng_timestamp_since(2))])
 
         f.close()
 
@@ -274,7 +269,7 @@ class EdbtDataGenerator(DataGenerator):
                     chosen.add(followee)
 
             for followee in chosen:
-                w.writerow([user_id, followee, iso(self._rand_ts_since(3))])
+                w.writerow([user_id, followee, iso(self._rng_timestamp_since(3))])
                 edges_written += 1
                 if edges_written >= n_edges:
                     break
@@ -289,7 +284,7 @@ class EdbtDataGenerator(DataGenerator):
         That avoids huge memory for totals.
         """
         fo, wo = self._open_csv('orders', ['order_id', 'buyer_user_id', 'order_ts', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
-        fi, wi = self._open_csv('order_items', ['order_item_id', 'order_id', 'product_id', 'seller_id', 'unit_price_cents', 'quantity','created_at', 'product_snapshot']
+        fi, wi = self._open_csv('order_items', ['order_item_id', 'order_id', 'product_id', 'seller_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot']
         )
 
         statuses = ['paid', 'shipped', 'cancelled', 'refunded']
@@ -299,7 +294,7 @@ class EdbtDataGenerator(DataGenerator):
 
         for order_id in range(1, n_orders + 1):
             buyer = self._rng.randint(1, n_users)
-            ts = self._rand_ts_since(1)
+            ts = self._rng_timestamp_since(1)
             status = statuses[self._weighted_choice_int(status_w)]
 
             # Items per order: mostly 1-3, sometimes bigger
@@ -336,7 +331,7 @@ class EdbtDataGenerator(DataGenerator):
                 line = unit_price * qty
                 total += line
 
-                snapshot = {'title': f'Product {product_id}', 'price_cents': unit_price, 'currency': 'USD'}
+                snapshot = {'title': self._rng_text(2, 5), 'price_cents': unit_price, 'currency': self._rng_currency()}
 
                 wi.writerow([
                     order_item_id,
@@ -345,15 +340,16 @@ class EdbtDataGenerator(DataGenerator):
                     seller_id,
                     unit_price,
                     qty,
+                    line,
                     iso(ts),
                     json.dumps(snapshot, ensure_ascii=False),
                 ])
                 order_item_id += 1
 
-            shipping = {'method': self._rng.choice(['standard', 'express']), 'country': self._rng.choice(['US', 'GB', 'DE', 'CZ'])}
-            payment = {'method': self._rng.choice(['card', 'paypal', 'bank']), 'provider': self._rng.choice(['stripe', 'adyen', 'braintree'])}
+            shipping = {'method': self._rng.choice(['standard', 'express']), 'country': self._rng_country_code()}
+            payment = {'method': self._rng.choice(['card', 'paypal', 'bank']), 'provider': self._rng.choice(['stripe', 'paypal', 'flowlance'])}
 
-            wo.writerow([order_id, buyer, iso(ts), status, total, 'USD', json.dumps(shipping, ensure_ascii=False), json.dumps(payment, ensure_ascii=False)])
+            wo.writerow([order_id, buyer, iso(ts), status, total, self._rng_currency(), json.dumps(shipping, ensure_ascii=False), json.dumps(payment, ensure_ascii=False)])
 
         fo.close()
         fi.close()
@@ -367,6 +363,8 @@ class EdbtDataGenerator(DataGenerator):
         f, w = self._open_csv('reviews', ['review_id', 'product_id', 'user_id', 'rating', 'title', 'body', 'created_at', 'helpful_votes'])
 
         years = 2
+
+        used_combinations = set[tuple[int, int]]()
 
         # Create a 'review budget' per product.
         # Hot products get more.
@@ -385,7 +383,7 @@ class EdbtDataGenerator(DataGenerator):
             if product_id <= hot_n:
                 mean *= 6.0
 
-            # Random around mean, but keep it small per product
+            # Random around mean, but keep it small per product.
             k = int(round(mean * (0.3 + self._rng.random())))
             k = clamp_int(k, 0, 60 if product_id <= hot_n else 15)
             if k > remaining:
@@ -399,24 +397,44 @@ class EdbtDataGenerator(DataGenerator):
 
             for user_id in chosen_users:
                 rating = clamp_int(int(round(1 + (self._rng.random() ** 0.6) * 4)), 1, 5)
-                title = f'Review for product {product_id}'
-                body = f'I rate product {product_id} with {rating} stars.'
-                created_at = self._rand_ts_since(years)
+                title = self._rng_text(4, 8)
+                body = self._rng_text(20, 50)
+                created_at = self._rng_timestamp_since(years)
                 helpful = int(round((self._rng.random() ** 2.0) * 50))
                 w.writerow([review_id, product_id, user_id, rating, title, body, iso(created_at), helpful])
                 review_id += 1
 
+                # No need to check here, we built chosen_users carefully.
+                used_combinations.add((product_id, user_id))
+
             remaining -= len(chosen_users)
 
-        # If we still have budget, add more to hot products
+        # If we still have budget, add more to hot products.
+        max_iterations = n_reviews * 10
+        iteration = 0
+        max_product_id = hot_n
+
         product_id = 1
         while remaining > 0:
-            pid = 1 + (product_id % max(1, hot_n))
+            iteration += 1
+            if iteration == max_iterations:
+                print('Warning: reached max iterations while generating reviews. Continue with other products.')
+                max_product_id = n_products
+
+            pid = 1 + (product_id % max(1, max_product_id))
             user_id = self._rng.randint(1, n_users)
+
+            # However, here we have to check for duplicates.
+            combination = (pid, user_id)
+            if combination in used_combinations:
+                product_id += 1
+                continue
+            used_combinations.add(combination)
+
             rating = clamp_int(int(round(1 + (self._rng.random() ** 0.6) * 4)), 1, 5)
-            title = f'Review for product {pid}'
-            body = f'I rate product {pid} with {rating} stars.'
-            created_at = self._rand_ts_since(years)
+            title = self._rng_text(4, 8)
+            body = self._rng_text(20, 50)
+            created_at = self._rng_timestamp_since(years)
             helpful = int(round((self._rng.random() ** 2.0) * 50))
             w.writerow([review_id, pid, user_id, rating, title, body, iso(created_at), helpful])
             review_id += 1
@@ -435,6 +453,8 @@ class EdbtDataGenerator(DataGenerator):
 
         updated = self._now
         pairs_written = 0
+
+        used_combinations = set[tuple[int, int]]()
 
         # First pass: local neighbors
         max_per_a = 8
@@ -462,25 +482,30 @@ class EdbtDataGenerator(DataGenerator):
                 if a2 == b2:
                     continue
                 score = round(0.2 + (self._rng.random() ** 0.5) * 0.8, 6)
-                w.writerow([a2, b2, score, 'model', iso(updated)])
+                w.writerow([a2, b2, score, self._rng_word(), iso(updated)])
+                # No need to check here, we built chosen_b carefully.
+                used_combinations.add((a2, b2))
+
                 pairs_written += 1
                 if pairs_written >= n_pairs:
                     break
 
         # Fill remaining with random pairs
-        seen = set()
         while pairs_written < n_pairs:
             a = self._rng.randint(1, n_products)
             b = self._rng.randint(1, n_products)
             if a == b:
                 continue
             a2, b2 = (a, b) if a < b else (b, a)
-            key = (a2, b2)
-            if key in seen:
+
+            # However, here we have to check for duplicates.
+            combination = (a2, b2)
+            if combination in used_combinations:
                 continue
-            seen.add(key)
+            used_combinations.add(combination)
+
             score = round(0.2 + (self._rng.random() ** 0.5) * 0.8, 6)
-            w.writerow([a2, b2, score, 'model', iso(updated)])
+            w.writerow([a2, b2, score, self._rng_word(), iso(updated)])
             pairs_written += 1
 
         f.close()

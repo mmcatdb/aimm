@@ -11,15 +11,15 @@ class PostgresDAO(BaseDAO):
 
     @override
     def find(self, entity: str, query_params) -> list[dict[Any, Any]]:
-        query = f'SELECT * FROM {entity} WHERE '
+        query = f'SELECT * FROM {escape(entity)} WHERE '
         conditions = []
         params = []
         for key, value in query_params.items():
             if key.endswith('__in'):
-                conditions.append(f'{key[:-4]} IN %s')
+                conditions.append(f'{escape(key[:-4])} IN %s')
                 params.append(tuple(value))
             else:
-                conditions.append(f'{key} = %s')
+                conditions.append(f'{escape(key)} = %s')
                 params.append(value)
 
         query += ' AND '.join(conditions)
@@ -36,36 +36,61 @@ class PostgresDAO(BaseDAO):
 
     @override
     def insert(self, entity: str, data: dict):
-        columns = ', '.join(data.keys())
+        columns = ', '.join([escape(col) for col in data.keys()])
         placeholders = ', '.join(['%s'] * len(data))
-        query = f'INSERT INTO {entity} ({columns}) VALUES ({placeholders})'
+        query = f'INSERT INTO {escape(entity)} ({columns}) VALUES ({placeholders})'
 
         with self.driver.cursor() as cursor:
             cursor.execute(query, list(data.values()))
 
     @override
     def create_kind_schema(self, entity: str, schema: list[dict]):
-        columns_def = [f'{col["name"]} {col["type"].replace("PRIMARY KEY", "").strip()}' for col in schema]
+        column_defs = []
+        for col in schema:
+            definition = f'{escape(col["name"])} {col["type"]}'
+            if 'references' in col and col['references']:
+                ref_table, ref_column = col['references'].split('(')
+                ref_column = ref_column.rstrip(')')
+                definition += f' REFERENCES {escape(ref_table)}({escape(ref_column)})'
+
+            column_defs.append(definition)
 
         # Identify primary key columns from the primary_key flag
-        pk_cols = [col['name'] for col in schema if col.get('primary_key')]
+        pk_cols = [escape(col['name']) for col in schema if col.get('primary_key')]
         assert pk_cols is not None, f'No primary key defined for entity "{entity}". Please specify a primary key(s) in the schema.'
 
         pk_def = f', PRIMARY KEY ({", ".join(pk_cols)})'
 
         # Build and execute the final query
-        query = f'CREATE TABLE IF NOT EXISTS {entity} ({", ".join(columns_def)}{pk_def})'
+        query = f'CREATE TABLE IF NOT EXISTS {escape(entity)} ({", ".join(column_defs)}{pk_def})'
 
         with self.driver.cursor() as cursor:
             cursor.execute(query)
             print(f'Table "{entity}" created or already exists in PostgreSQL.')
+
+    def create_index(self, index: dict):
+        """
+        CREATE UNIQUE INDEX uniq_reviews_product_user ON reviews(product_id, user_id)
+        {}'CREATE INDEX idx_products_active ON products(is_active) WHERE is_active = TRUE',
+        """
+        table = index['table']
+        columns = ', '.join([escape(col) for col in index['columns']])
+        unique = 'UNIQUE ' if index.get('unique') else ''
+        where_clause = f' WHERE {index["where"]}' if index.get('where') else ''
+        prefix = 'uniq' if index.get('unique') else 'idx'
+        index_name = f'{prefix}_{"_".join([table] + index["columns"])}'
+
+        query = f'CREATE {unique}INDEX IF NOT EXISTS {escape(index_name)} ON {escape(table)} ({columns}){where_clause}'
+
+        with self.driver.cursor() as cursor:
+            cursor.execute(query)
 
     @override
     def drop_kinds(self, populate_order: list[str]) -> None:
         for entity in reversed(populate_order):
             try:
                 with self.driver.cursor() as cursor:
-                    cursor.execute(f'DROP TABLE IF EXISTS {entity}')
+                    cursor.execute(f'DROP TABLE IF EXISTS {escape(entity)}')
                     print(f'Table "{entity}" has been dropped in PostgreSQL.')
             except Exception as e:
                 print(f'Skipping delete for {entity}: {e}')
@@ -102,3 +127,7 @@ class PostgresDAO(BaseDAO):
                 return results
 
         raise ValueError('Query did not return any results.')
+
+def escape(kind: str) -> str:
+    """Escapes SQL identifiers to prevent clash with reserved keywords."""
+    return f'"{kind}"'

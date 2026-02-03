@@ -23,6 +23,11 @@ class PostgresLoader(ABC):
         """Returns the schemas for each entity kind. The order of kinds is important for creating tables with foreign key dependencies."""
         pass
 
+    @abstractmethod
+    def _get_indexes(self) -> list[dict]:
+        """Returns the list of indexes to be created after tables are created."""
+        pass
+
     def run(self):
         args = self._parse_args()
 
@@ -43,12 +48,15 @@ class PostgresLoader(ABC):
                 print('Database reset complete.')
 
             print('Creating schema...')
-            for entity, schema in self._get_schemas().items():
+            schemas = self._get_schemas()
+            for entity, schema in schemas.items():
                 self._dao.create_kind_schema(entity, schema)
+            for index in self._get_indexes():
+                self._dao.create_index(index)
             print('Schema created.')
 
             print('Loading data...')
-            for entity, schema in self._get_schemas().items():
+            for entity, schema in schemas.items():
                 self._populate_table(entity, schema)
             print('Data loading complete.')
         except Exception as e:
@@ -103,6 +111,8 @@ class PostgresLoader(ABC):
                 data = {k: v for k, v in data.items() if k}
                 if data:
                     self._dao.insert(entity, data)
+
+        print(f'Loaded data into table "{entity}".')
 
     def _create_node(self, entity: str, content: str, note: str | None = None):
         if note:
