@@ -71,14 +71,14 @@ class Populator:
                 dao = self.get_dao_for_entity(entity)
                 dao.create_kind_schema(entity, schema)
             else:
-                print(f'Skipping schema creation for {entity}; not in schema_mapping.')
+                print(f'Skipping schema creation for {entity}, not in schema_mapping.')
 
     def create_data(self, populate_order: list[str], schemas: dict[str, list[dict]]):
         for entity in populate_order:
             if entity in self.schema_mapping:
                 self.populate_from_tbl(entity, schemas[entity])
             else:
-                print(f'Skipping {entity}; add to schema_mapping to populate.')
+                print(f'Skipping {entity}, add to schema_mapping to populate.')
 
     def populate_from_tbl(self, entity: str, schema: list[dict]):
         filename = entity + '.tbl'

@@ -104,7 +104,7 @@ class ModelEvaluator:
         result = Result(query.name, query.content)
         result.plan = self.extractor.explain_plan(query.content)
         estimated_latency = self.__estimate_latency(result.plan)
-        actual_latency, result.std_latency = self.extractor.measure_query(query.content, num_runs)
+        actual_latency, result.std_latency, _ = self.extractor.measure_query(query.content, num_runs)
 
         result.estimated_latency = estimated_latency
         result.actual_latency = actual_latency

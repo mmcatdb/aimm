@@ -9,9 +9,9 @@ class LatencyEstimator:
     Estimates query latency using a trained model without executing queries.
     Uses EXPLAIN to get the query plan and neural network for estimation.
     """
-    def __init__(self, model: PlanStructuredNetwork, extractor: PlanExtractor):
-        self.model = model
+    def __init__(self, extractor: PlanExtractor, model: PlanStructuredNetwork):
         self.extractor = extractor
+        self.model = model
 
     def estimate_batch(self, queries: list[str]) -> list[tuple[str, float, dict]]:
         """

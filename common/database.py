@@ -17,7 +17,7 @@ class Database(ABC):
 
     def get_train_queries(self, num_queries: int) -> list[str]:
         """
-        Generate TPC-H style queries with parameter variations.
+        Generate queries with parameter variations.
         Args:
             num_queries: Number of queries to generate
         Returns:

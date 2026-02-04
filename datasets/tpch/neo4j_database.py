@@ -59,9 +59,9 @@ class TpchNeo4jDatabase(Database):
             end_date = f'{year + 1}-01-01'
 
             self._train_query(f'''
-                MATCH (r:Region {{r_name: '{region}'}})<-[:IS_IN_REGION]-(n:Nation),
-                    (n)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem),
-                    (n)<-[:IS_IN_NATION]-(s:Supplier)<-[:SUPPLIED_BY]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(li)
+                MATCH (r:Region {{r_name: '{region}'}})<-[:IS_IN_REGION]-(n:Nation)
+                MATCH (n)<-[:IS_IN_NATION]-(c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS_ITEM]->(li:LineItem)
+                MATCH (n)<-[:IS_IN_NATION]-(s:Supplier)<-[:SUPPLIED_BY]-(:PartSupp)<-[:IS_PRODUCT_SUPPLY]-(li)
                 WHERE o.o_orderdate >= date('{start_date}')
                 AND o.o_orderdate < date('{end_date}')
                 WITH n.n_name AS nation_name,

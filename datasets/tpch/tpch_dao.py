@@ -11,7 +11,7 @@ class TpchDAO(ABC):
 
         This query selects all records from the lineitem table
         ```sql
-        SELECT * FROM lineitem;
+        SELECT * FROM lineitem
         ```
         """
         pass
@@ -24,7 +24,7 @@ class TpchDAO(ABC):
         This query selects all records from the orders table where the order date is between '1996-01-01' and '1996-12-31'
         ```sql
         SELECT * FROM orders
-        WHERE o_orderdate BETWEEN '1996-01-01' AND '1996-12-31';
+        WHERE o_orderdate BETWEEN '1996-01-01' AND '1996-12-31'
         ```
         """
         pass
@@ -36,7 +36,7 @@ class TpchDAO(ABC):
 
         This query selects all records from the customer table
         ```sql
-        SELECT * FROM customer;
+        SELECT * FROM customer
         ```
         """
         pass
@@ -49,7 +49,7 @@ class TpchDAO(ABC):
         This query selects all records from the orders table where the order key is between 1000 and 50000
         ```sql
         SELECT * FROM orders
-        WHERE o_orderkey BETWEEN 1000 AND 50000;
+        WHERE o_orderkey BETWEEN 1000 AND 50000
         ```
         """
         pass
@@ -66,7 +66,7 @@ class TpchDAO(ABC):
         ```sql
         SELECT COUNT(o.o_orderkey) AS order_count, DATE_FORMAT(o.o_orderdate, '%Y-%m') AS order_month
         FROM orders o
-        GROUP BY order_month;
+        GROUP BY order_month
         ```
         """
         pass
@@ -80,7 +80,7 @@ class TpchDAO(ABC):
         ```sql
         SELECT DATE_FORMAT(l.l_shipdate, '%Y-%m') AS ship_month, MAX(l.l_extendedprice) AS max_price
         FROM lineitem l
-        GROUP BY ship_month;
+        GROUP BY ship_month
         ```
         """
         pass
