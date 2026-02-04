@@ -18,6 +18,9 @@ class DataGenerator(ABC):
         self._rng_name = create_word_generator(self._rng, [ 3, 4, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 10, 10 ], 2000)
         self._rng_subdomain = create_word_generator(self._rng, [ 4, 5, 5, 6, 6, 7, 7, 8 ], 200)
 
+        self._used_strings = set()
+        """For emails and other unique fields."""
+
     @abstractmethod
     def name(self) -> str:
         """Returns the name of the generator (for display purposes)."""
@@ -90,11 +93,20 @@ class DataGenerator(ABC):
         last_name = self._rng_name()
         return f'{first_name} {last_name}'
 
-    def _rng_email(self, full_name: str) -> str:
-        """Generates a random email address based on the full name."""
+    def _rng_unique_email(self, full_name: str) -> str:
+        """Generates a random (but unique) email address based on the full name."""
         name_part = full_name.lower().replace(' ', '.')
         subdomain = self._rng_subdomain()
-        return f'{name_part}@{subdomain}.com'
+
+        email = f'{name_part}@{subdomain}.com'
+        if (email in self._used_strings):
+            modifier = 1
+            while email in self._used_strings:
+                email = f'{name_part}{modifier}@{subdomain}.com'
+                modifier += 1
+
+        self._used_strings.add(email)
+        return email
 
     def _rng_text(self, min_words: int, max_words: int) -> str:
         """Generates a random text with a word count between min_words and max_words."""

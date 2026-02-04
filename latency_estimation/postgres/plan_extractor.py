@@ -66,7 +66,7 @@ class PlanExtractor:
                 # Clear cache if requested (simulates cold cache)
                 if clear_cache:
                     try:
-                        cursor.execute('DISCARD ALL;')
+                        cursor.execute('DISCARD ALL')
                     except Exception as e:
                         # If DISCARD ALL fails, try alternative cache clearing
                         print(f'Warning: Could not clear cache: {e}')
@@ -107,16 +107,17 @@ class PlanExtractor:
         finally:
             self.driver.put_connection(connection)
 
-    def measure_query(self, query: str, num_runs: int) -> tuple[float, float, float]:
+    def measure_query(self, query: str, num_runs: int) -> tuple[float, float, float, int]:
         """
         Execute query and measure actual wall-clock time. Runs multiple times and returns statistics.
         Args:
             query: SQL query string
             num_runs: Number of times to execute the query
         Returns:
-            Tuple of (mean_time_ms, min_time_ms, max_time_ms)
+            Tuple of (mean_time_ms, min_time_ms, max_time_ms, num_results)
         """
         times_ms = []
+        num_results = -1
 
         for _ in range(num_runs):
             connection = self.driver.get_connection()
@@ -127,11 +128,12 @@ class PlanExtractor:
                     start_s = time.time()
                     cursor.execute(query)
                     # Fetch all results to ensure query completes
-                    cursor.fetchall()
+                    results = cursor.fetchall()
                     end_s = time.time()
 
                     times_ms.append((end_s - start_s) * 1000)
+                    num_results = len(results)
             finally:
                 self.driver.put_connection(connection)
 
-        return np.mean(times_ms).item(), np.min(times_ms), np.max(times_ms)
+        return np.mean(times_ms).item(), np.min(times_ms), np.max(times_ms), num_results

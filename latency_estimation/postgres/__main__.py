@@ -1,14 +1,13 @@
 import os
-import traceback
 import sys
 import numpy as np
 import argparse
 import json
-from common.utils import JsonEncoder
+from common.utils import JsonEncoder, auto_close
 from common.database import TestQuery
 from latency_estimation.common import format_latency, load_queries, parse_queries, print_dataset_summary, truncate_query
 from latency_estimation.train_config import TrainConfig
-from latency_estimation.postgres.context import Context
+from latency_estimation.postgres.context import PostgresContext
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.postgres.trainer import PlanStructuredTrainer
 from latency_estimation.postgres.latency_estimator import LatencyEstimator
@@ -27,25 +26,20 @@ def main():
 
     args = parser.parse_args()
 
-    ctx = Context.create()
+    ctx = PostgresContext.create()
 
-    try:
+    with auto_close(ctx):
         if args.command == 'train':
             train_run(args, ctx)
         elif args.command == 'evaluate':
             evaluate_run(args, ctx)
         elif args.command == 'estimate':
             estimate_run(args, ctx)
-    except Exception:
-        traceback.print_exc()
-        sys.exit(1)
-    finally:
-        ctx.close()
 
 def train_args(parser: argparse.ArgumentParser):
     TrainConfig.postgres().add_arguments(parser)
 
-def train_run(args: argparse.Namespace, ctx: Context):
+def train_run(args: argparse.Namespace, ctx: PostgresContext):
     config = TrainConfig.from_arguments(args)
 
     print(f'\n[2/7] Collecting {config.num_queries} query plans...')
@@ -143,7 +137,7 @@ def evaluate_args(parser: argparse.ArgumentParser):
     parser.add_argument('--query', '-q', type=str, action='append', dest='queries', help='Additional SQL query to evaluate (can be used multiple times)')
     parser.add_argument('--query-only', '-qo', action='store_true', help='Only evaluate the provided --query arguments, skip built-in test queries')
 
-def evaluate_run(args: argparse.Namespace, ctx: Context):
+def evaluate_run(args: argparse.Namespace, ctx: PostgresContext):
     model = ctx.load_model(args.checkpoint)
 
     print('\nGenerating test queries...')
@@ -197,12 +191,12 @@ def estimate_args(parser: argparse.ArgumentParser):
     parser.add_argument('--json', action='store_true', help='Output results in JSON format')
     parser.add_argument('--quiet', action='store_true', help='Only output the estimated latency value(s)')
 
-def estimate_run(args: argparse.Namespace, ctx: Context):
+def estimate_run(args: argparse.Namespace, ctx: PostgresContext):
     queries = load_queries(args, parse_queries)
 
     model = ctx.load_model(args.checkpoint)
 
-    estimator = LatencyEstimator(model, ctx.extractor)
+    estimator = LatencyEstimator(ctx.extractor, model)
     results = estimator.estimate_batch(queries)
 
     # Output results

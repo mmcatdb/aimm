@@ -78,7 +78,7 @@ class Neo4jDAO(BaseDAO):
         while True:
             deleted = self.execute_to_scalar(delete_batch_query, parameters={'limit': batch_size}, key='deleted') or 0
             total_deleted += deleted
-            print(f'Deleted batch: {deleted} nodes; total deleted so far: {total_deleted}')
+            print(f'Deleted batch: {deleted} nodes, total deleted so far: {total_deleted}')
             if deleted == 0:
                 break
 

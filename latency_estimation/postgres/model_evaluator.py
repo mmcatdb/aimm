@@ -81,7 +81,7 @@ class ModelEvaluator:
             result.actual = actual
 
             print(f'  [3/3] Measuring actual execution ({num_runs} runs)...')
-            actual_mean, actual_min, actual_max = self.extractor.measure_query(query.content, num_runs)
+            actual_mean, actual_min, actual_max, _ = self.extractor.measure_query(query.content, num_runs)
             actual.time_mean = actual_mean
             actual.time_min = actual_min
             actual.time_max = actual_max

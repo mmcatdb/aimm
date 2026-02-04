@@ -91,21 +91,23 @@ class PlanExtractor:
 
             return plan
 
-    def measure_query(self, query: str, num_runs: int, show_details: bool = False) -> tuple[float, float]:
+    def measure_query(self, query: str, num_runs: int, show_details: bool = False) -> tuple[float, float, int]:
         """
         Execute a query multiple times and return average execution time.
         Args:
             query: Cypher query string
             num_runs: Number of executions for averaging
         Returns:
-            Tuple of (mean_latency, std_latency)
+            Tuple of (mean_time_ms, std_time_ms, num_results)
         """
-        execution_times = []
+        times_ms = []
+        num_results = -1
 
         with self.driver.session() as session:
             for _ in range(num_runs):
                 start_time = time.time()
                 result = session.run(cypher(query))
+                num_results = len(result.data())
 
                 if show_details:
                     print(query)
@@ -116,9 +118,9 @@ class PlanExtractor:
 
                 result.consume()  # Ensure full execution
                 end_time = time.time()
-                execution_times.append(end_time - start_time)
+                times_ms.append(end_time - start_time)
 
-        return np.mean(execution_times).item(), np.std(execution_times).item()
+        return np.mean(times_ms).item(), np.std(times_ms).item(), num_results
 
     def get_plan_statistics(self, plans: list[dict]) -> dict[str, Any]:
         """

@@ -3,6 +3,9 @@ from common.config import Config
 from common.drivers import PostgresDriver
 from common.loaders.postgres_loader import PostgresLoader
 
+# TODO review is for customer_id, not person_id
+# TODO order_item should not have seller_id (can get from product)
+
 class EdbtPostgresLoader(PostgresLoader):
     def __init__(self, config: Config, driver: PostgresDriver):
         super().__init__(config, driver)
@@ -13,11 +16,22 @@ class EdbtPostgresLoader(PostgresLoader):
 
     @override
     def _get_schemas(self) -> dict[str, list[dict]]:
-        user = [
-            { 'name': 'user_id', 'type': 'INTEGER', 'primary_key': True },
-            { 'name': 'handle', 'type': 'TEXT NOT NULL' },
+        person = [
+            { 'name': 'person_id', 'type': 'INTEGER', 'primary_key': True },
+            { 'name': 'name', 'type': 'TEXT NOT NULL' },
             { 'name': 'email', 'type': 'TEXT' },
             { 'name': 'created_at', 'type': 'TIMESTAMPTZ NOT NULL' },
+            { 'name': 'country_code', 'type': 'CHAR(2)' },
+            { 'name': 'is_active', 'type': 'BOOLEAN NOT NULL' },
+            { 'name': 'profile', 'type': 'JSONB NOT NULL' },
+        ]
+
+        customer = [
+            { 'name': 'customer_id', 'type': 'INTEGER', 'primary_key': True },
+            { 'name': 'person_id', 'type': 'INTEGER NOT NULL', 'references': 'person(person_id)' },
+            { 'name': 'snapshot_at', 'type': 'TIMESTAMPTZ NOT NULL' },
+            { 'name': 'name', 'type': 'TEXT NOT NULL' },
+            { 'name': 'email', 'type': 'TEXT' },
             { 'name': 'country_code', 'type': 'CHAR(2)' },
             { 'name': 'is_active', 'type': 'BOOLEAN NOT NULL' },
             { 'name': 'profile', 'type': 'JSONB NOT NULL' },
@@ -50,8 +64,8 @@ class EdbtPostgresLoader(PostgresLoader):
 
         order = [
             { 'name': 'order_id', 'type': 'INTEGER', 'primary_key': True },
-            { 'name': 'buyer_user_id', 'type': 'INTEGER NOT NULL', 'references': 'user(user_id)' },
-            { 'name': 'order_ts', 'type': 'TIMESTAMPTZ NOT NULL' },
+            { 'name': 'customer_id', 'type': 'INTEGER NOT NULL', 'references': 'customer(customer_id)' },
+            { 'name': 'ordered_at', 'type': 'TIMESTAMPTZ NOT NULL' },
             { 'name': 'status', 'type': 'TEXT NOT NULL' },
             # CHECK (status IN ('created','paid','shipped','cancelled','refunded'))
             { 'name': 'total_cents', 'type': 'INTEGER NOT NULL' },
@@ -66,7 +80,6 @@ class EdbtPostgresLoader(PostgresLoader):
             { 'name': 'order_id', 'type': 'INTEGER NOT NULL', 'references': 'order(order_id)' },
             # ON DELETE CASCADE
             { 'name': 'product_id', 'type': 'INTEGER NOT NULL', 'references': 'product(product_id)' },
-            { 'name': 'seller_id', 'type': 'INTEGER NOT NULL', 'references': 'seller(seller_id)' },
             { 'name': 'unit_price_cents', 'type': 'INTEGER NOT NULL' },
             # CHECK (unit_price_cents >= 0)
             { 'name': 'quantity', 'type': 'INTEGER NOT NULL' },
@@ -82,7 +95,7 @@ class EdbtPostgresLoader(PostgresLoader):
             { 'name': 'review_id', 'type': 'INTEGER', 'primary_key': True },
             { 'name': 'product_id', 'type': 'INTEGER NOT NULL', 'references': 'product(product_id)' },
             # ON DELETE CASCADE
-            { 'name': 'user_id', 'type': 'INTEGER NOT NULL', 'references': 'user(user_id)' },
+            { 'name': 'customer_id', 'type': 'INTEGER NOT NULL', 'references': 'customer(customer_id)' },
             # ON DELETE CASCADE
             { 'name': 'rating', 'type': 'SMALLINT NOT NULL' },
             # CHECK (rating BETWEEN 1 AND 5)
@@ -109,9 +122,9 @@ class EdbtPostgresLoader(PostgresLoader):
             { 'name': 'assigned_at', 'type': 'TIMESTAMPTZ NOT NULL' },
         ]
 
-        # User likes category (many to many)
+        # Person likes category (many to many)
         has_interest = [
-            { 'name': 'user_id', 'type': 'INTEGER NOT NULL', 'primary_key': True, 'references': 'user(user_id)' },
+            { 'name': 'person_id', 'type': 'INTEGER NOT NULL', 'primary_key': True, 'references': 'person(person_id)' },
             # ON DELETE CASCADE
             { 'name': 'category_id', 'type': 'INTEGER NOT NULL', 'primary_key': True, 'references': 'category(category_id)' },
             # ON DELETE CASCADE
@@ -120,18 +133,19 @@ class EdbtPostgresLoader(PostgresLoader):
             { 'name': 'created_at', 'type': 'TIMESTAMPTZ NOT NULL' },
         ]
 
-        # Follows is user-user (graphy)
+        # Follows is person-person (graphy)
         follows = [
-            { 'name': 'from_id', 'type': 'INTEGER NOT NULL', 'primary_key': True, 'references': 'user(user_id)' },
+            { 'name': 'from_id', 'type': 'INTEGER NOT NULL', 'primary_key': True, 'references': 'person(person_id)' },
             # ON DELETE CASCADE
-            { 'name': 'to_id', 'type': 'INTEGER NOT NULL', 'primary_key': True, 'references': 'user(user_id)' },
+            { 'name': 'to_id', 'type': 'INTEGER NOT NULL', 'primary_key': True, 'references': 'person(person_id)' },
             # ON DELETE CASCADE
             { 'name': 'created_at', 'type': 'TIMESTAMPTZ NOT NULL' },
             # CHECK (from_id <> to_id)
         ]
 
         return {
-            'user': user,
+            'person': person,
+            'customer': customer,
             'seller': seller,
             'product': product,
             'order': order,
@@ -146,22 +160,20 @@ class EdbtPostgresLoader(PostgresLoader):
     @override
     def _get_indexes(self) -> list[dict]:
         return [
-            { 'table': 'user', 'columns': [ 'handle' ], 'unique': True },
-            { 'table': 'user', 'columns': [ 'email' ], 'unique': True },
+            { 'table': 'person', 'columns': [ 'email' ], 'unique': True },
             { 'table': 'product', 'columns': [ 'sku' ], 'unique': True },
             { 'table': 'product', 'columns': [ 'seller_id' ], },
             { 'table': 'product', 'columns': [ 'is_active' ], 'where': '"is_active" = TRUE' },
-            { 'table': 'order', 'columns': [ 'buyer_user_id', 'order_ts' ], },
-            # order_ts DESC
-            { 'table': 'order', 'columns': [ 'order_ts' ], },
-            # order_ts DESC
+            { 'table': 'order', 'columns': [ 'customer_id', 'ordered_at' ], },
+            # ordered_at DESC
+            { 'table': 'order', 'columns': [ 'ordered_at' ], },
+            # ordered_at DESC
             { 'table': 'order_item', 'columns': [ 'order_id' ], },
             { 'table': 'order_item', 'columns': [ 'product_id' ], },
-            { 'table': 'order_item', 'columns': [ 'seller_id' ], },
-            { 'table': 'review', 'columns': [ 'product_id', 'user_id' ], 'unique': True },
+            { 'table': 'review', 'columns': [ 'product_id', 'customer_id' ], 'unique': True },
             { 'table': 'review', 'columns': [ 'product_id', 'created_at' ], },
             # created_at DESC
-            { 'table': 'review', 'columns': [ 'user_id', 'created_at' ], },
+            { 'table': 'review', 'columns': [ 'customer_id', 'created_at' ], },
             # created_at DESC
             { 'table': 'category', 'columns': [ 'path' ], 'unique': True },
             { 'table': 'has_category', 'columns': [ 'category_id' ], },

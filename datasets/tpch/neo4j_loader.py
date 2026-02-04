@@ -105,8 +105,8 @@ class TpchNeo4jLoader(Neo4jLoader):
         # Load nodes and relationships for many-to-many tables
 
         self._load_csv('partsupp', '''
-            MATCH (p:Part {p_partkey: toInteger(row[0])}),
-                (s:Supplier {s_suppkey: toInteger(row[1])})
+            MATCH (p:Part {p_partkey: toInteger(row[0])})
+            MATCH (s:Supplier {s_suppkey: toInteger(row[1])})
             CREATE (p)<-[:IS_FOR_PART]-(ps:PartSupp {
                 ps_partkey: toInteger(row[0]),
                 ps_suppkey: toInteger(row[1]),
@@ -117,10 +117,10 @@ class TpchNeo4jLoader(Neo4jLoader):
         ''', 'creating relationships to Part and Supplier')
 
         self._load_csv('lineitem', '''
-            MATCH (o:Order {o_orderkey: toInteger(row[0])}),
-                (p:Part {p_partkey: toInteger(row[1])}),
-                (s:Supplier {s_suppkey: toInteger(row[2])}),
-                (p)<-[:IS_FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s)
+            MATCH (o:Order {o_orderkey: toInteger(row[0])})
+            MATCH (p:Part {p_partkey: toInteger(row[1])})
+            MATCH (s:Supplier {s_suppkey: toInteger(row[2])})
+            MATCH (p)<-[:IS_FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s)
             CREATE (o)-[:CONTAINS_ITEM]->(li:LineItem {
                 l_orderkey: toInteger(row[0]),
                 l_partkey: toInteger(row[1]),
