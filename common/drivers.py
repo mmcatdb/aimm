@@ -67,6 +67,30 @@ class PostgresDriver():
     def close(self):
         self._pool.closeall()
 
+    def query_total_size(self) -> int:
+        """Returns the total size of the database in bytes."""
+        with self.cursor() as cursor:
+            cursor.execute("""
+                SELECT SUM(pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename)))
+                FROM pg_tables
+                WHERE schemaname NOT IN ('pg_catalog', 'information_schema');
+            """)
+            result = cursor.fetchone()
+            return result[0] if result and result[0] is not None else 0
+
+    def query_record_count(self) -> int:
+        """Returns the total number of records in all tables."""
+        with self.cursor() as cursor:
+            cursor.execute("""
+                SELECT SUM(reltuples::BIGINT)
+                FROM pg_class
+                WHERE relkind = 'r' AND relnamespace IN (
+                    SELECT oid FROM pg_namespace WHERE nspname NOT IN ('pg_catalog', 'information_schema')
+                );
+            """)
+            result = cursor.fetchone()
+            return int(result[0]) if result and result[0] is not None else 0
+
 class MongoConfig:
     def __init__(self, host: str, port: int, database: str):
         self.host = host
@@ -89,6 +113,19 @@ class MongoDriver():
 
     def close(self):
         self._client.close()
+
+    def query_total_size(self) -> int:
+        """Returns the total size of the database in bytes."""
+        stats = self._database.command("dbstats")
+        return stats.get("dataSize", 0) + stats.get("indexSize", 0)
+
+    def query_record_count(self) -> int:
+        """Returns the total number of documents in all collections."""
+        total_count = 0
+        for collection_name in self._database.list_collection_names():
+            collection = self._database[collection_name]
+            total_count += collection.estimated_document_count()
+        return total_count
 
 class Neo4jConfig:
     def __init__(self, host: str, port: int, user: str, password: str):
@@ -119,6 +156,19 @@ class Neo4jDriver():
 
     def close(self):
         self._driver.close()
+
+    def query_record_count(self) -> int:
+        """Returns the total number of nodes and relationships in the database."""
+        with self.session() as session:
+            result = session.run('MATCH (n) RETURN count(n) AS node_count').single()
+            node_count = result['node_count'] if result and 'node_count' in result else 0
+
+            result = session.run('MATCH ()-[r]->() RETURN count(r) AS relationship_count').single()
+            relationship_count = result['relationship_count'] if result and 'relationship_count' in result else 0
+
+            return node_count + relationship_count
+
+    # Neo4j doesn't provide a straightforward way to get the total size of the database ... and we don't want to return inaccurate results.
 
 def cypher(query: str) -> LiteralString:
     """Nobody asked for this feature. What about some actually useful types hints instead?"""

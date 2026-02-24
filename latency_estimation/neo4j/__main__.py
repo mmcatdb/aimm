@@ -12,17 +12,15 @@ from latency_estimation.neo4j.latency_estimator import LatencyEstimator
 from latency_estimation.neo4j.model_evaluator import ModelEvaluator, TestQuery
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
-def main():
+def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Neo4j QPP-Net')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     train_args(subparsers.add_parser('train', help='Train a new QPP-Net model'))
-
     evaluate_args(subparsers.add_parser('evaluate', help='Evaluate a trained QPP-Net model'))
-
     estimate_args(subparsers.add_parser('estimate', help='Estimate query latency using a trained QPP-Net model'))
 
-    args = parser.parse_args()
+    args = parser.parse_args(rawArgs)
 
     ctx = Neo4jContext.create()
 

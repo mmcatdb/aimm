@@ -28,8 +28,8 @@ class PostgresLoader(ABC):
         """Returns the list of indexes to be created after tables are created."""
         pass
 
-    def run(self):
-        args = self._parse_args()
+    def run(self, rawArgs: list[str] | None = None):
+        args = self._parse_args(rawArgs)
 
         title = f'--- {self.name()} Postgres Loader ---'
         print(title)
@@ -66,7 +66,7 @@ class PostgresLoader(ABC):
 
         print('\nScript finished successfully.')
 
-    def _parse_args(self):
+    def _parse_args(self, rawArgs: list[str] | None = None):
         parser = argparse.ArgumentParser(description=f'Load {self.name()} data into a Postgres database.')
         parser.add_argument(
             '--data-dir',
@@ -81,7 +81,7 @@ class PostgresLoader(ABC):
             help='Set to --no-reset-database to skip clearing the database beforehand.'
         )
 
-        return parser.parse_args()
+        return parser.parse_args(rawArgs)
 
     def _check_files(self, import_directory: str):
         """Verify files exist in the import directory."""

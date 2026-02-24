@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 class Database(ABC):
     """
-    Contains all dataset-specific logic for a single database in such dataset.
+    Contains all dataset-specific logic for a single database in a dataset.
     """
     def __init__(self):
         self.num_train_queries: int | None = None

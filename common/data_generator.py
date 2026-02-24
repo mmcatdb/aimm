@@ -31,8 +31,8 @@ class DataGenerator(ABC):
         """Generates data at the specified scale and saves it to the data directory."""
         pass
 
-    def run(self):
-        args = self._parse_args()
+    def run(self, rawArgs: list[str] | None = None):
+        args = self._parse_args(rawArgs)
 
         self._data_directory = args.data_dir or self._config.import_directory
         self._scale = args.scale
@@ -49,7 +49,7 @@ class DataGenerator(ABC):
         except Exception as e:
             print(f'\nError: {e}')
 
-    def _parse_args(self):
+    def _parse_args(self, rawArgs: list[str] | None):
         parser = argparse.ArgumentParser(description=f'Generate {self.name()} data.')
         parser.add_argument(
             '--data-dir',
@@ -64,7 +64,7 @@ class DataGenerator(ABC):
             help='Scale factor for data generation. Default value (1.0) corresponds to ~100 MB so be responsible.'
         )
 
-        return parser.parse_args()
+        return parser.parse_args(rawArgs)
 
     def _open_csv(self, kind: str, header: list[str]):
         print('Creating', kind + '.tbl')

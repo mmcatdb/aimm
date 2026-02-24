@@ -32,9 +32,7 @@ class DriverProvider:
 
     @staticmethod
     def default(config: Config) -> 'DriverProvider':
-        """
-        Default providers for development and testing purposes.
-        """
+        """Default providers for development and testing purposes."""
         return DriverProvider({
             'postgres': config.postgres,
             'mongo': config.mongo,

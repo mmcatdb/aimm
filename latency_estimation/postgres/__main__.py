@@ -14,17 +14,15 @@ from latency_estimation.postgres.latency_estimator import LatencyEstimator
 from latency_estimation.postgres.model_evaluator import ModelEvaluator
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
 
-def main():
+def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Postgres QPP-Net')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     train_args(subparsers.add_parser('train', help='Train a new QPP-Net model'))
-
     evaluate_args(subparsers.add_parser('evaluate', help='Evaluate a trained QPP-Net model'))
-
     estimate_args(subparsers.add_parser('estimate', help='Estimate query latency using a trained QPP-Net model'))
 
-    args = parser.parse_args()
+    args = parser.parse_args(rawArgs)
 
     ctx = PostgresContext.create()
 
