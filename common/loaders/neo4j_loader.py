@@ -33,8 +33,8 @@ class Neo4jLoader(ABC):
         """Loads data from all .tbl files into Neo4j. The order of loading is important to ensure relationships can be formed."""
         pass
 
-    def run(self):
-        args = self._parse_args()
+    def run(self, rawArgs: list[str] | None = None):
+        args = self._parse_args(rawArgs)
 
         title = f'--- {self.name()} Neo4j Loader ---'
         print(title)
@@ -78,7 +78,7 @@ class Neo4jLoader(ABC):
 
         print('\nScript finished successfully.')
 
-    def _parse_args(self):
+    def _parse_args(self, rawArgs: list[str] | None):
         parser = argparse.ArgumentParser(description=f'Load {self.name()} data into a Neo4j database.')
         parser.add_argument(
             '--data-dir',
@@ -107,7 +107,7 @@ class Neo4jLoader(ABC):
             help='Set to --no-reset-database to skip clearing the database beforehand.'
         )
 
-        return parser.parse_args()
+        return parser.parse_args(rawArgs)
 
     def _check_connection(self):
         try:

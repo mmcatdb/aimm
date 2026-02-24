@@ -1,15 +1,79 @@
 import argparse
-from common.utils import auto_close
+from common.utils import auto_close, data_size_quantity, pretty_print_int
 
 NUM_RUNS = 1
 
-def main():
+def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Test Postgres EDBT')
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    subparsers.add_parser('check', help='Check database connections and sizes')
+    evaluate_args(subparsers.add_parser('evaluate', help='Evaluate models'))
+
+    args = parser.parse_args(rawArgs)
+
+    if args.command == 'check':
+        check_run()
+    elif args.command == 'evaluate':
+        evaluate_run(args)
+
+def check_run():
+    from common.config import Config
+    from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
+
+    config = Config.load()
+    postgres = PostgresDriver(config.postgres)
+    mongo = MongoDriver(config.mongo)
+    neo4j = Neo4jDriver(config.neo4j)
+
+    print('Checking database connections and sizes ...')
+
+    with auto_close(postgres):
+        print('Postgres')
+        print('- connection ... ', end='')
+        connection = postgres.get_connection()
+        postgres.put_connection(connection)
+        print('OK')
+
+        print('- records    ... ', end='')
+        count = postgres.query_record_count()
+        print(pretty_print_int(count))
+
+        print('- size       ... ', end='')
+        size = postgres.query_total_size()
+        print(data_size_quantity.pretty_print(size))
+
+    with auto_close(mongo):
+        print('MongoDB')
+        print('- connection ... ', end='')
+        mongo.database().list_collection_names()
+        print('OK')
+
+        print('- records    ... ', end='')
+        count = mongo.query_record_count()
+        print(pretty_print_int(count))
+
+        print('- size       ... ', end='')
+        size = mongo.query_total_size()
+        print(data_size_quantity.pretty_print(size))
+
+    with auto_close(neo4j):
+        print('Neo4j')
+        print('- connection ... ', end='')
+        neo4j.verify()
+        print('OK')
+
+        print('- records    ... ', end='')
+        count = neo4j.query_record_count()
+        print(pretty_print_int(count))
+
+    print('Done.')
+
+def evaluate_args(parser: argparse.ArgumentParser):
     parser.add_argument('--checkpoint', '-c', type=str, required=True, help='Path to trained model')
     parser.add_argument('--database', '-d', type=str, required=True, help='Either "postgres" or "neo4j"')
 
-    args = parser.parse_args()
-
+def evaluate_run(args: argparse.Namespace):
     if args.database == "postgres":
         evaluate_postgres(args.checkpoint)
     elif args.database == "neo4j":
