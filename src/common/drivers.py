@@ -1,4 +1,6 @@
 from collections.abc import Generator
+import decimal
+import pprint
 from typing import cast
 from contextlib import contextmanager
 from typing_extensions import LiteralString
@@ -161,10 +163,10 @@ class Neo4jDriver():
         """Returns the total number of nodes and relationships in the database."""
         with self.session() as session:
             result = session.run('MATCH (n) RETURN count(n) AS node_count').single()
-            node_count = result['node_count'] if result and 'node_count' in result else 0
+            node_count = result.get('node_count', 0) if result else 0
 
             result = session.run('MATCH ()-[r]->() RETURN count(r) AS relationship_count').single()
-            relationship_count = result['relationship_count'] if result and 'relationship_count' in result else 0
+            relationship_count = result.get('relationship_count', 0) if result else 0
 
             return node_count + relationship_count
 

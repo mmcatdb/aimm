@@ -17,7 +17,7 @@ class Config:
         self.device: str = rest['device']
 
     # Load .env manually if needed (outside Docker).
-    DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / '.env'
+    DEFAULT_CONFIG_PATH = Path.joinpath(Path.cwd(), '.env')
 
     @staticmethod
     def load(path: str | None = None) -> 'Config':

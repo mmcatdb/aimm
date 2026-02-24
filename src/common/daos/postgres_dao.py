@@ -66,7 +66,7 @@ class PostgresDAO(BaseDAO):
 
         with self.driver.cursor() as cursor:
             cursor.execute(query)
-            print(f'Table "{entity}" created or already exists in PostgreSQL.')
+            print(f'Created table "{entity}".')
 
     def create_index(self, index: dict):
         """
@@ -91,7 +91,7 @@ class PostgresDAO(BaseDAO):
             try:
                 with self.driver.cursor() as cursor:
                     cursor.execute(f'DROP TABLE IF EXISTS {escape(entity)}')
-                    print(f'Table "{entity}" has been dropped in PostgreSQL.')
+                    print(f'Dropped table "{entity}".')
             except Exception as e:
                 print(f'Skipping delete for {entity}: {e}')
 
