@@ -22,9 +22,9 @@ python -m venv .venv
 ```bash
 source .venv/bin/activate
 ```
-- Install dependencies (whenever they changes):
+- Install dependencies (whenever they changes). Also needed for editable install:
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 - Run scripts:
 ```bash
@@ -36,15 +36,15 @@ python -m path.to.file
 ### EDBT (generated)
 
 ```bash
-python -m datasets.edbt.data_generator --scale 1
+python -m database.generate_data --scale 1
 ```
 
 ### TPC-H (downloaded)
 
 - Download [TPC-H data](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) and extract it into the `data/inputs` directory.
 ```bash
-python -m database.populate_db
-python -m database.populate_neo
+python -m database.edbt.populate_postgres
+python -m database.edbt.populate_neo4j
 ```
 
 ## Experiments

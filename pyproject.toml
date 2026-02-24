@@ -1,0 +1,22 @@
+[project]
+name = "aimm"
+dynamic = ["version"]
+
+dependencies = [
+    "psycopg2-binary",
+    "types-psycopg2",
+    "pymongo",
+    "neo4j",
+    "pyyaml",
+    "scikit-learn",
+    "torch",
+    "tabulate",
+    "matplotlib",
+    "python-dotenv",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
