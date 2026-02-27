@@ -13,6 +13,7 @@ dependencies = [
     "tabulate",
     "matplotlib",
     "python-dotenv",
+    "rich",
 ]
 
 [tool.setuptools]
