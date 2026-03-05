@@ -994,7 +994,7 @@ def main():
         errors = [r["error_ms"] for r in results]
         rel_errors = [r["relative_error"] for r in results]
         r_values = [r["r_value"] for r in results]
-        predicted = [rpredicted["predicted_ms"] for r in results]
+        predicted = [r["predicted_ms"] for r in results]
         actual = [r["actual_ms"] for r in results]
 
         print(f"  Queries evaluated: {len(results)}")
