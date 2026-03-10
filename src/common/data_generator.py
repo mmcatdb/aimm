@@ -70,7 +70,7 @@ class DataGenerator(ABC):
         print('Creating', kind + '.tbl')
         filename = kind + '.tbl'
         path = os.path.join(self._data_directory, filename)
-        f = open(path, "w", newline="", encoding="utf-8")
+        f = open(path, 'w', newline='', encoding='utf-8')
         w = csv.writer(f, delimiter = '|')
         # The header is skipped because loaders do not expect it.
         # w.writerow(header)

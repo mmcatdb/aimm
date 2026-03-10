@@ -15,20 +15,22 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
 from common.drivers import cypher
+from datasets.databases import get_database_by_id
 
 console = Console()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Show a Neo4j Cypher query plan visually.",
+        description='Show a Neo4j Cypher query plan visually.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent(__doc__ or ""),
+        epilog=textwrap.dedent(__doc__ or ''),
     )
-    parser.add_argument("query", nargs="?", help="Cypher query string. Read from stdin if omitted.")
-    parser.add_argument("--profile", action="store_true", help="Use PROFILE instead of EXPLAIN (actually runs the query; DML is rolled back).")
-    parser.add_argument("--no-rollback", dest="no_rollback", action="store_true", help="Do NOT rollback DML operations when using --profile (dangerous!).")
-    parser.add_argument("--json-only", dest="json_only", action="store_true", help="Print only the raw JSON, skip the visual tree.")
-    parser.add_argument("--tree-only", dest="tree_only", action="store_true", help="Print only the visual tree, skip the raw JSON.")
+    parser.add_argument('query', nargs='?', help='Cypher query string. Read from stdin if omitted. If --database-id is provided, this will be interpreted as a test query ID instead.')
+    parser.add_argument('--database-id', '-d', help='ID of the database to find the query by id (overrides --query argument).')
+    parser.add_argument('--profile', action='store_true', help='Use PROFILE instead of EXPLAIN (actually runs the query; DML is rolled back).')
+    parser.add_argument('--no-rollback', dest='no_rollback', action='store_true', help='Do NOT rollback DML operations when using --profile (dangerous!).')
+    parser.add_argument('--json-only', dest='json_only', action='store_true', help='Print only the raw JSON, skip the visual tree.')
+    parser.add_argument('--tree-only', dest='tree_only', action='store_true', help='Print only the visual tree, skip the raw JSON.')
 
     return parser.parse_args()
 
@@ -40,28 +42,32 @@ def main() -> None:
     elif not sys.stdin.isatty():
         query = sys.stdin.read().strip()
     else:
-        print("Enter your Cypher query (finish with Ctrl-D on a blank line):")
+        print('Enter your Cypher query (finish with Ctrl-D on a blank line):')
         lines = []
         try:
             while True:
                 lines.append(input())
         except EOFError:
             pass
-        query = "\n".join(lines).strip()
+        query = '\n'.join(lines).strip()
 
     if not query:
-        print("Error: no query provided.", file=sys.stderr)
+        print('Error: no query provided.', file=sys.stderr)
         sys.exit(1)
+
+    if (args.database_id):
+        database = get_database_by_id(args.database_id)
+        query = database.get_test_query(args.query).content
 
     is_dml = bool(DML_RE.search(query))
 
     if is_dml:
         if not args.profile:
-            print("Note: DML query detected — using EXPLAIN without execution (estimated plan only, query will NOT be executed).\n", file=sys.stderr)
+            print('Note: DML query detected — using EXPLAIN without execution (estimated plan only, query will NOT be executed).\n', file=sys.stderr)
         elif args.no_rollback:
-            print("WARNING: DML query will be executed and changes WILL be committed!\n", file=sys.stderr)
+            print('WARNING: DML query will be executed and changes WILL be committed!\n', file=sys.stderr)
         else:
-            print("Note: DML query detected — running inside a transaction that will be rolled back (no data will be modified).\n", file=sys.stderr)
+            print('Note: DML query detected — running inside a transaction that will be rolled back (no data will be modified).\n', file=sys.stderr)
 
     try:
         config = Config.load()
@@ -74,11 +80,11 @@ def main() -> None:
             rollback_dml=not args.no_rollback
         )
     except Exception as e:
-        print(f"Database error: {e}", file=sys.stderr)
+        print(f'Database error: {e}', file=sys.stderr)
         sys.exit(1)
 
     if not plan:
-        print("Error: empty plan returned.", file=sys.stderr)
+        print('Error: empty plan returned.', file=sys.stderr)
         sys.exit(1)
 
     if not args.json_only:
@@ -92,7 +98,7 @@ def main() -> None:
 
 # Detect DML/write operations in Cypher
 DML_RE = re.compile(
-    r"^\s*(CREATE|DELETE|DETACH\s+DELETE|SET|REMOVE|MERGE)\b",
+    r'^\s*(CREATE|DELETE|DETACH\s+DELETE|SET|REMOVE|MERGE)\b',
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -117,31 +123,31 @@ def fetch_plan(driver: Neo4jDriver, query: str, profile: bool = False, rollback_
                     # Use explicit transaction for DML so we can rollback
                     tx = session.begin_transaction()
                     try:
-                        result = tx.run(cypher(f"PROFILE {query}"))
+                        result = tx.run(cypher(f'PROFILE {query}'))
                         summary = result.consume()
                         assert summary.profile is not None, 'Failed to retrieve query summary for DML.'
                         plan_dict = normalize_profile(summary.profile)
 
                         # Add summary statistics
-                        plan_dict["_summary"] = {
-                            "resultAvailableAfter": summary.result_available_after,
-                            "resultConsumedAfter": summary.result_consumed_after,
+                        plan_dict['_summary'] = {
+                            'resultAvailableAfter': summary.result_available_after,
+                            'resultConsumedAfter': summary.result_consumed_after,
                         }
                     finally:
                         tx.rollback()  # Always rollback to avoid actual writes
                 else:
-                    result = session.run(cypher(f"PROFILE {query}"))
+                    result = session.run(cypher(f'PROFILE {query}'))
                     summary = result.consume()
                     assert summary.profile is not None, 'Failed to retrieve query summary.'
                     plan_dict = normalize_profile(summary.profile)
 
-                    plan_dict["_summary"] = {
-                        "resultAvailableAfter": summary.result_available_after,
-                        "resultConsumedAfter": summary.result_consumed_after,
+                    plan_dict['_summary'] = {
+                        'resultAvailableAfter': summary.result_available_after,
+                        'resultConsumedAfter': summary.result_consumed_after,
                     }
             else:
                 # EXPLAIN does not execute the query
-                result = session.run(cypher(f"EXPLAIN {query}"))
+                result = session.run(cypher(f'EXPLAIN {query}'))
                 summary = result.consume()
                 assert summary.plan is not None, 'Failed to retrieve query plan.'
                 plan_dict = normalize_plan(summary.plan)
@@ -165,25 +171,25 @@ def normalize_profile(profile: dict) -> dict[str, Any]:
     if not profile:
         return {}
 
-    args = profile.get("args", {})
+    args = profile.get('args', {})
 
     result = {
-        "operatorType": profile.get("operatorType", "Unknown"),
-        "arguments": args,
-        "identifiers": profile.get("identifiers", []),
-        "dbHits": profile.get("dbHits", args.get("DbHits")),
-        "rows": profile.get("rows", args.get("Rows")),
-        "pageCacheHits": profile.get("pageCacheHits", args.get("PageCacheHits")),
-        "pageCacheMisses": profile.get("pageCacheMisses", args.get("PageCacheMisses")),
-        "time": profile.get("time", args.get("Time")),
+        'operatorType': profile.get('operatorType', 'Unknown'),
+        'arguments': args,
+        'identifiers': profile.get('identifiers', []),
+        'dbHits': profile.get('dbHits', args.get('DbHits')),
+        'rows': profile.get('rows', args.get('Rows')),
+        'pageCacheHits': profile.get('pageCacheHits', args.get('PageCacheHits')),
+        'pageCacheMisses': profile.get('pageCacheMisses', args.get('PageCacheMisses')),
+        'time': profile.get('time', args.get('Time')),
     }
 
     # Handle children recursively
-    children = profile.get("children", [])
+    children = profile.get('children', [])
     if children:
-        result["children"] = [normalize_profile(child) for child in children]
+        result['children'] = [normalize_profile(child) for child in children]
     else:
-        result["children"] = []
+        result['children'] = []
 
     return result
 
@@ -203,17 +209,17 @@ def normalize_plan(plan: dict) -> dict[str, Any]:
         return {}
 
     result = {
-        "operatorType": plan.get("operatorType", "Unknown"),
-        "arguments": plan.get("args", {}),
-        "identifiers": plan.get("identifiers", []),
+        'operatorType': plan.get('operatorType', 'Unknown'),
+        'arguments': plan.get('args', {}),
+        'identifiers': plan.get('identifiers', []),
     }
 
     # Handle children recursively
-    children = plan.get("children", [])
+    children = plan.get('children', [])
     if children:
-        result["children"] = [normalize_plan(child) for child in children]
+        result['children'] = [normalize_plan(child) for child in children]
     else:
-        result["children"] = []
+        result['children'] = []
 
     return result
 
@@ -223,17 +229,17 @@ def normalize_plan(plan: dict) -> dict[str, Any]:
 def print_tree(plan: dict) -> None:
     """Print the plan tree with rich formatting."""
     tree_str = render_plan_tree(plan)
-    console.print(Panel(tree_str, title="[bold]Query Plan Tree[/bold]", border_style="blue"))
+    console.print(Panel(tree_str, title="[bold]Query Plan Tree[/bold]", border_style='blue'))
 
 def print_json(plan: dict) -> None:
     """Print the plan JSON with syntax highlighting."""
     # Remove internal summary for cleaner JSON output
-    plan_copy = {k: v for k, v in plan.items() if not k.startswith("_")}
+    plan_copy = {k: v for k, v in plan.items() if not k.startswith('_')}
     json_str = json.dumps(plan_copy, indent=2)
     console.print(Panel(
-        Syntax(json_str, "json", theme="monokai", line_numbers=False, word_wrap=False),
-        title="[bold]Raw JSON Plan[/bold]",
-        border_style="green",
+        Syntax(json_str, 'json', theme='monokai', line_numbers=False, word_wrap=False),
+        title='[bold]Raw JSON Plan[/bold]',
+        border_style='green',
     ))
 
 def render_plan_tree(plan: dict) -> str:
@@ -241,27 +247,27 @@ def render_plan_tree(plan: dict) -> str:
     header_parts = []
 
     # Summary statistics from PROFILE
-    summary = plan.get("_summary", {})
-    if "resultAvailableAfter" in summary:
-        header_parts.append(f"Planning: {summary['resultAvailableAfter']} ms")
-    if "resultConsumedAfter" in summary:
-        header_parts.append(f"Execution: {summary['resultConsumedAfter']} ms")
+    summary = plan.get('_summary', {})
+    if 'resultAvailableAfter' in summary:
+        header_parts.append(f'Planning: {summary["resultAvailableAfter"]} ms')
+    if 'resultConsumedAfter' in summary:
+        header_parts.append(f'Execution: {summary["resultConsumedAfter"]} ms')
 
-    header = ""
+    header = ''
     if header_parts:
-        header = "  " + " | ".join(header_parts) + "\n\n"
+        header = '  ' + ' | '.join(header_parts) + '\n\n'
 
     lines = _render_tree(plan)
-    return header + "\n".join(lines)
+    return header + '\n'.join(lines)
 
-def _render_tree(node: dict, prefix: str = "", is_last: bool = True) -> list[str]:
+def _render_tree(node: dict, prefix: str = '', is_last: bool = True) -> list[str]:
     """Recursively render the plan tree into a list of lines."""
     connector = "└─ " if is_last else "├─ "
     lines = [prefix + connector + _node_label(node)]
 
     child_prefix = prefix + ("   " if is_last else "│  ")
 
-    children: list[dict] = node.get("children", [])
+    children: list[dict] = node.get('children', [])
     for i, child in enumerate(children):
         last = i == len(children) - 1
         lines.extend(_render_tree(child, child_prefix, last))
@@ -270,179 +276,179 @@ def _render_tree(node: dict, prefix: str = "", is_last: bool = True) -> list[str
 
 def _node_label(node: dict) -> str:
     """Generate a descriptive label for a plan node."""
-    op_type = _clean_operator_type(node.get("operatorType", "?"))
+    op_type = _clean_operator_type(node.get('operatorType', '?'))
     icon = NODE_ICONS.get(op_type, _abbreviate_operator(op_type))
     label = icon
 
     extras: list[str] = []
-    args = node.get("arguments", {})
+    args = node.get('arguments', {})
 
     # Label for scans
-    if "LabelName" in args:
-        extras.append(f":{args['LabelName']}")
+    if 'LabelName' in args:
+        extras.append(f':{args["LabelName"]}')
 
     # Index name
-    if "Index" in args:
-        extras.append(f"idx={args['Index']}")
+    if 'Index' in args:
+        extras.append(f'idx={args["Index"]}')
 
     # Details (filter, predicate, etc.)
-    if "Details" in args:
-        details = str(args["Details"])
+    if 'Details' in args:
+        details = str(args['Details'])
         if len(details) > 70:
-            details = details[:67] + "..."
+            details = details[:67] + '...'
         extras.append(details)
 
     # Expression
-    if "Expression" in args:
-        expr = str(args["Expression"])
+    if 'Expression' in args:
+        expr = str(args['Expression'])
         if len(expr) > 60:
-            expr = expr[:57] + "..."
+            expr = expr[:57] + '...'
         extras.append(expr)
 
     # Order
-    if "Order" in args:
-        order = str(args["Order"])
+    if 'Order' in args:
+        order = str(args['Order'])
         if len(order) > 40:
-            order = order[:37] + "..."
-        extras.append(f"by={order}")
+            order = order[:37] + '...'
+        extras.append(f'by={order}')
 
     # Relationship types
-    if "RelationshipTypes" in args:
-        rel_types = args["RelationshipTypes"]
+    if 'RelationshipTypes' in args:
+        rel_types = args['RelationshipTypes']
         if rel_types:
-            extras.append(f"rels={rel_types}")
+            extras.append(f'rels={rel_types}')
 
     # Identifiers are shown only if extras is empty (to keep label readable)
-    identifiers = node.get("identifiers", [])
+    identifiers = node.get('identifiers', [])
     if identifiers and not extras:
-        id_str = ", ".join(identifiers[:3])
+        id_str = ', '.join(identifiers[:3])
         if len(identifiers) > 3:
-            id_str += "..."
-        extras.append(f"({id_str})")
+            id_str += '...'
+        extras.append(f'({id_str})')
 
     if extras:
-        label += " " + " ".join(extras)
+        label += ' ' + ' '.join(extras)
 
     label += _fmt_stats(node)
     return label
 
 NODE_ICONS: dict[str, str] = {
     # Scan operations
-    "AllNodesScan": "ALLSCAN",
-    "NodeByLabelScan": "LBLSCAN",
-    "NodeIndexScan": "IDXSCAN",
-    "NodeIndexSeek": "IDXSEEK",
-    "NodeUniqueIndexSeek": "UIDXSEEK",
-    "DirectedRelationshipIndexScan": "RELIDXSCAN",
-    "DirectedRelationshipIndexSeek": "RELIDXSEEK",
-    "NodeByIdSeek": "IDSEEK",
-    "DirectedRelationshipByIdSeek": "RELIDSEEK",
-    "UndirectedRelationshipByIdSeek": "URELIDSEEK",
-    "NodeIndexContainsScan": "CONTAINSCAN",
-    "NodeIndexEndsWithScan": "ENDSCAN",
+    'AllNodesScan': 'ALLSCAN',
+    'NodeByLabelScan': 'LBLSCAN',
+    'NodeIndexScan': 'IDXSCAN',
+    'NodeIndexSeek': 'IDXSEEK',
+    'NodeUniqueIndexSeek': 'UIDXSEEK',
+    'DirectedRelationshipIndexScan': 'RELIDXSCAN',
+    'DirectedRelationshipIndexSeek': 'RELIDXSEEK',
+    'NodeByIdSeek': 'IDSEEK',
+    'DirectedRelationshipByIdSeek': 'RELIDSEEK',
+    'UndirectedRelationshipByIdSeek': 'URELIDSEEK',
+    'NodeIndexContainsScan': 'CONTAINSCAN',
+    'NodeIndexEndsWithScan': 'ENDSCAN',
 
     # Count store operations
-    "NodeCountFromCountStore": "CNTSTORE",
-    "RelationshipCountFromCountStore": "RELCNTSTORE",
+    'NodeCountFromCountStore': 'CNTSTORE',
+    'RelationshipCountFromCountStore': 'RELCNTSTORE',
 
     # Expand operations
-    "Expand(All)": "EXPAND",
-    "Expand(Into)": "EXPINTO",
-    "OptionalExpand(All)": "OPTEXP",
-    "OptionalExpand(Into)": "OPTEXPINTO",
-    "VarLengthExpand(All)": "VAREXP",
-    "VarLengthExpand(Into)": "VAREXPINTO",
-    "VarLengthExpand(Pruning)": "PRUNEXP",
+    'Expand(All)': 'EXPAND',
+    'Expand(Into)': 'EXPINTO',
+    'OptionalExpand(All)': 'OPTEXP',
+    'OptionalExpand(Into)': 'OPTEXPINTO',
+    'VarLengthExpand(All)': 'VAREXP',
+    'VarLengthExpand(Into)': 'VAREXPINTO',
+    'VarLengthExpand(Pruning)': 'PRUNEXP',
 
     # Filter and predicates
-    "Filter": "FILTER",
-    "Argument": "ARG",
-    "Selection": "SELECT",
+    'Filter': 'FILTER',
+    'Argument': 'ARG',
+    'Selection': 'SELECT',
 
     # Aggregation and grouping
-    "EagerAggregation": "EAGERAGG",
-    "OrderedAggregation": "ORDAGG",
-    "Aggregation": "AGG",
-    "Distinct": "DISTINCT",
+    'EagerAggregation': 'EAGERAGG',
+    'OrderedAggregation': 'ORDAGG',
+    'Aggregation': 'AGG',
+    'Distinct': 'DISTINCT',
 
     # Sorting and limiting
-    "Sort": "SORT",
-    "Top": "TOP",
-    "Skip": "SKIP",
-    "Limit": "LIMIT",
-    "PartialSort": "PARTSORT",
+    'Sort': 'SORT',
+    'Top': 'TOP',
+    'Skip': 'SKIP',
+    'Limit': 'LIMIT',
+    'PartialSort': 'PARTSORT',
 
     # Join operations
-    "NodeHashJoin": "HJOIN",
-    "ValueHashJoin": "VHJOIN",
-    "NodeLeftOuterHashJoin": "LOJOIN",
-    "NodeRightOuterHashJoin": "ROJOIN",
-    "CartesianProduct": "CROSS",
-    "Apply": "APPLY",
-    "SemiApply": "SEMIAPPLY",
-    "AntiSemiApply": "ANTISEMI",
-    "SelectOrSemiApply": "SELORSA",
-    "SelectOrAntiSemiApply": "SELORAS",
-    "LetSemiApply": "LETSA",
-    "LetAntiSemiApply": "LETASA",
-    "ConditionalApply": "CONDAPPLY",
-    "RollUpApply": "ROLLUP",
-    "ForeachApply": "FOREACH",
+    'NodeHashJoin': 'HJOIN',
+    'ValueHashJoin': 'VHJOIN',
+    'NodeLeftOuterHashJoin': 'LOJOIN',
+    'NodeRightOuterHashJoin': 'ROJOIN',
+    'CartesianProduct': 'CROSS',
+    'Apply': 'APPLY',
+    'SemiApply': 'SEMIAPPLY',
+    'AntiSemiApply': 'ANTISEMI',
+    'SelectOrSemiApply': 'SELORSA',
+    'SelectOrAntiSemiApply': 'SELORAS',
+    'LetSemiApply': 'LETSA',
+    'LetAntiSemiApply': 'LETASA',
+    'ConditionalApply': 'CONDAPPLY',
+    'RollUpApply': 'ROLLUP',
+    'ForeachApply': 'FOREACH',
 
     # Set operations
-    "Union": "UNION",
-    "OrderedUnion": "ORDUNION",
+    'Union': 'UNION',
+    'OrderedUnion': 'ORDUNION',
 
     # Results and projection
-    "ProduceResults": "RESULTS",
-    "Projection": "PROJECT",
-    "Eager": "EAGER",
-    "CacheProperties": "CACHE",
+    'ProduceResults': 'RESULTS',
+    'Projection': 'PROJECT',
+    'Eager': 'EAGER',
+    'CacheProperties': 'CACHE',
 
     # Write operations
-    "Create": "CREATE",
-    "Merge": "MERGE",
-    "Delete": "DELETE",
-    "DetachDelete": "DETDELETE",
-    "SetProperty": "SETPROP",
-    "SetNodeProperty": "SETNPROP",
-    "SetRelationshipProperty": "SETRPROP",
-    "SetLabels": "SETLABELS",
-    "RemoveLabels": "RMLABELS",
-    "SetNodePropertiesFromMap": "SETMAP",
-    "SetRelationshipPropertiesFromMap": "SETRMAP",
-    "CreateNode": "CRNODE",
-    "CreateRelationship": "CRREL",
-    "EmptyResult": "EMPTY",
+    'Create': 'CREATE',
+    'Merge': 'MERGE',
+    'Delete': 'DELETE',
+    'DetachDelete': 'DETDELETE',
+    'SetProperty': 'SETPROP',
+    'SetNodeProperty': 'SETNPROP',
+    'SetRelationshipProperty': 'SETRPROP',
+    'SetLabels': 'SETLABELS',
+    'RemoveLabels': 'RMLABELS',
+    'SetNodePropertiesFromMap': 'SETMAP',
+    'SetRelationshipPropertiesFromMap': 'SETRMAP',
+    'CreateNode': 'CRNODE',
+    'CreateRelationship': 'CRREL',
+    'EmptyResult': 'EMPTY',
 
     # Locking
-    "LockNodes": "LOCK",
+    'LockNodes': 'LOCK',
 
     # Procedures and functions
-    "ProcedureCall": "PROC",
+    'ProcedureCall': 'PROC',
 
     # Subqueries
-    "SubqueryForeach": "SUBQFE",
-    "TransactionForeach": "TXFE",
-    "TransactionApply": "TXAPPLY",
+    'SubqueryForeach': 'SUBQFE',
+    'TransactionForeach': 'TXFE',
+    'TransactionApply': 'TXAPPLY',
 
     # Other
-    "LoadCSV": "LOADCSV",
-    "Unwind": "UNWIND",
-    "Optional": "OPTIONAL",
-    "AntiConditionalApply": "ANTICOND",
-    "AssertSameNode": "ASSERTN",
-    "TriadicSelection": "TRIADIC",
-    "TriadicBuild": "TRIBUILD",
-    "TriadicFilter": "TRIFILT",
-    "Input": "INPUT",
+    'LoadCSV': 'LOADCSV',
+    'Unwind': 'UNWIND',
+    'Optional': 'OPTIONAL',
+    'AntiConditionalApply': 'ANTICOND',
+    'AssertSameNode': 'ASSERTN',
+    'TriadicSelection': 'TRIADIC',
+    'TriadicBuild': 'TRIBUILD',
+    'TriadicFilter': 'TRIFILT',
+    'Input': 'INPUT',
 }
 
 def _clean_operator_type(op_type: str) -> str:
     """Remove @neo4j suffix from operator type."""
     # Remove common suffixes like @neo4j
-    if "@" in op_type:
-        op_type = op_type.split("@")[0]
+    if '@' in op_type:
+        op_type = op_type.split('@')[0]
     return op_type
 
 def _abbreviate_operator(op_type: str) -> str:
@@ -461,32 +467,32 @@ def _fmt_stats(node: dict) -> str:
     parts = []
 
     # Estimated rows (from EXPLAIN)
-    args = node.get("arguments", {})
-    if "EstimatedRows" in args:
-        est = args["EstimatedRows"]
+    args = node.get('arguments', {})
+    if 'EstimatedRows' in args:
+        est = args['EstimatedRows']
         if isinstance(est, float):
-            parts.append(f"est={est:.1f}")
+            parts.append(f'est={est:.1f}')
         else:
-            parts.append(f"est={est}")
+            parts.append(f'est={est}')
 
     # Actual rows and db hits (from PROFILE)
-    if "rows" in node and node["rows"] is not None:
-        parts.append(f"rows={node['rows']}")
-    if "dbHits" in node and node["dbHits"] is not None:
-        parts.append(f"hits={node['dbHits']}")
+    if 'rows' in node and node['rows'] is not None:
+        parts.append(f'rows={node["rows"]}')
+    if 'dbHits' in node and node['dbHits'] is not None:
+        parts.append(f'hits={node["dbHits"]}')
 
     # Page cache (from PROFILE, if available)
-    pc_hits = node.get("pageCacheHits")
-    pc_misses = node.get("pageCacheMisses")
+    pc_hits = node.get('pageCacheHits')
+    pc_misses = node.get('pageCacheMisses')
     if pc_hits is not None and pc_misses is not None:
         total = pc_hits + pc_misses
         if total > 0:
             ratio = pc_hits / total * 100
-            parts.append(f"cache={ratio:.0f}%")
+            parts.append(f'cache={ratio:.0f}%')
 
-    return "  " + f"[{', '.join(parts)}]" if parts else ""
+    return '  ' + f'[{", ".join(parts)}]' if parts else ''
 
 #endregion
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

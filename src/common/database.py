@@ -8,7 +8,7 @@ class Database(ABC):
     def __init__(self):
         self.num_train_queries: int | None = None
         self.train_queries: list[str] | None = None
-        self.test_queries: list[TestQuery] | None = None
+        self.test_queries: dict[str, TestQuery] | None = None
 
     @abstractmethod
     def id(self) -> str:
@@ -40,25 +40,39 @@ class Database(ABC):
         pass
 
     def get_test_queries(self) -> list['TestQuery']:
-        """
-        Generate a diverse set of test queries for evaluation.
-        These should be different from training queries.
-        """
+        """Generate a diverse set of test queries for evaluation. These should be different from training queries."""
         if self.test_queries is None:
-            self.test_queries = []
+            self.test_queries = {}
             self._generate_test_queries()
 
-        return self.test_queries
+        return list(self.test_queries.values())
 
-    def _test_query(self, name: str, content: str):
+    def get_test_query(self, id: str) -> 'TestQuery':
+        """Returns a single test query by its ID (or None if not found). Useful for debugging specific queries."""
+        if self.test_queries is None:
+            self.test_queries = {}
+            self._generate_test_queries()
+
+        query = self.test_queries.get(id)
+        if query is None:
+            raise ValueError(f'Test query with ID {id} not found. Available IDs: {list(self.test_queries.keys())}')
+
+        return query
+
+    def _test_query(self, id: str, name: str | None, content: str):
         assert self.test_queries is not None
-        self.test_queries.append(TestQuery(name, content))
+        self.test_queries[id] = TestQuery(id, name, content)
 
     @abstractmethod
     def _generate_test_queries(self):
         pass
 
 class TestQuery:
-    def __init__(self, name: str, content: str):
+    def __init__(self, id: str, name: str | None, content: str):
+        self.id = id
         self.name = name
         self.content = content
+
+    def label(self) -> str:
+        name = self.name if self.name else '(no name)'
+        return f'{self.id}: {name}'

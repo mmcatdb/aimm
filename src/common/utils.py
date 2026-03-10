@@ -33,15 +33,15 @@ def pretty_print_int(value: int) -> str:
     abs_val = abs(value)
     if abs_val < 1000:
         return str(value)
-    return f"{value:.2e}"
+    return f'{value:.2e}'
 
 def pretty_print_double(value: float) -> str:
     abs_val = abs(value)
     if abs_val < 0.01:
-        return f"{value:.3g}" if value == 0 else f"{value:.2e}"
+        return f'{value:.3g}' if value == 0 else f'{value:.2e}'
     if abs_val < 1000:
-        return f"{value:.3g}"
-    return f"{value:.2e}"
+        return f'{value:.3g}'
+    return f'{value:.2e}'
 
 TUnit = TypeVar('TUnit', bound=str)
 
@@ -63,8 +63,8 @@ class Quantity(Generic[TUnit]):
             value = self.from_base(value, unit)
 
         omit_decimal = (is_integer if is_integer is not None else self.is_base_integer) and unit == self.units[0]
-        number_part = str(int(value)) if omit_decimal else f"{value:.2f}"
-        return f"{number_part} {unit}"
+        number_part = str(int(value)) if omit_decimal else f'{value:.2f}'
+        return f'{number_part} {unit}'
 
     def find_unit(self, value_in_base: float) -> tuple[float, TUnit]:
         index = 0
@@ -80,7 +80,7 @@ class Quantity(Generic[TUnit]):
             if to_unit == self.units[i]:
                 return value
             value /= self.thresholds[i]
-        raise ValueError("Impossibruh")
+        raise ValueError('Impossibruh')
 
     def to_base(self, value: float, from_unit: TUnit) -> float:
         base_value = value
@@ -88,18 +88,18 @@ class Quantity(Generic[TUnit]):
             if from_unit == self.units[i]:
                 break
             base_value *= self.thresholds[i]
-        raise ValueError("Impossibruh")
+        raise ValueError('Impossibruh')
 
-DataSizeUnit = Literal["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"]
-DATA_SIZE_UNITS = ("B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+DataSizeUnit = Literal['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+DATA_SIZE_UNITS = ('B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB')
 data_size_quantity = Quantity[DataSizeUnit](
     DATA_SIZE_UNITS,
     (1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024),
     True,
 )
 
-TimeUnit = Literal["ms", "s", "min", "h", "d", "y"]
-TIME_UNITS = ("ms", "s", "min", "h", "d", "y")
+TimeUnit = Literal['ms', 's', 'min', 'h', 'd', 'y']
+TIME_UNITS = ('ms', 's', 'min', 'h', 'd', 'y')
 time_quantity = Quantity[TimeUnit](
     TIME_UNITS,
     (1000, 60, 60, 24, 365),

@@ -28,7 +28,7 @@ class ModelEvaluator:
                 result = self.evaluate_query(query, num_runs)
                 results.append(result)
             except Exception as e:
-                print(f'  ✗ Error evaluating {query.name}: {str(e)}')
+                print(f'  ✗ Error evaluating {query.label()}: {str(e)}')
                 continue
 
         return results
@@ -99,9 +99,9 @@ class ModelEvaluator:
         Args:
             num_runs: Number of executions for averaging
         """
-        print(f'\nEvaluating: {query.name}')
+        print(f'\nEvaluating: {query.label()}')
 
-        result = Result(query.name, query.content)
+        result = Result(query.label(), query.content)
         result.plan = self.extractor.explain_plan(query.content)
         estimated_latency = self.__estimate_latency(result.plan)
         actual_latency, result.std_latency, _ = self.extractor.measure_query(query.content, num_runs)
@@ -112,7 +112,7 @@ class ModelEvaluator:
         # Compute metrics
         result.absolute_error = abs(estimated_latency - actual_latency)
         result.r_value = max(estimated_latency / actual_latency, actual_latency / estimated_latency) \
-                  if estimated_latency > 0 and actual_latency > 0 else float('inf')
+            if estimated_latency > 0 and actual_latency > 0 else float('inf')
 
         print(f'  Estimated: {estimated_latency * 1000:.2f}ms')
         print(f'  Actual: {actual_latency * 1000:.2f}ms (±{result.std_latency * 1000:.2f}ms)')

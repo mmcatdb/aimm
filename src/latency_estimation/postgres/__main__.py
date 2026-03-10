@@ -144,7 +144,7 @@ def evaluate_run(args: argparse.Namespace, ctx: PostgresContext):
     # Add user-provided queries
     if args.queries:
         for i, content in enumerate(args.queries, 1):
-            query = TestQuery(f'Custom Query {i}', content)
+            query = TestQuery(f'custom-{i}', f'Custom Query {i}', content)
             test_queries.append(query)
         print(f'Added {len(args.queries)} custom query/queries')
 

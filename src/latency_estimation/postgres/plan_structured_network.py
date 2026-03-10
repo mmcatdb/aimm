@@ -4,6 +4,7 @@ from latency_estimation.common import NnOperator
 from latency_estimation.train_config import ModelConfig
 from latency_estimation.postgres.neural_units import create_neural_unit
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
+from latency_estimation.exceptions import NeuralUnitNotFoundException
 
 class PlanStructuredNetwork(nn.Module):
     """
@@ -16,8 +17,8 @@ class PlanStructuredNetwork(nn.Module):
 
         self.config = config
         self.feature_extractor = feature_extractor
-        # One neural unit for each operator type
         self.units = nn.ModuleDict()
+        """One neural unit for each operator type"""
         self.operators: dict[str, NnOperator] = {}
 
     @staticmethod
@@ -58,6 +59,9 @@ class PlanStructuredNetwork(nn.Module):
             # Learned parameters of the model.
             'model_state_dict': self.state_dict(),
         }
+
+    def get_units(self) -> list[NnOperator]:
+        return list(self.operators.values())
 
     def print_summary(self):
         # TODO print number of epochs
@@ -160,7 +164,7 @@ class PlanStructuredNetwork(nn.Module):
         if op_key not in self.units:
             # Potential fallback: could try to find the closest num_children.
             # For now, we'll just error out.
-            raise ValueError(f'No neural unit found for operator type/children combination: {op_key}. Available types: {list(self.units.keys())}')
+            raise NeuralUnitNotFoundException(operator)
 
         # Operator consistency check - maybe not needed?
         if op_key not in self.operators:

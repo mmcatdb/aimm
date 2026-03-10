@@ -66,14 +66,14 @@ class Neo4jDAO(BaseDAO):
         batch_size = 10_000
         total_deleted = 0
 
-        delete_batch_query = """
+        delete_batch_query = '''
         MATCH (n)
         WITH n LIMIT $limit
         WITH collect(n) AS nodes
         WITH nodes, size(nodes) AS deleted
         FOREACH (x IN nodes | DETACH DELETE x)
         RETURN deleted
-        """
+        '''
 
         while True:
             deleted = self.execute_to_scalar(delete_batch_query, parameters={'limit': batch_size}, key='deleted') or 0
