@@ -15,7 +15,7 @@ class EdbtNeo4jDatabase(Database):
         # OLTP focused (mostly Postgres)
 
         person_id = 1
-        self._test_query('Q3) Order history for a person (join via customer)', f'''
+        self._test_query('Q3', 'Order history for a person (join via customer)', f'''
             MATCH (p:Person {{person_id: {person_id}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             RETURN
                 o.order_id AS order_id,
@@ -28,7 +28,7 @@ class EdbtNeo4jDatabase(Database):
         ''')
 
         person_id = 1
-        self._test_query('Q4) Order details view (now checks person via customer)', f'''
+        self._test_query('Q4', 'Order details view (now checks person via customer)', f'''
             MATCH (p:Person {{person_id: {person_id}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             MATCH (o)-[it:HAS_ITEM]->(pr:Product)
                 RETURN
@@ -46,7 +46,7 @@ class EdbtNeo4jDatabase(Database):
 
         person_id = 1
         product_id = 1
-        self._test_query('Q6) “Did this person buy this product?” (via customer snapshots)', f'''
+        self._test_query('Q6', 'Did this person buy this product? (via customer snapshots)', f'''
             MATCH (p:Person {{person_id: {person_id}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid','shipped']
             MATCH (o)-[:HAS_ITEM]->(pr:Product {{product_id: {product_id}}})
@@ -56,7 +56,7 @@ class EdbtNeo4jDatabase(Database):
         # OLAP focused (Postgres)
 
         seller_id = 1
-        self._test_query('Q7) Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)', f'''
+        self._test_query('Q7', 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)', f'''
             MATCH (s:Seller {{seller_id: {seller_id}}})-[:OFFERS]->(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
             WHERE o.status IN ['paid','shipped']
@@ -73,7 +73,7 @@ class EdbtNeo4jDatabase(Database):
         ''')
 
         category_id = 1
-        self._test_query('Q8) Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)', f'''
+        self._test_query('Q8', 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)', f'''
             MATCH (c:Category {{category_id: {category_id}}})<-[:HAS_CATEGORY]-(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
             WHERE o.status IN ['paid','shipped']
@@ -91,7 +91,7 @@ class EdbtNeo4jDatabase(Database):
             LIMIT 50
         ''')
 
-        self._test_query('Q9) Customer spend buckets (now per person)', f'''
+        self._test_query('Q9', 'Customer spend buckets (now per person)', f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid','shipped']
               AND o.ordered_at >= datetime() - duration('P90D')
@@ -106,7 +106,7 @@ class EdbtNeo4jDatabase(Database):
             ORDER BY bucket
         ''')
 
-        self._test_query('Q10) Fraud-ish pattern (now per person)', f'''
+        self._test_query('Q10', 'Fraud-ish pattern (now per person)', f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid','shipped']
               AND o.ordered_at >= datetime() - duration('PT24H')
@@ -125,10 +125,10 @@ class EdbtNeo4jDatabase(Database):
         ''')
 
         # Document focused (MongoDB)
-        # These are built to avoid joins at read time. Put “product page bundle” in one document.
+        # These are built to avoid joins at read time. Put "product page bundle" in one document.
 
         product_id = 1
-        self._test_query('Q12) Product page read (Mongo, OLTP read-heavy, very high weight in sale)', f'''
+        self._test_query('Q12', 'Product page read (Mongo, OLTP read-heavy, very high weight in sale)', f'''
             MATCH (pr:Product {{product_id: {product_id}}})
             MATCH (s:Seller)-[:OFFERS]->(pr)
             OPTIONAL MATCH (c:Customer)-[r:REVIEWED]->(pr)
@@ -153,7 +153,7 @@ class EdbtNeo4jDatabase(Database):
 
         product_ids = [ 1, 2, 3 ]
         product_ids_string = ', '.join([f"'{id}'" for id in product_ids])
-        self._test_query('Q13) Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)', f'''
+        self._test_query('Q13', 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)', f'''
             MATCH (pr:Product)
             WHERE pr.product_id IN [{product_ids_string}]
               AND pr.is_active = true
@@ -173,7 +173,7 @@ class EdbtNeo4jDatabase(Database):
         # Graph focused (Neo4j)
 
         person_id = 1
-        self._test_query('Q15) “Who should I follow?” (User -> Person)', f'''
+        self._test_query('Q15', 'Who should I follow? (User -> Person)', f'''
             MATCH (p:Person {{person_id: {person_id}}})-[:FOLLOWS]->(:Person)-[:FOLLOWS]->(cand:Person)
             WHERE NOT (p)-[:FOLLOWS]->(cand) AND cand.person_id <> {person_id}
             RETURN cand.person_id AS person_id, COUNT(*) AS paths
@@ -182,7 +182,7 @@ class EdbtNeo4jDatabase(Database):
         ''')
 
         product_id = 1
-        self._test_query('Q16) Neo4j replacement for old “SIMILAR” query (since similar is removed) “People also bought” using shared orders', f'''
+        self._test_query('Q16', 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders', f'''
             MATCH (target:Product {{product_id: {product_id}}})<-[:HAS_ITEM]-(o:Order)-[:HAS_ITEM]->(other:Product)
             WHERE other.product_id <> {product_id}
             RETURN other.product_id AS product_id, COUNT(*) AS co_buy
@@ -191,7 +191,7 @@ class EdbtNeo4jDatabase(Database):
         ''')
 
         person_id = 1
-        self._test_query('Q17) Personalized feed candidates (User -> Person)', f'''
+        self._test_query('Q17', 'Personalized feed candidates (User -> Person)', f'''
             MATCH (p:Person {{person_id: {person_id}}})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
             WHERE pr.is_active = true
             RETURN pr.product_id AS product_id, SUM(hi.strength) AS interest_score

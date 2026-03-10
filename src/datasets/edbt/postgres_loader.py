@@ -87,7 +87,7 @@ class EdbtPostgresLoader(PostgresLoader):
             { 'name': 'line_total_cents', 'type': 'INTEGER' },
             # GENERATED ALWAYS AS (unit_price_cents * quantity) STORED
             { 'name': 'created_at', 'type': 'TIMESTAMPTZ NOT NULL' },
-            # Optional “doc style” snapshot for fast reads if you later embed in Mongo
+            # Optional "doc style" snapshot for fast reads if you later embed in Mongo
             { 'name': 'product_snapshot', 'type': 'JSONB NOT NULL' },
         ]
 

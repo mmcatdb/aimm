@@ -15,7 +15,7 @@ class EdbtPostgresDatabase(Database):
         # OLTP focused (mostly Postgres)
 
         person_id = 1
-        self._test_query('Q3) Order history for a person (join via customer)', f'''
+        self._test_query('Q3', 'Order history for a person (join via customer)', f'''
             SELECT o.order_id, o.ordered_at, o.status, o.total_cents, o.currency
             FROM "order" o
             JOIN customer c ON c.customer_id = o.customer_id
@@ -25,7 +25,7 @@ class EdbtPostgresDatabase(Database):
         ''')
 
         person_id = 1
-        self._test_query('Q4) Order details view (now checks person via customer)', f'''
+        self._test_query('Q4', 'Order details view (now checks person via customer)', f'''
             SELECT
                 o.order_id,
                 o.ordered_at,
@@ -46,7 +46,7 @@ class EdbtPostgresDatabase(Database):
 
         person_id = 1
         product_id = 1
-        self._test_query('Q6) “Did this person buy this product?” (via customer snapshots)', f'''
+        self._test_query('Q6', 'Did this person buy this product? (via customer snapshots)', f'''
             SELECT EXISTS (
                 SELECT 1
                 FROM customer c
@@ -61,7 +61,7 @@ class EdbtPostgresDatabase(Database):
         # OLAP focused (Postgres)
 
         seller_id = 1
-        self._test_query('Q7) Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)', f'''
+        self._test_query('Q7', 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)', f'''
             SELECT
                 date_trunc('day', o.ordered_at) AS day,
                 SUM(oi.line_total_cents) AS revenue_cents,
@@ -77,7 +77,7 @@ class EdbtPostgresDatabase(Database):
         ''')
 
         category_id = 1
-        self._test_query('Q8) Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)', f'''
+        self._test_query('Q8', 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)', f'''
             SELECT
                 oi.product_id,
                 MAX(p.title) AS title,
@@ -95,7 +95,7 @@ class EdbtPostgresDatabase(Database):
             LIMIT 50
         ''')
 
-        self._test_query('Q9) Customer spend buckets (now per person)', f'''
+        self._test_query('Q9', 'Customer spend buckets (now per person)', f'''
             WITH spend AS (
                 SELECT c.person_id, SUM(o.total_cents) AS spend_cents
                 FROM customer c
@@ -116,7 +116,7 @@ class EdbtPostgresDatabase(Database):
             ORDER BY 1
         ''')
 
-        self._test_query('Q10) Fraud-ish pattern (now per person)', f'''
+        self._test_query('Q10', 'Fraud-ish pattern (now per person)', f'''
             SELECT
                 c.person_id,
                 COUNT(DISTINCT p.seller_id) AS distinct_sellers,
@@ -136,7 +136,7 @@ class EdbtPostgresDatabase(Database):
         # This is designed to be heavy if you do it wrong, but fast if you limit scope. Good for optimizer tests.
         # Input: a temp table hot_products(product_id) with maybe top 1% products.
         # Output: co-buy counts for pairs, last 7 days, only when at least one side is hot.
-        # self._test_query('Q11) Rebuild “also bought” pairs for hot products only (Postgres, OLAP, sale-specific)', '''
+        # self._test_query('Q11', 'Rebuild "also bought" pairs for hot products only (Postgres, OLAP, sale-specific)', '''
         #     WITH recent AS (
         #         SELECT oi.order_id, oi.product_id
         #         FROM order_item oi
@@ -167,10 +167,10 @@ class EdbtPostgresDatabase(Database):
         # ''')
 
         # Document focused (MongoDB)
-        # These are built to avoid joins at read time. Put “product page bundle” in one document.
+        # These are built to avoid joins at read time. Put "product page bundle" in one document.
 
         product_id = 1
-        self._test_query('Q12) Product page read (Mongo, OLTP read-heavy, very high weight in sale)', f'''
+        self._test_query('Q12', 'Product page read (Mongo, OLTP read-heavy, very high weight in sale)', f'''
             SELECT
                 p.product_id,
                 p.title,
@@ -226,7 +226,7 @@ class EdbtPostgresDatabase(Database):
 
         product_ids = [ 1, 2, 3 ]
         product_ids_string = ', '.join([f"'{id}'" for id in product_ids])
-        self._test_query('Q13) Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)', f'''
+        self._test_query('Q13', 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)', f'''
             SELECT
                 p.product_id,
                 p.title,
@@ -259,7 +259,7 @@ class EdbtPostgresDatabase(Database):
         # Graph focused (Neo4j)
 
         person_id = 1
-        self._test_query('Q15) “Who should I follow?” (User -> Person)', f'''
+        self._test_query('Q15', 'Who should I follow? (User -> Person)', f'''
             SELECT
                 f2.from_id AS person_id,
                 COUNT(*) AS paths
@@ -279,7 +279,7 @@ class EdbtPostgresDatabase(Database):
         ''')
 
         product_id = 1
-        self._test_query('Q16) Neo4j replacement for old “SIMILAR” query (since similar is removed) “People also bought” using shared orders:', f'''
+        self._test_query('Q16', 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders:', f'''
             SELECT
                 oi2.product_id,
                 COUNT(*) AS co_buy
@@ -295,7 +295,7 @@ class EdbtPostgresDatabase(Database):
         ''')
 
         person_id = 1
-        self._test_query('Q17) Personalized feed candidates (User -> Person)', f'''
+        self._test_query('Q17', 'Personalized feed candidates (User -> Person)', f'''
             SELECT
                 hc.product_id,
                 SUM(hi.strength) AS interest_score
@@ -309,7 +309,7 @@ class EdbtPostgresDatabase(Database):
             LIMIT 200
         ''')
 
-        # One “multi-db” query (on purpose)
+        # One "multi-db" query (on purpose)
 
         # Q18) Feed ranking in Neo4j, then page fetch in Mongo (Cross DB, high weight in sale)
 

@@ -35,7 +35,7 @@ class ModelEvaluator:
                 result = self.evaluate_query(query, measure_actual, num_runs)
                 results.append(result)
             except Exception as e:
-                print(f'\nError evaluating {query.name}: {e}')
+                print(f'\nError evaluating {query.label()}: {e}')
                 import traceback
                 traceback.print_exc()
                 continue
@@ -51,10 +51,10 @@ class ModelEvaluator:
         Returns:
             Result object with all measurements and comparisons
         """
-        print(f'\nEvaluating: {query.name}')
+        print(f'\nEvaluating: {query.label()}')
         print('-' * 80)
 
-        result = Result(query.name, query.content)
+        result = Result(query.label(), query.content)
 
         # 1. Get EXPLAIN ANALYZE time
         print('  [1/3] Running EXPLAIN ANALYZE...')
