@@ -1,13 +1,14 @@
-import random
 from typing_extensions import override
 from common.database import Database
+from common.drivers import DriverType
+from common.driver_provider import DatasetName
+import random
 
 class TpchPostgresDatabase(Database):
     NUM_QUERY_TYPES = 6 # Total number of different query types implemented
 
-    @override
-    def id(self) -> str:
-        return 'tpch_postgres'
+    def __init__(self):
+        super().__init__(DatasetName.TPCH, DriverType.POSTGRES)
 
     @override
     def _generate_train_queries(self, num_queries: int):

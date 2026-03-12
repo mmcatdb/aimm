@@ -39,7 +39,7 @@ class Config:
         return PostgresConfig(
             host = _string('POSTGRES_HOST'),
             port = _int('POSTGRES_PORT'),
-            database = _string('POSTGRES_DATABASE'),
+            root_database = _string('POSTGRES_ROOT_DATABASE'),
             user = _string('POSTGRES_USER'),
             password = _string('POSTGRES_PASSWORD')
         )
@@ -56,7 +56,11 @@ class Config:
     def loadNeo4j() -> Neo4jConfig:
         return Neo4jConfig(
             host = _string('NEO4J_HOST'),
-            port = _int('NEO4J_PORT'),
+            ports = {
+                # TODO Use dataset names
+                'tpch': _int('NEO4J_TPCH_PORT'),
+                'edbt': _int('NEO4J_EDBT_PORT'),
+            },
             user = _string('NEO4J_USER'),
             password = _string('NEO4J_PASSWORD')
         )

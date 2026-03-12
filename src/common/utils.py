@@ -1,6 +1,7 @@
 from typing import Any, Generic, Literal, Protocol, TypeVar
 import dataclasses, json
 from contextlib import contextmanager
+import textwrap
 
 # Add small epsilon to avoid division by zero
 EPSILON = 1e-8
@@ -18,16 +19,21 @@ class Closeable(Protocol):
 
 @contextmanager
 def auto_close(closeable: Closeable):
+    """Use this in each top-level script that uses some resources which should be closed."""
     try:
         yield closeable
-    except Exception:
-        import sys
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
+    except Exception as e:
+        exit_with_error(e)
     finally:
         closeable.close()
+
+def exit_with_error(e: Exception):
+    """Use this in each top-level script in a try-catch block to print terminal exceptions."""
+    import sys
+    import traceback
+
+    traceback.print_exc()
+    sys.exit(1)
 
 def pretty_print_int(value: int) -> str:
     abs_val = abs(value)
@@ -105,3 +111,23 @@ time_quantity = Quantity[TimeUnit](
     (1000, 60, 60, 24, 365),
     False,
 )
+
+# def trim_to_block(text: str, tabsize: int = 4) -> str:
+def trim_to_block(text: str) -> str:
+    lines = text.splitlines()
+
+    # remove leading/trailing blank lines
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+
+    # strip trailing whitespace
+    lines = [l.rstrip() for l in lines]
+
+    text = '\n'.join(lines)
+
+    # text = text.expandtabs(tabsize)
+    text = textwrap.dedent(text)
+
+    return text

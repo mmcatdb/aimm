@@ -2,7 +2,7 @@ from __future__ import annotations
 import random
 from common.config import Config
 from common.driver_provider import DriverProvider
-from query_engine import QueryEngine
+from search.query_engine import QueryEngine
 import math
 
 class MCTSNode:
@@ -31,7 +31,7 @@ class MCTSNode:
     def get_base_actions(self):
         actions = []
         for i, current_db in enumerate(self.state):
-            for db in self.mcts.dbs.all_ids:
+            for db in self.mcts.dbs.available_drivers():
                 if db == current_db:
                     continue
 

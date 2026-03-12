@@ -1,9 +1,22 @@
 from typing import Any
 from typing_extensions import override
-from psycopg2.errors import UndefinedTable
 from psycopg2.extras import RealDictCursor
 from common.daos.base_dao import BaseDAO
 from common.drivers import PostgresDriver
+
+class ColumnSchema:
+    def __init__(self, name: str, type: str, primary_key = False, references: str | None = None):
+        self.name = name
+        self.type = type
+        self.primary_key = primary_key
+        self.references = references
+
+class IndexSchema:
+    def __init__(self, table: str, columns: list[str], unique=False, where=None):
+        self.table = table
+        self.columns = columns
+        self.unique = unique
+        self.where = where
 
 class PostgresDAO(BaseDAO):
     def __init__(self, driver: PostgresDriver):
@@ -43,20 +56,19 @@ class PostgresDAO(BaseDAO):
         with self.driver.cursor() as cursor:
             cursor.execute(query, list(data.values()))
 
-    @override
-    def create_kind_schema(self, entity: str, schema: list[dict]):
+    def create_kind_schema(self, entity: str, schema: list[ColumnSchema]):
         column_defs = []
         for col in schema:
-            definition = f'{escape(col["name"])} {col["type"]}'
-            if 'references' in col and col['references']:
-                ref_table, ref_column = col['references'].split('(')
+            definition = f'{escape(col.name)} {col.type}'
+            if col.references:
+                ref_table, ref_column = col.references.split('(')
                 ref_column = ref_column.rstrip(')')
                 definition += f' REFERENCES {escape(ref_table)}({escape(ref_column)})'
 
             column_defs.append(definition)
 
         # Identify primary key columns from the primary_key flag
-        pk_cols = [escape(col['name']) for col in schema if col.get('primary_key')]
+        pk_cols = [escape(col.name) for col in schema if col.primary_key]
         assert pk_cols is not None, f'No primary key defined for entity "{entity}". Please specify a primary key(s) in the schema.'
 
         pk_def = f', PRIMARY KEY ({", ".join(pk_cols)})'
@@ -68,17 +80,17 @@ class PostgresDAO(BaseDAO):
             cursor.execute(query)
             print(f'Created table "{entity}".')
 
-    def create_index(self, index: dict):
+    def create_index(self, index: IndexSchema):
         """
         CREATE UNIQUE INDEX uniq_reviews_product_user ON reviews(product_id, user_id)
         {}'CREATE INDEX idx_products_active ON products(is_active) WHERE is_active = TRUE',
         """
-        table = index['table']
-        columns = ', '.join([escape(col) for col in index['columns']])
-        unique = 'UNIQUE ' if index.get('unique') else ''
-        where_clause = f' WHERE {index["where"]}' if index.get('where') else ''
-        prefix = 'uniq' if index.get('unique') else 'idx'
-        index_name = f'{prefix}_{"_".join([table] + index["columns"])}'
+        table = index.table
+        columns = ', '.join([escape(col) for col in index.columns])
+        unique = 'UNIQUE ' if index.unique else ''
+        where_clause = f' WHERE {index.where}' if index.where else ''
+        prefix = 'uniq' if index.unique else 'idx'
+        index_name = f'{prefix}_{"_".join([table] + index.columns)}'
 
         query = f'CREATE {unique}INDEX IF NOT EXISTS {escape(index_name)} ON {escape(table)} ({columns}){where_clause}'
 
@@ -94,6 +106,28 @@ class PostgresDAO(BaseDAO):
                     print(f'Dropped table "{entity}".')
             except Exception as e:
                 print(f'Skipping delete for {entity}: {e}')
+
+    def create_database_if_not_exists(self, database_name: str) -> bool:
+        """Returns True if the database was created, False if it already existed."""
+        connection = self.driver.get_connection()
+        # Create database can't be run inside a transation so this is required.
+        connection.autocommit = True
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT 1 FROM pg_database WHERE datname = %s', (database_name, ))
+                exists = cursor.fetchone() is not None
+                if exists:
+                    print(f'Database "{database_name}" already exists.')
+                    return False
+
+                cursor.execute(f'CREATE DATABASE {escape(database_name)} WITH OWNER = {escape(self.driver.config.user)}')
+                if cursor.rowcount > 0:
+                    print(f'Created database "{database_name}".')
+        finally:
+            self.driver.put_connection(connection)
+
+        return True
 
     @override
     def reset_database(self) -> None:

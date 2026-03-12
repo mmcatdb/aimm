@@ -5,4 +5,6 @@
 
 # Ignore all files in subdirectories except .gitkeep.
 /*/*
+# We have to separately re-include all subdirectories.
+!*/
 !.gitkeep

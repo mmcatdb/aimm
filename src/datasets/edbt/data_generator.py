@@ -1,7 +1,6 @@
 import json
 import math
 from typing_extensions import override
-from common.config import Config
 from dataclasses import dataclass
 from datetime import timedelta, datetime
 from common.data_generator import AliasSampler, DataGenerator, clamp_int, iso
@@ -14,11 +13,9 @@ class EdbtDataGenerator(DataGenerator):
 
     Kinds: person, customer, seller, product, category, has_category, has_interest, follows, order, order_item, review.
     """
-    def __init__(self, config: Config):
-        super().__init__(config)
-
     @override
-    def name(self):
+    def name(self) -> str:
+        """Returns the name of the generator (for display purposes)."""
         return 'EDBT'
 
     @override
@@ -174,7 +171,7 @@ class EdbtDataGenerator(DataGenerator):
         - price_cents_by_product
         - is_active_by_product
         """
-        f, w = self._open_csv('product', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency','stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes'])
+        f, w = self._open_csv('product', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency', 'stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes'])
 
         products = []
 
@@ -293,10 +290,9 @@ class EdbtDataGenerator(DataGenerator):
         """
         fc, wc = self._open_csv('customer', ['customer_id', 'person_id', 'snapshot_at', 'name', 'email', 'country_code', 'is_active', 'profile'])
         fo, wo = self._open_csv('order', ['order_id', 'customer_id', 'ordered_at', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
-        fi, wi = self._open_csv('order_item', ['order_item_id', 'order_id', 'product_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot']
-        )
+        fi, wi = self._open_csv('order_item', ['order_item_id', 'order_id', 'product_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot'])
 
-        statuses = ['paid', 'shipped', 'cancelled', 'refunded']
+        statuses = ['paid', 'shipped', 'canceled', 'refunded']
         status_w = [0.70, 0.20, 0.07, 0.03]
 
         order_item_id = 1

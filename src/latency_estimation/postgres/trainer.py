@@ -93,6 +93,7 @@ class PlanStructuredTrainer:
         print(f'  Median R: {metrics["median_q_error"]:.3f}')
         print(f'  R ≤ 1.5: {metrics["le1.5_q_error"] * 100:.2f} %')
         print(f'  R ≤ 2.0: {metrics["le2.0_q_error"] * 100:.2f} %')
+        print('')
 
     def train_epoch(self, dataset: 'PostgresDataset', batch_size: int | None = None, shuffle: bool = True) -> float:
         """

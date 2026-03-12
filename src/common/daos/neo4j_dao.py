@@ -33,11 +33,6 @@ class Neo4jDAO(BaseDAO):
         self.execute(query, {'props': data})
 
     @override
-    def create_kind_schema(self, entity: str, schema: list[dict]):
-        # Could create constraints in place of a schema, but it's not necessary (at least for now)
-        pass
-
-    @override
     def drop_kinds(self, populate_order: list[str]) -> None:
         for entity in reversed(populate_order):
             # This is not ideal but what can we do. At least this forces strict naming conventions.

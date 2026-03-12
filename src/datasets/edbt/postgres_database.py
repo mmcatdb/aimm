@@ -1,10 +1,11 @@
 from typing_extensions import override
 from common.database import Database
+from common.drivers import DriverType
+from common.driver_provider import DatasetName
 
 class EdbtPostgresDatabase(Database):
-    @override
-    def id(self) -> str:
-        return 'edbt_postgres'
+    def __init__(self):
+        super().__init__(DatasetName.EDBT, DriverType.POSTGRES)
 
     @override
     def _generate_train_queries(self, num_queries: int):
@@ -54,7 +55,7 @@ class EdbtPostgresDatabase(Database):
                 JOIN order_item oi ON oi.order_id = o.order_id
                 WHERE c.person_id = '{person_id}'
                   AND oi.product_id = '{product_id}'
-                  AND o.status IN ('paid','shipped')
+                  AND o.status IN ('paid', 'shipped')
             ) AS has_bought
         ''')
 
@@ -71,7 +72,7 @@ class EdbtPostgresDatabase(Database):
             JOIN product p ON p.product_id = oi.product_id
             WHERE p.seller_id = '{seller_id}'
               AND o.ordered_at >= now() - INTERVAL '30 days'
-              AND o.status IN ('paid','shipped')
+              AND o.status IN ('paid', 'shipped')
             GROUP BY 1
             ORDER BY 1
         ''')
@@ -89,7 +90,7 @@ class EdbtPostgresDatabase(Database):
             JOIN "order" o ON o.order_id = oi.order_id
             WHERE hc.category_id = '{category_id}'
               AND o.ordered_at >= now() - INTERVAL '7 days'
-              AND o.status IN ('paid','shipped')
+              AND o.status IN ('paid', 'shipped')
             GROUP BY oi.product_id
             ORDER BY revenue_cents DESC
             LIMIT 50
@@ -101,7 +102,7 @@ class EdbtPostgresDatabase(Database):
                 FROM customer c
                 JOIN "order" o ON o.customer_id = c.customer_id
                 WHERE o.ordered_at >= now() - INTERVAL '90 days'
-                  AND o.status IN ('paid','shipped')
+                  AND o.status IN ('paid', 'shipped')
                 GROUP BY c.person_id
             )
             SELECT
@@ -126,7 +127,7 @@ class EdbtPostgresDatabase(Database):
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
             WHERE o.ordered_at >= now() - INTERVAL '24 hours'
-              AND o.status IN ('paid','shipped')
+              AND o.status IN ('paid', 'shipped')
             GROUP BY c.person_id
             HAVING COUNT(DISTINCT p.seller_id) >= 10
             ORDER BY distinct_sellers DESC
@@ -142,7 +143,7 @@ class EdbtPostgresDatabase(Database):
         #         FROM order_item oi
         #         JOIN "order" o ON o.order_id = oi.order_id
         #         WHERE o.ordered_at >= now() - INTERVAL '7 days'
-        #           AND o.status IN ('paid','shipped')
+        #           AND o.status IN ('paid', 'shipped')
         #     ),
         #     pairs AS (
         #         SELECT
@@ -288,7 +289,7 @@ class EdbtPostgresDatabase(Database):
             JOIN "order" o ON o.order_id = oi1.order_id
             WHERE oi1.product_id = '{product_id}'
               AND oi2.product_id <> '{product_id}'
-              AND o.status IN ('paid','shipped')
+              AND o.status IN ('paid', 'shipped')
             GROUP BY oi2.product_id
             ORDER BY co_buy DESC
             LIMIT 20

@@ -25,7 +25,6 @@ class MongoDAO(BaseDAO):
         collection = self._db[entity]
         collection.insert_one(data)
 
-    @override
     def create_kind_schema(self, entity: str, schema: list[dict]):
         pk_cols = [col['name'] for col in schema if col.get('primary_key')]
         if pk_cols:

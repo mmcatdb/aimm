@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
+from typing_extensions import deprecated
 
+@deprecated('Probably not needed, each dao is kinda different. Maybe unify with the drivers (the specific daos, not the base dao). Or with loaders?')
 class BaseDAO(ABC):
     @abstractmethod
     def find(self, entity: str, query_params) -> Any:
@@ -12,10 +14,6 @@ class BaseDAO(ABC):
 
     @abstractmethod
     def insert(self, entity: str, data: dict) -> None:
-        pass
-
-    @abstractmethod
-    def create_kind_schema(self, entity: str, schema: list[dict]) -> None:
         pass
 
     @abstractmethod

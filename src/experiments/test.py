@@ -11,7 +11,8 @@ def main():
     test_evaluation()
 
 def test_evaluation():
-    experiments_main(split('evaluate -c data/checkpoints/tpch_neo4j_final.pt -d neo4j'))
+    # experiments_main(split('evaluate -c data/checkpoints/tpch_neo4j_final.pt -d neo4j'))
+
     experiments_main(split('evaluate -c data/checkpoints/tpch_postgres_final.pt -d postgres'))
 
 def split(args: str) -> list[str]:

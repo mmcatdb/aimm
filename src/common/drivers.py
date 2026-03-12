@@ -1,6 +1,5 @@
 from collections.abc import Generator
-import decimal
-import pprint
+from enum import Enum
 from typing import cast
 from contextlib import contextmanager
 from typing_extensions import LiteralString
@@ -10,14 +9,19 @@ from psycopg2.extensions import cursor as PostgresCursor
 from pymongo import MongoClient
 from neo4j import GraphDatabase
 
+class DriverType(Enum):
+    POSTGRES = 'postgres'
+    MONGO = 'mongo'
+    NEO4J = 'neo4j'
+
 # These classes manage database configurations and connections.
 # They should be created once per application and reused.
 
 class PostgresConfig:
-    def __init__(self, host: str, port: int, database: str, user: str, password: str):
+    def __init__(self, host: str, port: int, root_database: str, user: str, password: str):
         self.host = host
         self.port = port
-        self.database = database
+        self.root_database = root_database
         self.user = user
         self.password = password
 
@@ -27,14 +31,16 @@ class PostgresDriver():
     with postgres.cursor() as cursor:
         cursor.execute('SELECT 1')
     """
-    def __init__(self, config: PostgresConfig):
+    def __init__(self, config: PostgresConfig, database: str):
         self.config = config
+        self.database = database
+        # TODO Not ideal, this tries to connect immediately. We might want to defer it.
         self._pool = SimpleConnectionPool(
             minconn = 1,
             maxconn = 10,
             host = config.host,
             port = config.port,
-            database = config.database,
+            database = database,
             user = config.user,
             password = config.password,
         )
@@ -130,9 +136,9 @@ class MongoDriver():
         return total_count
 
 class Neo4jConfig:
-    def __init__(self, host: str, port: int, user: str, password: str):
+    def __init__(self, host: str, ports: dict[str, int], user: str, password: str):
         self.host = host
-        self.port = port
+        self.ports = ports
         self.user = user
         self.password = password
 
@@ -142,10 +148,17 @@ class Neo4jDriver():
     with neo4j.session() as session:
         result = session.run('MATCH (n) RETURN n LIMIT 1')
     """
-    def __init__(self, config: Neo4jConfig):
+    def __init__(self, config: Neo4jConfig, database: str):
         self.config = config
+        self.port = config.ports.get(database)
+
+        # FIXME This shouldn't be in constructor, move it somewhere else.
+        if self.port is None:
+            raise ValueError(f'No port configured for database "{database}" in Neo4jConfig.')
+
         self._driver = GraphDatabase.driver(
-            f'bolt://{config.host}:{config.port}',
+            # FIXME Not pretty.
+            f'bolt://{config.host}:{self.port}',
             auth = (config.user, config.password)
         )
 
