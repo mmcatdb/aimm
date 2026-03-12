@@ -1,15 +1,10 @@
 from typing_extensions import override
-from common.config import Config
-from common.drivers import Neo4jDriver
 from common.loaders.neo4j_loader import Neo4jLoader
 
 # TODO now we add foreign keys in neo4j (and then we remove them for some kinds)
 # - they are probably used in some queries (in TPC-H) but they shouldn't (and after that, we should remove them)
 
 class EdbtNeo4jLoader(Neo4jLoader):
-    def __init__(self, config: Config, driver: Neo4jDriver):
-        super().__init__(config, driver)
-
     @override
     def name(self) -> str:
         return 'EDBT'

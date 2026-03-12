@@ -2,7 +2,6 @@ from collections.abc import Callable
 import csv
 import os
 import random
-import argparse
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from common.config import Config
@@ -28,48 +27,26 @@ class DataGenerator(ABC):
 
     @abstractmethod
     def _generate_data(self) -> None:
-        """Generates data at the specified scale and saves it to the data directory."""
+        """Generates data at the specified scale and saves it to the import directory."""
         pass
 
-    def run(self, rawArgs: list[str] | None = None):
-        args = self._parse_args(rawArgs)
-
-        self._data_directory = args.data_dir or self._config.import_directory
-        self._scale = args.scale
+    def run(self, import_directory: str, scale: float):
+        self._import_directory = import_directory
+        self._scale = scale
 
         title = f'--- {self.name()} Data Generator ---'
         print(title)
         print(f'Scale factor: {self._scale}')
         print('-' * len(title) + '\n')
 
-        try:
-            print(f'Generating data at scale factor {self._scale}...')
-            self._generate_data()
-            print(f'Data generation complete. Data saved to: {self._data_directory}')
-        except Exception as e:
-            print(f'\nError: {e}')
-
-    def _parse_args(self, rawArgs: list[str] | None):
-        parser = argparse.ArgumentParser(description=f'Generate {self.name()} data.')
-        parser.add_argument(
-            '--data-dir',
-            type=str,
-            default=None,
-            help=f'Path to the output directory for the {self.name()} .tbl files. If not specified, reads from "IMPORT_DIRECTORY" in .env.'
-        )
-        parser.add_argument(
-            '--scale',
-            type=float,
-            default=1,
-            help='Scale factor for data generation. Default value (1.0) corresponds to ~100 MB so be responsible.'
-        )
-
-        return parser.parse_args(rawArgs)
+        print(f'Generating data at scale factor {self._scale}...')
+        self._generate_data()
+        print(f'Data generation completed. Data saved to: {self._import_directory}')
 
     def _open_csv(self, kind: str, header: list[str]):
         print('Creating', kind + '.tbl')
         filename = kind + '.tbl'
-        path = os.path.join(self._data_directory, filename)
+        path = os.path.join(self._import_directory, filename)
         f = open(path, 'w', newline='', encoding='utf-8')
         w = csv.writer(f, delimiter = '|')
         # The header is skipped because loaders do not expect it.
@@ -99,7 +76,7 @@ class DataGenerator(ABC):
         subdomain = self._rng_subdomain()
 
         email = f'{name_part}@{subdomain}.com'
-        if (email in self._used_strings):
+        if email in self._used_strings:
             modifier = 1
             while email in self._used_strings:
                 email = f'{name_part}{modifier}@{subdomain}.com'

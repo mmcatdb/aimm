@@ -1,9 +1,8 @@
 import csv
 from abc import ABC, abstractmethod
-import argparse
 import os
 from common.config import Config
-from common.daos.postgres_dao import PostgresDAO
+from common.daos.postgres_dao import PostgresDAO, ColumnSchema, IndexSchema
 from common.drivers import PostgresDriver
 
 class PostgresLoader(ABC):
@@ -19,69 +18,40 @@ class PostgresLoader(ABC):
         pass
 
     @abstractmethod
-    def _get_schemas(self) -> dict[str, list[dict]]:
+    def _get_schemas(self) -> dict[str, list[ColumnSchema]]:
         """Returns the schemas for each entity kind. The order of kinds is important for creating tables with foreign key dependencies."""
         pass
 
     @abstractmethod
-    def _get_indexes(self) -> list[dict]:
+    def _get_indexes(self) -> list[IndexSchema]:
         """Returns the list of indexes to be created after tables are created."""
         pass
 
-    def run(self, rawArgs: list[str] | None = None):
-        args = self._parse_args(rawArgs)
-
+    def run(self, import_directory: str, do_reset: bool):
         title = f'--- {self.name()} Postgres Loader ---'
         print(title)
-        print(f'Reset database: {args.reset_database}')
         print(f'Connecting to Postgres at: {self._driver.config.host}:{self._driver.config.port}')
         print('-' * len(title) + '\n')
 
-        import_directory = args.data_dir or self._config.import_directory
+        self._check_files(import_directory)
 
-        try:
-            self._check_files(import_directory)
+        if do_reset:
+            print('Resetting database...')
+            self._dao.reset_database()
+            print('Database reset completed.')
 
-            if args.reset_database:
-                print('Resetting database...')
-                self._dao.reset_database()
-                print('Database reset complete.')
+        print('Creating schema...')
+        schemas = self._get_schemas()
+        for entity, schema in schemas.items():
+            self._dao.create_kind_schema(entity, schema)
+        for index in self._get_indexes():
+            self._dao.create_index(index)
+        print('Schema created.')
 
-            print('Creating schema...')
-            schemas = self._get_schemas()
-            for entity, schema in schemas.items():
-                self._dao.create_kind_schema(entity, schema)
-            for index in self._get_indexes():
-                self._dao.create_index(index)
-            print('Schema created.')
-
-            print('Loading data...')
-            for entity, schema in schemas.items():
-                self._populate_table(entity, schema)
-            print('Data loading complete.')
-        except Exception as e:
-            print(f'\nError: {e}')
-        finally:
-            self._driver.close()
-
-        print('\nScript finished successfully.')
-
-    def _parse_args(self, rawArgs: list[str] | None = None):
-        parser = argparse.ArgumentParser(description=f'Load {self.name()} data into a Postgres database.')
-        parser.add_argument(
-            '--data-dir',
-            type=str,
-            default=None,
-            help=f'Path to the directory containing the {self.name()} .tbl files. If not specified, reads from "IMPORT_DIRECTORY" in .env.'
-        )
-        parser.add_argument(
-            '--reset-database',
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help='Set to --no-reset-database to skip clearing the database beforehand.'
-        )
-
-        return parser.parse_args(rawArgs)
+        print('Loading data...')
+        for entity, schema in schemas.items():
+            self._populate_table(import_directory, entity, schema)
+        print('Data loading completed.')
 
     def _check_files(self, import_directory: str):
         """Verify files exist in the import directory."""
@@ -91,9 +61,9 @@ class PostgresLoader(ABC):
             if not os.path.isfile(filepath):
                 raise Exception(f'Required file not found in import directory: {filepath}')
 
-    def _populate_table(self, entity: str, schema: list[dict]):
+    def _populate_table(self, import_directory: str, entity: str, schema: list[ColumnSchema]):
         filename = entity + '.tbl'
-        path = os.path.join(self._config.import_directory, filename)
+        path = os.path.join(import_directory, filename)
 
         with open(path, 'r') as file:
             reader = csv.reader(file, delimiter='|')
@@ -104,8 +74,8 @@ class PostgresLoader(ABC):
 
                 data = {}
                 for i, column in enumerate(schema):
-                    if i < len(row) and column['name']:
-                        data[column['name']] = row[i]
+                    if i < len(row) and column.name:
+                        data[column.name] = row[i]
 
                 # Drop potential empty key from final delimiter
                 data = {k: v for k, v in data.items() if k}
@@ -113,4 +83,3 @@ class PostgresLoader(ABC):
                     self._dao.insert(entity, data)
 
         print(f'Loaded data into table "{entity}".')
-

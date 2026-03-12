@@ -1,11 +1,15 @@
 from common.config import Config
 from common.database import Database
 from common.drivers import PostgresDriver
+from common.driver_provider import DatasetName
 from datasets.tpch.postgres_database import TpchPostgresDatabase
 from latency_estimation.common import load_checkpoint_file, load_dataset, save_checkpoint_file
 from latency_estimation.postgres.plan_extractor import PlanExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.postgres.trainer import PlanStructuredTrainer
+
+# FIXME this
+TRAIN_DATASET = DatasetName.TPCH
 
 class PostgresContext:
     def __init__(self, quiet: bool):
@@ -20,7 +24,7 @@ class PostgresContext:
         ctx = PostgresContext(quiet)
         ctx.quiet = quiet
         ctx.config = Config.load()
-        ctx.driver = PostgresDriver(ctx.config.postgres)
+        ctx.driver = PostgresDriver(ctx.config.postgres, TRAIN_DATASET.value)
         ctx.database = database if database else TpchPostgresDatabase()
         ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
         return ctx

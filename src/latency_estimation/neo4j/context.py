@@ -1,11 +1,15 @@
 from common.config import Config
 from common.database import Database
 from common.drivers import Neo4jDriver
+from common.driver_provider import DatasetName
 from datasets.tpch.neo4j_database import TpchNeo4jDatabase
 from latency_estimation.common import load_checkpoint_file, load_dataset, save_checkpoint_file
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.neo4j.trainer import PlanStructuredTrainer
+
+# FIXME this
+TRAIN_DATASET = DatasetName.TPCH
 
 class Neo4jContext:
     def __init__(self, quiet: bool):
@@ -20,7 +24,7 @@ class Neo4jContext:
         ctx = Neo4jContext(quiet)
         ctx.quiet = quiet
         ctx.config = Config.load()
-        ctx.driver = Neo4jDriver(ctx.config.neo4j)
+        ctx.driver = Neo4jDriver(ctx.config.neo4j, TRAIN_DATASET.value)
         ctx.database = database if database else TpchNeo4jDatabase()
         ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
         return ctx

@@ -1,19 +1,21 @@
-
 from abc import ABC, abstractmethod
+from common.drivers import DriverType
+from common.driver_provider import DatasetName
 
 class Database(ABC):
     """
     Contains all dataset-specific logic for a single database in a dataset.
     """
-    def __init__(self):
+    def __init__(self, dataset: DatasetName, type: DriverType):
+        self.dataset = dataset
+        self.type = type
         self.num_train_queries: int | None = None
         self.train_queries: list[str] | None = None
         self.test_queries: dict[str, TestQuery] | None = None
 
-    @abstractmethod
     def id(self) -> str:
         """Get unique identifier for this database. Useful for caching."""
-        pass
+        return f'{self.dataset.value}_{self.type.value}'
 
     def get_train_queries(self, num_queries: int) -> list[str]:
         """
@@ -47,17 +49,13 @@ class Database(ABC):
 
         return list(self.test_queries.values())
 
-    def get_test_query(self, id: str) -> 'TestQuery':
+    def try_get_test_query(self, id: str) -> 'TestQuery | None':
         """Returns a single test query by its ID (or None if not found). Useful for debugging specific queries."""
         if self.test_queries is None:
             self.test_queries = {}
             self._generate_test_queries()
 
-        query = self.test_queries.get(id)
-        if query is None:
-            raise ValueError(f'Test query with ID {id} not found. Available IDs: {list(self.test_queries.keys())}')
-
-        return query
+        return self.test_queries.get(id)
 
     def _test_query(self, id: str, name: str | None, content: str):
         assert self.test_queries is not None

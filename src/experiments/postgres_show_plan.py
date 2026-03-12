@@ -4,7 +4,7 @@ Example usage:
 """
 
 from common.config import Config
-from common.drivers import PostgresDriver
+from common.drivers import PostgresDriver, DriverType
 import sys
 import json
 import textwrap
@@ -14,7 +14,9 @@ import psycopg2
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
-from datasets.databases import get_database_by_id
+from common.driver_provider import DatasetName
+from datasets.databases import find_database, get_available_dataset_names
+from common.utils import trim_to_block
 
 console = Console()
 
@@ -24,8 +26,8 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(__doc__ or ''),
     )
-    parser.add_argument('query', nargs='?', help='SQL query string. Read from stdin if omitted. If --database-id is provided, this will be interpreted as a test query ID instead.')
-    parser.add_argument('--database-id', '-d', help='ID of the database to find the query by id (overrides --query argument).')
+    parser.add_argument('query', nargs='?', help='SQL query string or a test query ID (if such query exists). Read from stdin if omitted.')
+    parser.add_argument('--dataset', '-d', required=True, choices=get_available_dataset_names(), help='Name of the dataset.')
     parser.add_argument('--analyze', action='store_true', help='Use EXPLAIN ANALYZE (actually runs the query; DML is rolled back).')
     parser.add_argument('--no-cache', dest='no_cache', action='store_true', help='Issue DISCARD ALL before running (requires --analyze).')
     parser.add_argument('--json-only', dest='json_only', action='store_true', help='Print only the raw JSON, skip the visual tree.')
@@ -54,9 +56,12 @@ def main() -> None:
         print('Error: no query provided.', file=sys.stderr)
         sys.exit(1)
 
-    if (args.database_id):
-        database = get_database_by_id(args.database_id)
-        query = database.get_test_query(args.query).content
+    dataset = DatasetName(args.dataset)
+
+    test_query = find_database(dataset, DriverType.POSTGRES).try_get_test_query(query)
+    if test_query is not None:
+        query = test_query.content
+        print(f'Found test query with ID "{test_query.id}":\n{trim_to_block(query)}\n')
 
     if DML_RE.match(query):
         if args.analyze:
@@ -66,7 +71,7 @@ def main() -> None:
 
     try:
         config = Config.load()
-        driver = PostgresDriver(config.postgres)
+        driver = PostgresDriver(config.postgres, dataset.value)
 
         plan = fetch_plan(driver, query, analyze=args.analyze, discard=args.no_cache)
     except psycopg2.Error as e:

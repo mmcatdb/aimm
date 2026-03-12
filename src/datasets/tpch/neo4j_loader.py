@@ -1,12 +1,7 @@
 from typing_extensions import override
-from common.config import Config
-from common.drivers import Neo4jDriver
 from common.loaders.neo4j_loader import Neo4jLoader
 
 class TpchNeo4jLoader(Neo4jLoader):
-    def __init__(self, config: Config, driver: Neo4jDriver):
-        super().__init__(config, driver)
-
     @override
     def name(self) -> str:
         return 'TPC-H'

@@ -1,9 +1,12 @@
 import argparse
 from common.utils import auto_close, data_size_quantity, pretty_print_int
+from common.driver_provider import DatasetName
 from latency_estimation.exceptions import NeuralUnitNotFoundException
 from latency_estimation.common import NnOperator
 
 NUM_RUNS = 1
+# FIXME this
+TEST_DATASET = DatasetName.EDBT
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Test Postgres EDBT')
@@ -24,9 +27,9 @@ def check_run():
     from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
 
     config = Config.load()
-    postgres = PostgresDriver(config.postgres)
+    postgres = PostgresDriver(config.postgres, TEST_DATASET.value)
     mongo = MongoDriver(config.mongo)
-    neo4j = Neo4jDriver(config.neo4j)
+    neo4j = Neo4jDriver(config.neo4j, TEST_DATASET.value)
 
     print('Checking database connections and sizes ...')
 
@@ -76,6 +79,8 @@ def evaluate_args(parser: argparse.ArgumentParser):
     parser.add_argument('--database', '-d', type=str, required=True, help='Either "postgres" or "neo4j"')
 
 def evaluate_run(args: argparse.Namespace):
+    print(f'Evaluating {args.database} model\n')
+
     if args.database == 'postgres':
         evaluate_postgres(args.checkpoint)
     elif args.database == 'neo4j':

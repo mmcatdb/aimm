@@ -1,6 +1,6 @@
 from common.config import Config
 from common.driver_provider import DriverProvider
-from query_engine import QueryEngine
+from search.query_engine import QueryEngine
 
 def test_mapping_performance(dbs: DriverProvider, mapping: dict[str, str]) -> float:
     query_engine = QueryEngine(dbs, schema_mapping=mapping)

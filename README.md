@@ -36,20 +36,22 @@ python -m path.to.file
 ### EDBT (generated)
 
 ```bash
-python -m database.generate_data --scale 1
+python -m scripts.generate_data edbt --scale 0.1
+python -m scripts.populate_db postgres edbt
+python -m scripts.populate_db neo4j edbt
 ```
 
 ### TPC-H (downloaded)
 
-- Download [TPC-H data](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) and extract it into the `data/inputs` directory.
+- Download [TPC-H data](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) and extract it into the `data/inputs/tpch` directory.
 ```bash
-python -m database.edbt.populate_postgres
-python -m database.edbt.populate_neo4j
+python -m scripts.populate_db postgres tpch
+python -m scripts.populate_db neo4j tpch
 ```
 
 ## Experiments
 
 ```bash
 python -m experiments check
-python -m experiments evaluate
+python -m experiments evaluate -c data/checkpoints/tpch_neo4j_final.pt -d neo4j
 ```

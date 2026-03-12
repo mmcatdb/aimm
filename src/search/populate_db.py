@@ -2,13 +2,13 @@ import csv
 import os
 from decimal import InvalidOperation
 from datetime import datetime
-from common.driver_provider import DriverProvider
-from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
+from typing_extensions import deprecated
+from common.driver_provider import DriverProvider, DatasetName
+from common.drivers import MongoDriver
 from datasets.tpch.mongo_dao import MongoDAO
-from datasets.tpch.neo4j_dao import Neo4jDAO
-from datasets.tpch.postgres_dao import PostgresDAO
 from common.config import Config
 
+@deprecated('Postgres and neo4j were already migrated. As soon as mongo is out, delete this file.')
 def main():
     config = Config.load()
     dbs = DriverProvider.default(config)
@@ -40,9 +40,9 @@ class Populator:
         self._config = config
         self.schema_mapping = schema_mapping
         self.daos = {
-            'postgres': PostgresDAO(dbs.get_typed('postgres', PostgresDriver)),
-            'mongo': MongoDAO(dbs.get_typed('mongo', MongoDriver)),
-            'neo4j': Neo4jDAO(dbs.get_typed('neo4j', Neo4jDriver)),
+            # 'postgres': PostgresDAO(dbs.get(DatasetName.TPCH, PostgresDriver)),
+            'mongo': MongoDAO(dbs.get(DatasetName.TPCH, MongoDriver)),
+            # 'neo4j': Neo4jDAO(dbs.get(DatasetName.TPCH, Neo4jDriver)),
         }
 
     def run(self, schemas: dict[str, list[dict]], populate_order: list[str]):

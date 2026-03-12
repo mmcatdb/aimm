@@ -1,10 +1,11 @@
 from typing_extensions import override
 from common.database import Database
+from common.drivers import DriverType
+from common.driver_provider import DatasetName
 
 class EdbtNeo4jDatabase(Database):
-    @override
-    def id(self) -> str:
-        return 'edbt_neo4j'
+    def __init__(self):
+        super().__init__(DatasetName.EDBT, DriverType.NEO4J)
 
     @override
     def _generate_train_queries(self, num_queries: int):
@@ -48,7 +49,7 @@ class EdbtNeo4jDatabase(Database):
         product_id = 1
         self._test_query('Q6', 'Did this person buy this product? (via customer snapshots)', f'''
             MATCH (p:Person {{person_id: {person_id}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
-            WHERE o.status IN ['paid','shipped']
+            WHERE o.status IN ['paid', 'shipped']
             MATCH (o)-[:HAS_ITEM]->(pr:Product {{product_id: {product_id}}})
             RETURN COUNT(*) > 0 AS has_bought
         ''')
@@ -59,7 +60,7 @@ class EdbtNeo4jDatabase(Database):
         self._test_query('Q7', 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)', f'''
             MATCH (s:Seller {{seller_id: {seller_id}}})-[:OFFERS]->(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
-            WHERE o.status IN ['paid','shipped']
+            WHERE o.status IN ['paid', 'shipped']
               AND o.ordered_at >= datetime() - duration('P30D')
             WITH
                 date(o.ordered_at) AS day,
@@ -76,7 +77,7 @@ class EdbtNeo4jDatabase(Database):
         self._test_query('Q8', 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)', f'''
             MATCH (c:Category {{category_id: {category_id}}})<-[:HAS_CATEGORY]-(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
-            WHERE o.status IN ['paid','shipped']
+            WHERE o.status IN ['paid', 'shipped']
               AND o.ordered_at >= datetime() - duration('P7D')
             WITH
                 pr,
@@ -93,7 +94,7 @@ class EdbtNeo4jDatabase(Database):
 
         self._test_query('Q9', 'Customer spend buckets (now per person)', f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
-            WHERE o.status IN ['paid','shipped']
+            WHERE o.status IN ['paid', 'shipped']
               AND o.ordered_at >= datetime() - duration('P90D')
             WITH p.person_id AS person_id, sum(o.total_cents) AS spend_cents
             WITH
@@ -108,7 +109,7 @@ class EdbtNeo4jDatabase(Database):
 
         self._test_query('Q10', 'Fraud-ish pattern (now per person)', f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
-            WHERE o.status IN ['paid','shipped']
+            WHERE o.status IN ['paid', 'shipped']
               AND o.ordered_at >= datetime() - duration('PT24H')
             MATCH (o)-[:HAS_ITEM]->(pr:Product)
             MATCH (s:Seller)-[:OFFERS]->(pr)
