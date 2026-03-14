@@ -38,6 +38,7 @@ python -m path.to.file
 ```bash
 python -m scripts.generate_data edbt --scale 0.1
 python -m scripts.populate_db postgres edbt
+python -m scripts.populate_db mongo edbt
 python -m scripts.populate_db neo4j edbt
 ```
 
@@ -46,10 +47,16 @@ python -m scripts.populate_db neo4j edbt
 - Download [TPC-H data](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) and extract it into the `data/inputs/tpch` directory.
 ```bash
 python -m scripts.populate_db postgres tpch
+python -m scripts.populate_db mongo tpch
 python -m scripts.populate_db neo4j tpch
 ```
 
 ## Experiments
+
+- Explain query plan:
+```bash
+python -m scripts.show_plan postgres tpch "UPDATE orders SET o_totalprice = 0 WHERE o_orderkey = 1"
+```
 
 ```bash
 python -m experiments check

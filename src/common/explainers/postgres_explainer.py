@@ -1,127 +1,75 @@
-"""
-Example usage:
-    python -m experiments.postgres_show_plan --tree-only "UPDATE orders SET o_totalprice = 0 WHERE o_orderkey = 1"
-"""
-
-from common.config import Config
-from common.drivers import PostgresDriver, DriverType
 import sys
 import json
-import textwrap
 import re
-import argparse
-import psycopg2
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
-from common.driver_provider import DatasetName
-from datasets.databases import find_database, get_available_dataset_names
-from common.utils import trim_to_block
+from common.drivers import PostgresDriver
 
-console = Console()
+class PostgresExplainer:
+    def __init__(self, driver: PostgresDriver) -> None:
+        self._console = Console()
+        self._driver = driver
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description='Show a PostgreSQL query plan visually.',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent(__doc__ or ''),
-    )
-    parser.add_argument('query', nargs='?', help='SQL query string or a test query ID (if such query exists). Read from stdin if omitted.')
-    parser.add_argument('--dataset', '-d', required=True, choices=get_available_dataset_names(), help='Name of the dataset.')
-    parser.add_argument('--analyze', action='store_true', help='Use EXPLAIN ANALYZE (actually runs the query; DML is rolled back).')
-    parser.add_argument('--no-cache', dest='no_cache', action='store_true', help='Issue DISCARD ALL before running (requires --analyze).')
-    parser.add_argument('--json-only', dest='json_only', action='store_true', help='Print only the raw JSON, skip the visual tree.')
-    parser.add_argument('--tree-only', dest='tree_only', action='store_true', help='Print only the visual tree, skip the raw JSON.')
+    def fetch_plan(self, query: str, do_profile: bool, do_discard: bool) -> dict:
+        return fetch_plan(self._driver, query, do_profile, do_discard)
 
-    return parser.parse_args()
+    def print_tree(self, plan: dict) -> None:
+        """Print the plan tree with rich formatting."""
+        tree_string = plan_tree_to_string(plan)
+        self._console.print(Panel(tree_string, title='[bold]Query Plan Tree[/bold]', border_style='blue'))
 
-def main() -> None:
-    args = parse_args()
+    def print_json(self, plan: dict) -> None:
+        """Print the plan JSON with syntax highlighting."""
+        json_string = json.dumps(plan, indent=2)
+        self._console.print(Panel(
+            Syntax(json_string, 'json', theme='monokai', line_numbers=False, word_wrap=False),
+            title='[bold]Raw JSON Plan[/bold]',
+            border_style='green',
+        ))
 
-    if args.query:
-        query = args.query
-    elif not sys.stdin.isatty():
-        query = sys.stdin.read().strip()
-    else:
-        print('Enter your SQL query (finish with Ctrl-D on a blank line):')
-        lines = []
-        try:
-            while True:
-                lines.append(input())
-        except EOFError:
-            pass
-        query = '\n'.join(lines).strip()
+#region Plan fetching
 
-    if not query:
-        print('Error: no query provided.', file=sys.stderr)
-        sys.exit(1)
+# Detect DML/write operations in SQL
+DML_RE = re.compile(r'^\s*(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|DROP|ALTER)\b', re.IGNORECASE)
 
-    dataset = DatasetName(args.dataset)
+def fetch_plan(driver: PostgresDriver, query: str, do_profile: bool, do_discard: bool) -> dict:
+    """Return the root plan dict from PostgreSQL EXPLAIN … FORMAT JSON."""
+    is_dml = bool(DML_RE.match(query))
 
-    test_query = find_database(dataset, DriverType.POSTGRES).try_get_test_query(query)
-    if test_query is not None:
-        query = test_query.content
-        print(f'Found test query with ID "{test_query.id}":\n{trim_to_block(query)}\n')
-
-    if DML_RE.match(query):
-        if args.analyze:
+    if is_dml:
+        if do_profile:
             print('Note: DML query detected — running inside a transaction that will be rolled back (no data will be modified).\n', file=sys.stderr)
         else:
             print('Note: DML query detected — using EXPLAIN without ANALYZE (estimated plan only, query will NOT be executed).\n', file=sys.stderr)
 
-    try:
-        config = Config.load()
-        driver = PostgresDriver(config.postgres, dataset.value)
-
-        plan = fetch_plan(driver, query, analyze=args.analyze, discard=args.no_cache)
-    except psycopg2.Error as e:
-        print(f'Database error: {e}', file=sys.stderr)
-        sys.exit(1)
-
-    if not args.json_only:
-        print_tree(plan)
-
-    if not args.tree_only:
-        print()
-        print_json(plan)
-
-#region Plan fetching
-
-DML_RE = re.compile(
-    r'^\s*(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|DROP|ALTER)\b',
-    re.IGNORECASE,
-)
-
-def fetch_plan(driver: PostgresDriver, query: str, analyze: bool, discard: bool) -> dict:
-    """Return the root plan dict from PostgreSQL EXPLAIN … FORMAT JSON."""
-    is_dml = bool(DML_RE.match(query))
-    # For DML with ANALYZE we wrap in a transaction and roll back so nothing
-    # is actually committed to the database.
-    wrap_in_tx = analyze and is_dml
+    # For DML with ANALYZE we wrap in a transaction and roll back so nothing is actually committed to the database.
+    is_in_transaction = is_dml and do_profile
 
     connection = driver.get_connection()
 
     try:
-        connection.autocommit = not wrap_in_tx          # need explicit tx for rollback
+        # Rollback needs explicit transaction.
+        connection.autocommit = not is_in_transaction
 
         with connection.cursor() as cursor:
-            if wrap_in_tx:
+            if is_in_transaction:
                 cursor.execute('BEGIN;')
 
-            if discard and analyze:
+            if do_discard and do_profile:
                 try:
                     cursor.execute('DISCARD ALL;')
                 except Exception as e:
                     print(f'Warning: DISCARD ALL failed: {e}', file=sys.stderr)
 
             options = 'FORMAT JSON, VERBOSE, COSTS'
-            if analyze:
+            if do_profile:
                 options += ', ANALYZE, BUFFERS'
 
             cursor.execute(f'EXPLAIN ({options}) {query}')
             row = cursor.fetchone()
 
-            if wrap_in_tx:
+            if is_in_transaction:
                 cursor.execute('ROLLBACK;')
                 if not connection.autocommit:
                     connection.rollback()
@@ -132,6 +80,7 @@ def fetch_plan(driver: PostgresDriver, query: str, analyze: bool, discard: bool)
         plan_json = row[0]
         if isinstance(plan_json, list):
             plan_json = plan_json[0]
+
         return plan_json
 
     finally:
@@ -140,19 +89,7 @@ def fetch_plan(driver: PostgresDriver, query: str, analyze: bool, discard: bool)
 #endregion
 #region Printing
 
-def print_tree(plan: dict) -> None:
-    tree_str = render_plan_tree(plan)
-    console.print(Panel(tree_str, title='[bold]Query Plan Tree[/bold]', border_style='blue'))
-
-def print_json(plan: dict) -> None:
-    json_str = json.dumps(plan, indent=2)
-    console.print(Panel(
-        Syntax(json_str, 'json', theme='monokai', line_numbers=False, word_wrap=False),
-        title='[bold]Raw JSON Plan[/bold]',
-        border_style='green',
-    ))
-
-def render_plan_tree(plan: dict) -> str:
+def plan_tree_to_string(plan: dict) -> str:
     """Return the full visual tree as a single string."""
     root_node = plan.get('Plan', plan)  # handle both wrapped and bare plans
 
@@ -281,6 +218,3 @@ def _fmt_cost(node: dict) -> str:
     return '  ' + f'[{", ".join(parts)}]' if parts else ''
 
 #endregion
-
-if __name__ == '__main__':
-    main()

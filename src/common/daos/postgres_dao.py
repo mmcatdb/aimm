@@ -12,10 +12,10 @@ class ColumnSchema:
         self.references = references
 
 class IndexSchema:
-    def __init__(self, table: str, columns: list[str], unique=False, where=None):
-        self.table = table
+    def __init__(self, kind: str, columns: list[str], is_unique=False, where=None):
+        self.kind = kind
         self.columns = columns
-        self.unique = unique
+        self.is_unique = is_unique
         self.where = where
 
 class PostgresDAO(BaseDAO):
@@ -85,11 +85,11 @@ class PostgresDAO(BaseDAO):
         CREATE UNIQUE INDEX uniq_reviews_product_user ON reviews(product_id, user_id)
         {}'CREATE INDEX idx_products_active ON products(is_active) WHERE is_active = TRUE',
         """
-        table = index.table
+        table = index.kind
         columns = ', '.join([escape(col) for col in index.columns])
-        unique = 'UNIQUE ' if index.unique else ''
+        unique = 'UNIQUE ' if index.is_unique else ''
         where_clause = f' WHERE {index.where}' if index.where else ''
-        prefix = 'uniq' if index.unique else 'idx'
+        prefix = 'uniq' if index.is_unique else 'idx'
         index_name = f'{prefix}_{"_".join([table] + index.columns)}'
 
         query = f'CREATE {unique}INDEX IF NOT EXISTS {escape(index_name)} ON {escape(table)} ({columns}){where_clause}'
@@ -98,7 +98,7 @@ class PostgresDAO(BaseDAO):
             cursor.execute(query)
 
     @override
-    def drop_kinds(self, populate_order: list[str]) -> None:
+    def drop_kinds(self, populate_order: list[str]):
         for entity in reversed(populate_order):
             try:
                 with self.driver.cursor() as cursor:
@@ -130,7 +130,7 @@ class PostgresDAO(BaseDAO):
         return True
 
     @override
-    def reset_database(self) -> None:
+    def reset_database(self):
         query = """
         DO $$
         DECLARE
@@ -151,7 +151,6 @@ class PostgresDAO(BaseDAO):
         """
         with self.driver.cursor() as cursor:
             cursor.execute(query)
-            print('PostgreSQL database has been reset.')
 
     def execute(self, query: str, params=None):
         with self.driver.cursor(cursor_factory = RealDictCursor) as cursor:

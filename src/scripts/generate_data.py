@@ -1,13 +1,13 @@
 import argparse
 from common.config import Config
 from common.driver_provider import DatasetName, dataset_import_directory
-from common.utils import exit_with_error
+from common.utils import exit_with_exception
 from datasets.databases import get_available_dataset_names
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Generate database data.')
 
-    define_args(parser)
+    common_args(parser)
 
     args = parser.parse_args(rawArgs)
 
@@ -22,7 +22,7 @@ def main(rawArgs: list[str] | None = None):
     else:
         raise ValueError(f'Unsupported dataset: {dataset}')
 
-def define_args(parser: argparse.ArgumentParser):
+def common_args(parser: argparse.ArgumentParser):
     parser.add_argument('dataset', nargs=1, choices=get_available_dataset_names(), help=f'Name of the dataset.')
     parser.add_argument('--import-dir', type=str, default=None, help='Path to the directory where the output files should be generated. If not specified, defaults to "{IMPORT_DIRECTORY}/<dataset>".')
     parser.add_argument('--scale', type=float, default=1, help='Scale factor for data generation. Default value (1.0) corresponds to ~100 MB so be responsible.')
@@ -34,7 +34,7 @@ def generate_edbt(config: Config, import_directory: str, scale: float):
         generator = EdbtDataGenerator(config)
         generator.run(import_directory, scale)
     except Exception as e:
-        exit_with_error(e)
+        exit_with_exception(e)
 
 if __name__ == '__main__':
     main()

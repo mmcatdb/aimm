@@ -6,7 +6,7 @@ from common.loaders.neo4j_loader import Neo4jLoader
 
 class EdbtNeo4jLoader(Neo4jLoader):
     @override
-    def name(self) -> str:
+    def name(self):
         return 'EDBT'
 
     @override

@@ -1,130 +1,63 @@
-"""
-Example usage:
-    python -m experiments.neo4j_show_plan "MATCH (c:Customer)-[:PLACED]->(o:Order) WHERE o.o_totalprice > 100000 SET c.vip = true"
-"""
-
-from common.config import Config
-from common.drivers import Neo4jDriver, DriverType
 import sys
 import json
-import textwrap
 import re
-import argparse
 from typing import Any
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
-from common.drivers import cypher
-from common.driver_provider import DatasetName
-from datasets.databases import find_database, get_available_dataset_names
-from common.utils import trim_to_block
+from common.drivers import Neo4jDriver, cypher
 
-console = Console()
+class Neo4jExplainer:
+    def __init__(self, driver: Neo4jDriver) -> None:
+        self._console = Console()
+        self._driver = driver
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description='Show a Neo4j Cypher query plan visually.',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent(__doc__ or ''),
-    )
-    parser.add_argument('query', nargs='?', help='Cypher query string or a test query ID (if such query exists). Read from stdin if omitted.')
-    parser.add_argument('--dataset', '-d', required=True, choices=get_available_dataset_names(), help='Name of the dataset.')
-    parser.add_argument('--profile', action='store_true', help='Use PROFILE instead of EXPLAIN (actually runs the query; DML is rolled back).')
-    parser.add_argument('--no-rollback', dest='no_rollback', action='store_true', help='Do NOT rollback DML operations when using --profile (dangerous!).')
-    parser.add_argument('--json-only', dest='json_only', action='store_true', help='Print only the raw JSON, skip the visual tree.')
-    parser.add_argument('--tree-only', dest='tree_only', action='store_true', help='Print only the visual tree, skip the raw JSON.')
+    def fetch_plan(self, query: str, do_profile: bool) -> dict:
+        """
+        Fetch query execution plan from Neo4j.
+        Args:
+            query: Cypher query string
+            do_profile: If True, use PROFILE (actually runs the query). If False, use EXPLAIN.
+        Returns:
+            Plan dictionary
+        """
+        return fetch_plan(self._driver, query, do_profile)
 
-    return parser.parse_args()
+    def print_tree(self, plan: dict) -> None:
+        """Print the plan tree with rich formatting."""
+        tree_string = plan_tree_to_string(plan)
+        self._console.print(Panel(tree_string, title='[bold]Query Plan Tree[/bold]', border_style='blue'))
 
-def main() -> None:
-    args = parse_args()
+    def print_json(self, plan: dict) -> None:
+        """Print the plan JSON with syntax highlighting."""
+        # Remove internal summary for cleaner JSON output
+        copy = {k: v for k, v in plan.items() if not k.startswith('_')}
 
-    if args.query:
-        query = args.query
-    elif not sys.stdin.isatty():
-        query = sys.stdin.read().strip()
-    else:
-        print('Enter your Cypher query (finish with Ctrl-D on a blank line):')
-        lines = []
-        try:
-            while True:
-                lines.append(input())
-        except EOFError:
-            pass
-        query = '\n'.join(lines).strip()
-
-    if not query:
-        print('Error: no query provided.', file=sys.stderr)
-        sys.exit(1)
-
-    dataset = DatasetName(args.dataset)
-
-    test_query = find_database(dataset, DriverType.NEO4J).try_get_test_query(query)
-    if test_query is not None:
-        query = test_query.content
-        print(f'Found test query with ID "{test_query.id}":\n{trim_to_block(query)}\n')
-
-    is_dml = bool(DML_RE.search(query))
-
-    if is_dml:
-        if not args.profile:
-            print('Note: DML query detected — using EXPLAIN without execution (estimated plan only, query will NOT be executed).\n', file=sys.stderr)
-        elif args.no_rollback:
-            print('WARNING: DML query will be executed and changes WILL be committed!\n', file=sys.stderr)
-        else:
-            print('Note: DML query detected — running inside a transaction that will be rolled back (no data will be modified).\n', file=sys.stderr)
-
-    try:
-        config = Config.load()
-        driver = Neo4jDriver(config.neo4j, dataset.value)
-
-        plan = fetch_plan(
-            driver,
-            query,
-            profile=args.profile,
-            rollback_dml=not args.no_rollback
-        )
-    except Exception as e:
-        print(f'Database error: {e}', file=sys.stderr)
-        sys.exit(1)
-
-    if not plan:
-        print('Error: empty plan returned.', file=sys.stderr)
-        sys.exit(1)
-
-    if not args.json_only:
-        print_tree(plan)
-
-    if not args.tree_only:
-        print()
-        print_json(plan)
+        json_string = json.dumps(copy, indent=2)
+        self._console.print(Panel(
+            Syntax(json_string, 'json', theme='monokai', line_numbers=False, word_wrap=False),
+            title='[bold]Raw JSON Plan[/bold]',
+            border_style='green',
+        ))
 
 #region Plan fetching
 
 # Detect DML/write operations in Cypher
-DML_RE = re.compile(
-    r'^\s*(CREATE|DELETE|DETACH\s+DELETE|SET|REMOVE|MERGE)\b',
-    re.IGNORECASE | re.MULTILINE,
-)
+DML_RE = re.compile(r'^\s*(CREATE|DELETE|DETACH\s+DELETE|SET|REMOVE|MERGE)\b', re.IGNORECASE | re.MULTILINE)
 
-def fetch_plan(driver: Neo4jDriver, query: str, profile: bool = False, rollback_dml: bool = True) -> dict:
-    """
-    Fetch query execution plan from Neo4j.
-
-    Args:
-        query: Cypher query string
-        profile: If True, use PROFILE (actually runs the query). If False, use EXPLAIN.
-        rollback_dml: If True, rollback DML operations after profiling
-
-    Returns:
-        Plan dictionary
-    """
+def fetch_plan(driver: Neo4jDriver, query: str, do_profile: bool) -> dict:
     is_dml = bool(DML_RE.search(query))
+
+    if is_dml:
+        if not do_profile:
+            print('Note: DML query detected — using EXPLAIN without execution (estimated plan only, query will NOT be executed).\n', file=sys.stderr)
+        else:
+            print('Note: DML query detected — running inside a transaction that will be rolled back (no data will be modified).\n', file=sys.stderr)
 
     try:
         with driver.session() as session:
-            if profile:
-                if is_dml and rollback_dml:
+            if do_profile:
+                if is_dml:
                     # Use explicit transaction for DML so we can rollback
                     tx = session.begin_transaction()
                     try:
@@ -231,23 +164,7 @@ def normalize_plan(plan: dict) -> dict[str, Any]:
 #endregion
 #region Printing
 
-def print_tree(plan: dict) -> None:
-    """Print the plan tree with rich formatting."""
-    tree_str = render_plan_tree(plan)
-    console.print(Panel(tree_str, title="[bold]Query Plan Tree[/bold]", border_style='blue'))
-
-def print_json(plan: dict) -> None:
-    """Print the plan JSON with syntax highlighting."""
-    # Remove internal summary for cleaner JSON output
-    plan_copy = {k: v for k, v in plan.items() if not k.startswith('_')}
-    json_str = json.dumps(plan_copy, indent=2)
-    console.print(Panel(
-        Syntax(json_str, 'json', theme='monokai', line_numbers=False, word_wrap=False),
-        title='[bold]Raw JSON Plan[/bold]',
-        border_style='green',
-    ))
-
-def render_plan_tree(plan: dict) -> str:
+def plan_tree_to_string(plan: dict) -> str:
     """Return the full visual tree as a single string."""
     header_parts = []
 
@@ -459,7 +376,6 @@ def _clean_operator_type(op_type: str) -> str:
 def _abbreviate_operator(op_type: str) -> str:
     """Create a short abbreviation for operator types not in NODE_ICONS."""
     # Split CamelCase into words and take first letters
-    import re
     words = re.findall(r'[A-Z][a-z]*', op_type)
     if words:
         # Take first 2 chars of each word, join them
@@ -498,6 +414,3 @@ def _fmt_stats(node: dict) -> str:
     return '  ' + f'[{", ".join(parts)}]' if parts else ''
 
 #endregion
-
-if __name__ == '__main__':
-    main()
