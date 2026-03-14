@@ -7,11 +7,11 @@ from common.daos.postgres_dao import ColumnSchema, IndexSchema
 
 class EdbtPostgresLoader(PostgresLoader):
     @override
-    def name(self) -> str:
+    def name(self):
         return 'EDBT'
 
     @override
-    def _get_schemas(self) -> dict[str, list[ColumnSchema]]:
+    def _get_schemas(self):
         person = [
             ColumnSchema('person_id', 'INTEGER', primary_key=True),
             ColumnSchema('name', 'TEXT NOT NULL'),
@@ -154,10 +154,10 @@ class EdbtPostgresLoader(PostgresLoader):
         }
 
     @override
-    def _get_indexes(self) -> list[IndexSchema]:
+    def _get_indexes(self):
         return [
-            IndexSchema('person', [ 'email' ], unique=True),
-            IndexSchema('product', [ 'sku' ], unique=True),
+            IndexSchema('person', [ 'email' ], is_unique=True),
+            IndexSchema('product', [ 'sku' ], is_unique=True),
             IndexSchema('product', [ 'seller_id' ]),
             IndexSchema('product', [ 'is_active' ], where='"is_active" = TRUE'),
             IndexSchema('order', [ 'customer_id', 'ordered_at' ]),
@@ -166,12 +166,12 @@ class EdbtPostgresLoader(PostgresLoader):
             # ordered_at DESC
             IndexSchema('order_item', [ 'order_id' ]),
             IndexSchema('order_item', [ 'product_id' ]),
-            IndexSchema('review', [ 'product_id', 'customer_id' ], unique=True),
+            IndexSchema('review', [ 'product_id', 'customer_id' ], is_unique=True),
             IndexSchema('review', [ 'product_id', 'created_at' ]),
             # created_at DESC
             IndexSchema('review', [ 'customer_id', 'created_at' ]),
             # created_at DESC
-            IndexSchema('category', [ 'path' ], unique=True),
+            IndexSchema('category', [ 'path' ], is_unique=True),
             IndexSchema('has_category', [ 'category_id' ]),
             IndexSchema('has_interest', [ 'category_id' ]),
             IndexSchema('follows', [ 'to_id' ]),

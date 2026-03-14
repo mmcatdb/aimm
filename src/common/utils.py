@@ -1,4 +1,6 @@
-from typing import Any, Generic, Literal, Protocol, TypeVar
+import sys
+import time
+from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
 import dataclasses, json
 from contextlib import contextmanager
 import textwrap
@@ -23,16 +25,23 @@ def auto_close(closeable: Closeable):
     try:
         yield closeable
     except Exception as e:
-        exit_with_error(e)
+        exit_with_exception(e)
     finally:
         closeable.close()
 
-def exit_with_error(e: Exception):
-    """Use this in each top-level script in a try-catch block to print terminal exceptions."""
+def exit_with_exception(e: Exception) -> NoReturn:
+    """Use this in each top-level script in a catch block to print unexpected terminal exceptions."""
     import sys
     import traceback
 
     traceback.print_exc()
+    sys.exit(1)
+
+def exit_with_error(error: str) -> NoReturn:
+    """Use this to exit whenever a terminal yet expected error is encountered."""
+    import sys
+
+    print(f'Error: {error}', file=sys.stderr)
     sys.exit(1)
 
 def pretty_print_int(value: int) -> str:
@@ -131,3 +140,37 @@ def trim_to_block(text: str) -> str:
     text = textwrap.dedent(text)
 
     return text
+
+class ProgressTracker:
+    def __init__(self, prefix='', start_interval=1000, growth=1.5):
+        self.prefix = prefix
+        self.count = 0
+        self.next_report = start_interval
+        self.interval = start_interval
+        self.growth = growth
+        self.start_time = time.time()
+
+    def print_prefix(self):
+        sys.stdout.write(self.prefix)
+        sys.stdout.flush()
+
+    def track(self, amount = 1):
+        self.count += amount
+
+        if self.count >= self.next_report:
+            self._print()
+            self.interval = int(self.interval * self.growth)
+            self.next_report += self.interval
+
+    def finish(self):
+        self._print()
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+
+    def _print(self):
+        elapsed = time.time() - self.start_time
+        rate = self.count / elapsed if elapsed > 0 else 0
+        message = f'{self.prefix}{self.count:,} rows ({rate:,.0f} rows/s)'
+        sys.stdout.write('\r' + message)
+        sys.stdout.flush()
+

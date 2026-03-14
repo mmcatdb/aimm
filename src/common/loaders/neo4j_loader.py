@@ -1,13 +1,11 @@
 from abc import ABC, abstractmethod
 import os
-from common.config import Config
 from common.daos.neo4j_dao import Neo4jDAO
 from common.drivers import Neo4jDriver
 
 class Neo4jLoader(ABC):
     """A class to load data into a Neo4j database."""
-    def __init__(self, config: Config, driver: Neo4jDriver):
-        self._config = config
+    def __init__(self, driver: Neo4jDriver):
         self._driver = driver
         self._dao = Neo4jDAO(driver)
 
@@ -23,7 +21,7 @@ class Neo4jLoader(ABC):
 
     @abstractmethod
     def _define_constraints(self) -> list[str]:
-        """Creates unique constraints for primary keys to speed up data loading."""
+        """Creates primary keys, indexes etc. to speed up data loading."""
         pass
 
     @abstractmethod
@@ -37,34 +35,36 @@ class Neo4jLoader(ABC):
         print(f'Connecting to Neo4j at: {self._driver.config.host}:{self._driver.port}')
         print('-' * len(title) + '\n')
 
+        self._import_directory = import_directory
+
         try:
             self._driver.verify()
             print('Successfully connected to Neo4j.')
         except Exception as e:
             raise Exception(f'Failed to connect to Neo4j: {e}')
 
-        self._check_files(import_directory)
+        self._check_files()
 
         if do_reset:
-            print('Resetting database...')
+            print('\nResetting database...')
             self._dao.reset_database()
             print('Database reset completed.')
 
-        print('Creating constraints...')
+        print('\nCreating constraints...')
         for constraint in self._define_constraints():
             self._dao.execute(constraint)
         print('Constraints created.')
 
-        print('Loading data...')
+        print('\nLoading data...')
         self._load_data()
         print('Data loading completed.')
 
-    def _check_files(self, import_directory: str):
-        """Verify files exist in the import directory."""
-        print(f'Using .tbl files directly from the import directory: "{import_directory}"')
+    def _check_files(self):
+        """Verify that all files exist in the import directory."""
+        print(f'Using .tbl files directly from the import directory: "{self._import_directory}"')
         for kind in self._get_kinds():
             filename = kind + '.tbl'
-            filepath = os.path.join(import_directory, filename)
+            filepath = os.path.join(self._import_directory, filename)
             if not os.path.isfile(filepath):
                 raise Exception(f'Required file not found in import directory: {filepath}')
 

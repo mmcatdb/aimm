@@ -6,23 +6,24 @@ from common.utils import auto_close
 from datasets.databases import get_available_dataset_names
 
 def main(rawArgs: list[str] | None = None):
-    parser = argparse.ArgumentParser(description='Neo4j QPP-Net')
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    parser = argparse.ArgumentParser(description='Load data into database.')
+    subparsers = parser.add_subparsers(dest='database', required=True)
 
-    common_args(subparsers.add_parser(DriverType.POSTGRES.value, help='Load data into a Postgres database.'))
-    common_args(subparsers.add_parser(DriverType.NEO4J.value, help='Load data into a Neo4j database.'))
+    common_args(subparsers.add_parser(DriverType.POSTGRES.value))
+    common_args(subparsers.add_parser(DriverType.MONGO.value))
+    common_args(subparsers.add_parser(DriverType.NEO4J.value))
 
     args = parser.parse_args(rawArgs)
-    driver = DriverType(args.command)
+    type = DriverType(args.database)
 
     ctx = Context()
     ctx.setup(args)
 
-    if driver == DriverType.POSTGRES:
+    if type == DriverType.POSTGRES:
         populate_postgres(ctx)
-    elif driver == DriverType.MONGO:
+    elif type == DriverType.MONGO:
         populate_mongo(ctx)
-    elif driver == DriverType.NEO4J:
+    elif type == DriverType.NEO4J:
         populate_neo4j(ctx)
 
 def common_args(parser: argparse.ArgumentParser):
@@ -42,7 +43,7 @@ class Context:
 def populate_postgres(ctx: Context):
     from common.daos.postgres_dao import PostgresDAO
 
-    # Postgres databases have to be created manually.
+    # Postgres databases have to be created explicitly, so let's do that.
     rootDriver = ctx.dbs.get_for_database(ctx.config.postgres.root_database, PostgresDriver)
     with auto_close(rootDriver):
         rootDao = PostgresDAO(rootDriver)
@@ -52,27 +53,43 @@ def populate_postgres(ctx: Context):
     with auto_close(driver):
         if ctx.dataset == DatasetName.EDBT:
             from datasets.edbt.postgres_loader import EdbtPostgresLoader
-            loader = EdbtPostgresLoader(ctx.config, driver)
+            loader = EdbtPostgresLoader(driver)
         elif ctx.dataset == DatasetName.TPCH:
             from datasets.tpch.postgres_loader import TpchPostgresLoader
-            loader = TpchPostgresLoader(ctx.config, driver)
+            loader = TpchPostgresLoader(driver)
         else:
             raise ValueError(f'Unsupported dataset: {ctx.dataset}')
 
         loader.run(ctx.import_directory, ctx.do_reset)
 
 def populate_mongo(ctx: Context):
-    raise NotImplementedError('MongoDB loading is not implemented yet.')
+    # Mongo databases are created automatically by writing in them. So, nothing to do here.
+
+    driver = ctx.dbs.get_for_database(ctx.database_name, MongoDriver)
+    with auto_close(driver):
+        if ctx.dataset == DatasetName.EDBT:
+            raise NotImplementedError('MongoDB loading is not implemented yet for EDBT.')
+            # from datasets.edbt.mongo_loader import EdbtMongoLoader
+            # loader = EdbtMongoLoader(driver)
+        elif ctx.dataset == DatasetName.TPCH:
+            from datasets.tpch.mongo_loader import TpchMongoLoader
+            loader = TpchMongoLoader(driver)
+        else:
+            raise ValueError(f'Unsupported dataset: {ctx.dataset}')
+
+        loader.run(ctx.import_directory, ctx.do_reset)
 
 def populate_neo4j(ctx: Context):
+    # Neo4j databases have to run in separate containers (the free edition doesn't support multiple databases). So, nothing to do here.
+
     driver = ctx.dbs.get_for_database(ctx.database_name, Neo4jDriver)
     with auto_close(driver):
         if ctx.dataset == DatasetName.EDBT:
             from datasets.edbt.neo4j_loader import EdbtNeo4jLoader
-            loader = EdbtNeo4jLoader(ctx.config, driver)
+            loader = EdbtNeo4jLoader(driver)
         elif ctx.dataset == DatasetName.TPCH:
             from datasets.tpch.neo4j_loader import TpchNeo4jLoader
-            loader = TpchNeo4jLoader(ctx.config, driver)
+            loader = TpchNeo4jLoader(driver)
         else:
             raise ValueError(f'Unsupported dataset: {ctx.dataset}')
 

@@ -1,14 +1,12 @@
 import csv
 from abc import ABC, abstractmethod
 import os
-from common.config import Config
 from common.daos.postgres_dao import PostgresDAO, ColumnSchema, IndexSchema
 from common.drivers import PostgresDriver
 
 class PostgresLoader(ABC):
     """A class to load data into a Postgres database."""
-    def __init__(self, config: Config, driver: PostgresDriver):
-        self._config = config
+    def __init__(self, driver: PostgresDriver):
         self._driver = driver
         self._dao = PostgresDAO(driver)
 
@@ -33,53 +31,45 @@ class PostgresLoader(ABC):
         print(f'Connecting to Postgres at: {self._driver.config.host}:{self._driver.config.port}')
         print('-' * len(title) + '\n')
 
-        self._check_files(import_directory)
+        self._import_directory = import_directory
+        self._check_files()
 
         if do_reset:
             print('Resetting database...')
             self._dao.reset_database()
             print('Database reset completed.')
 
-        print('Creating schema...')
-        schemas = self._get_schemas()
-        for entity, schema in schemas.items():
+        print('\nCreating schema...')
+        for entity, schema in self._get_schemas().items():
             self._dao.create_kind_schema(entity, schema)
         for index in self._get_indexes():
             self._dao.create_index(index)
         print('Schema created.')
 
-        print('Loading data...')
-        for entity, schema in schemas.items():
-            self._populate_table(import_directory, entity, schema)
+        print('\nLoading data...')
+        for entity, schema in self._get_schemas().items():
+            self._populate_table(entity, schema)
         print('Data loading completed.')
 
-    def _check_files(self, import_directory: str):
-        """Verify files exist in the import directory."""
+    def _check_files(self):
+        """Verify that all files exist in the import directory."""
         for kind in self._get_schemas().keys():
             filename = kind + '.tbl'
-            filepath = os.path.join(import_directory, filename)
+            filepath = os.path.join(self._import_directory, filename)
             if not os.path.isfile(filepath):
                 raise Exception(f'Required file not found in import directory: {filepath}')
 
-    def _populate_table(self, import_directory: str, entity: str, schema: list[ColumnSchema]):
+    def _populate_table(self, entity: str, schema: list[ColumnSchema]):
+        print(f'Loading table "{entity}"...')
+
         filename = entity + '.tbl'
-        path = os.path.join(import_directory, filename)
+        path = os.path.join(self._import_directory, filename)
 
         with open(path, 'r') as file:
             reader = csv.reader(file, delimiter='|')
             for row in reader:
-                # Skip empty or malformed rows
-                if not row or all(col == '' for col in row):
-                    continue
-
                 data = {}
                 for i, column in enumerate(schema):
-                    if i < len(row) and column.name:
-                        data[column.name] = row[i]
+                    data[column.name] = row[i]
 
-                # Drop potential empty key from final delimiter
-                data = {k: v for k, v in data.items() if k}
-                if data:
-                    self._dao.insert(entity, data)
-
-        print(f'Loaded data into table "{entity}".')
+                self._dao.insert(entity, data)

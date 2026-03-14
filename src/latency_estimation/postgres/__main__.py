@@ -1,9 +1,8 @@
 import os
-import sys
 import numpy as np
 import argparse
 import json
-from common.utils import JsonEncoder, auto_close
+from common.utils import JsonEncoder, auto_close, exit_with_error
 from common.database import TestQuery
 from latency_estimation.common import format_latency, load_queries, parse_queries, print_dataset_summary, truncate_query
 from latency_estimation.train_config import TrainConfig
@@ -224,8 +223,7 @@ def estimate_run(args: argparse.Namespace, ctx: PostgresContext):
         if len(results) == 1:
             query, latency, plan = results[0]
             if 'error' in plan:
-                print(f'Error: {plan["error"]}')
-                sys.exit(1)
+                exit_with_error(plan["error"])
 
             print(f'Query: {query.strip()}')
             print(f'Estimated latency: {format_latency(latency)}')

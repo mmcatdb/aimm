@@ -3,7 +3,7 @@ from common.loaders.neo4j_loader import Neo4jLoader
 
 class TpchNeo4jLoader(Neo4jLoader):
     @override
-    def name(self) -> str:
+    def name(self):
         return 'TPC-H'
 
     @override

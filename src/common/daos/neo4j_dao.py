@@ -33,7 +33,7 @@ class Neo4jDAO(BaseDAO):
         self.execute(query, {'props': data})
 
     @override
-    def drop_kinds(self, populate_order: list[str]) -> None:
+    def drop_kinds(self, populate_order: list[str]):
         for entity in reversed(populate_order):
             # This is not ideal but what can we do. At least this forces strict naming conventions.
             if entity.isupper():
@@ -48,7 +48,7 @@ class Neo4jDAO(BaseDAO):
                 print(f'Skipping delete for {entity}: {e}')
 
     @override
-    def reset_database(self) -> None:
+    def reset_database(self):
         existing_constraints = self._get_constraint_names()
         constraints = [f'DROP CONSTRAINT {name} IF EXISTS' for name in existing_constraints]
         for constraint in constraints:

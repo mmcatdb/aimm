@@ -7,6 +7,7 @@ from typing import TypeVar
 import torch
 import numpy as np
 from latency_estimation.abstract import BaseDataset
+from common.utils import exit_with_error
 
 class NnOperator:
     """Neural network node operator."""
@@ -22,7 +23,7 @@ class NnOperator:
 TDataset = TypeVar('TDataset', bound = BaseDataset)
 
 def load_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset:
-    if (path is None):
+    if path is None:
         dataset = fallback()
         print(f'Collected {len(dataset)} query plans')
         return dataset
@@ -54,20 +55,17 @@ def load_queries(args: Namespace, parser: Callable[[str], list[str]]) -> list[st
         return [args.query]
 
     if not args.file:
-        print('Error: Either --query or --file must be specified.', file=sys.stderr)
-        sys.exit(1)
+        exit_with_error('Either --query or --file must be specified.')
 
     try:
         with open(args.file, 'r') as file:
             content = file.read()
     except FileNotFoundError:
-        print(f'Error: File not found: {args.file}', file=sys.stderr)
-        sys.exit(1)
+        exit_with_error(f'File not found: {args.file}. Specify a valid --file path.')
 
     queries = parser(content)
     if not queries:
-        print(f'Error: No queries found in {args.file}', file=sys.stderr)
-        sys.exit(1)
+        exit_with_error(f'No queries found in {args.file}.')
 
     return queries
 
@@ -85,8 +83,7 @@ def load_checkpoint_file(path: str, device: str) -> dict:
     try:
         return torch.load(path, map_location=device, weights_only=False)
     except FileNotFoundError:
-        print(f'Error: Model checkpoint not found at {path}. Specify a valid --checkpoint path.', file=sys.stderr)
-        sys.exit(1)
+        exit_with_error(f'Model checkpoint not found at {path}. Specify a valid --checkpoint path.')
     except Exception as e:
         print(f'Error: Could not load checkpoint from {path}: {e}', file=sys.stderr)
         raise e

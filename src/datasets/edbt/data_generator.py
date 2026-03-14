@@ -14,7 +14,7 @@ class EdbtDataGenerator(DataGenerator):
     Kinds: person, customer, seller, product, category, has_category, has_interest, follows, order, order_item, review.
     """
     @override
-    def name(self) -> str:
+    def name(self):
         """Returns the name of the generator (for display purposes)."""
         return 'EDBT'
 
