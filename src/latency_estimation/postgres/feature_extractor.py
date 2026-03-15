@@ -12,6 +12,7 @@ class FeatureExtractor:
     Extracts and encodes features from query plan operators.
     Maintains vocabularies for categorical features across the dataset.
     """
+
     def __init__(self):
         # Vocabularies for one-hot encoding
         self.op_type_vocab = set()
@@ -158,8 +159,8 @@ class FeatureExtractor:
         vocab_list = sorted(list(vocabulary))
         vector = np.zeros(len(vocab_list))
         if value in vocab_list:
-            idx = vocab_list.index(value)
-            vector[idx] = 1.0
+            index = vocab_list.index(value)
+            vector[index] = 1.0
         return vector
 
     def __extract_common_features(self, node: dict) -> np.ndarray:
@@ -202,7 +203,6 @@ class FeatureExtractor:
             features.extend(index_vec)
         else:
             features.extend(np.zeros(len(self.index_name_vocab)))
-
 
         # Scan direction (bool) for index scans
         scan_direction = 1.0 if node.get('Scan Direction', 'Forward') == 'Forward' else 0.0
@@ -286,7 +286,6 @@ class FeatureExtractor:
             features.extend(np.zeros(len(self.agg_operator_vocab)))
 
         return np.array(features)
-
 
     def __extract_sort_features(self, node: dict) -> np.ndarray:
         """Extract features specific to sort operators."""

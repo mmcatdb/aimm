@@ -3,8 +3,7 @@ import torch
 import numpy as np
 from tabulate import tabulate
 import matplotlib.pyplot as plt
-from dataclasses import dataclass, asdict
-import json
+from dataclasses import dataclass
 from common.utils import EPSILON
 from common.database import TestQuery
 from latency_estimation.postgres.plan_extractor import PlanExtractor
@@ -16,7 +15,7 @@ class ModelEvaluator:
         self.extractor = extractor
         self.model = model
 
-    def evaluate_multiple_queries(self, queries: list[TestQuery], measure_actual: bool, num_runs: int) -> list['Result']:
+    def evaluate_multiple_queries(self, queries: list[TestQuery[str]], measure_actual: bool, num_runs: int) -> list['Result']:
         """
         Evaluate multiple queries.
 
@@ -42,7 +41,7 @@ class ModelEvaluator:
 
         return results
 
-    def evaluate_query(self, query: TestQuery, measure_actual: bool, num_runs: int) -> 'Result':
+    def evaluate_query(self, query: TestQuery[str], measure_actual: bool, num_runs: int) -> 'Result':
         """
         Comprehensive evaluation of a single query.
         Args:

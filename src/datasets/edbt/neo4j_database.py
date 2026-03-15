@@ -1,9 +1,9 @@
 from typing_extensions import override
+from common.config import DatasetName
 from common.database import Database
 from common.drivers import DriverType
-from common.driver_provider import DatasetName
 
-class EdbtNeo4jDatabase(Database):
+class EdbtNeo4jDatabase(Database[str]):
     def __init__(self):
         super().__init__(DatasetName.EDBT, DriverType.NEO4J)
 

@@ -9,7 +9,7 @@ Key differences from PostgreSQL implementation:
 """
 import torch
 import torch.nn as nn
-from latency_estimation.train_config import ModelConfig
+from latency_estimation.config import ModelConfig
 
 class Estimation:
     def __init__(self, data: torch.Tensor, latency: torch.Tensor | None):

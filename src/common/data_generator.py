@@ -44,9 +44,8 @@ class DataGenerator(ABC):
         print(f'Data generation completed. Data saved to: {self._import_directory}')
 
     def _open_csv(self, kind: str, header: list[str]):
-        print('Creating', kind + '.tbl')
-        filename = kind + '.tbl'
-        path = os.path.join(self._import_directory, filename)
+        print('Creating', kind)
+        path = os.path.join(self._import_directory, kind + '.tbl')
         f = open(path, 'w', newline='', encoding='utf-8')
         w = csv.writer(f, delimiter = '|')
         # The header is skipped because loaders do not expect it.

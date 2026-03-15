@@ -1,7 +1,7 @@
 from typing_extensions import deprecated
+from common.config import DatasetName
 from common.database import Database
 from common.drivers import DriverType
-from common.driver_provider import DatasetName
 
 @deprecated('Use some unified database provider')
 def find_database(dataset: DatasetName, type: DriverType) -> Database:
@@ -16,6 +16,9 @@ def find_database(dataset: DatasetName, type: DriverType) -> Database:
         if type == DriverType.POSTGRES:
             from datasets.tpch.postgres_database import TpchPostgresDatabase
             return TpchPostgresDatabase()
+        if type == DriverType.MONGO:
+            from datasets.tpch.mongo_database import TpchMongoDatabase
+            return TpchMongoDatabase()
         if type == DriverType.NEO4J:
             from datasets.tpch.neo4j_database import TpchNeo4jDatabase
             return TpchNeo4jDatabase()
@@ -24,3 +27,6 @@ def find_database(dataset: DatasetName, type: DriverType) -> Database:
 
 def get_available_dataset_names() -> list[str]:
     return [dataset.value for dataset in DatasetName]
+
+# FIXME this
+TRAIN_DATASET = DatasetName.TPCH

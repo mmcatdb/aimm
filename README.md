@@ -51,6 +51,14 @@ python -m scripts.populate_db mongo tpch
 python -m scripts.populate_db neo4j tpch
 ```
 
+## Training
+
+- Currently, only TPC-H is supported for training.
+```bash
+python -m latency_estimation.mongo train
+python -m latency_estimation.mongo test
+```
+
 ## Experiments
 
 - Explain query plan:
@@ -60,5 +68,5 @@ python -m scripts.show_plan postgres tpch "UPDATE orders SET o_totalprice = 0 WH
 
 ```bash
 python -m experiments check
-python -m experiments evaluate -c data/checkpoints/tpch_neo4j_final.pt -d neo4j
+python -m experiments test -c data/checkpoints/tpch_neo4j_final.pt -d neo4j
 ```

@@ -1,210 +1,71 @@
 import torch
 import torch.nn as nn
-from typing import Dict, List, Any
-from neural_units import GenericUnit
-from feature_extractor import FeatureExtractor
-
+from latency_estimation.common import NnOperator
+from latency_estimation.config import ModelConfig
+from latency_estimation.mongo.neural_units import create_neural_unit
+from latency_estimation.mongo.feature_extractor import FeatureExtractor
+from latency_estimation.exceptions import NeuralUnitNotFoundException
 
 class PlanStructuredNetwork(nn.Module):
-    """
-    Plan-structured neural network for MongoDB QPP.
-    """
+    """Plan-structured neural network for MongoDB QPP."""
 
-    def __init__(self, feature_extractor: FeatureExtractor,
-                 hidden_dim: int = 128, num_layers: int = 3,
-                 data_vec_dim: int = 32):
+    def __init__(self, config: ModelConfig, feature_extractor: FeatureExtractor):
         super().__init__()
+
+        self.config = config
         self.feature_extractor = feature_extractor
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-        self.data_vec_dim = data_vec_dim
         self.units = nn.ModuleDict()
-        self.operator_info = {}
-
-    # ------------------------------------------------------------------
-    # Helpers for navigating both Classic and SBE plan trees
-    # ------------------------------------------------------------------
+        """One neural unit for each operator type"""
+        self.operators: dict[str, NnOperator] = {}
 
     @staticmethod
-    def get_children(node: Dict) -> List[Dict]:
-        """Get child stages of a plan node (handles both inputStage/inputStages)."""
-        children = []
-        if "inputStage" in node:
-            children.append(node["inputStage"])
-        if "inputStages" in node:
-            children.extend(node["inputStages"])
-        return children
+    def from_plans(config: ModelConfig, feature_extractor: FeatureExtractor, plans: list[dict]) -> 'PlanStructuredNetwork':
+        """Create neural units by analyzing all operator types and their *number of children* in the training plans."""
+        model = PlanStructuredNetwork(config, feature_extractor)
+
+        for operator in OperatorCollector.run(feature_extractor, plans):
+            model.__add_unit_if_not_exists(operator)
+
+        return model
 
     @staticmethod
-    def extract_plan_tree(explain_output: Dict) -> Dict:
-        """
-        Extract the plan tree from an explain output.
-        Handles both explainVersion 1 (classic) and 2 (SBE / aggregation).
-        """
-        version = explain_output.get("explainVersion", "1")
+    def from_checkpoint(checkpoint: dict, device: str) -> 'PlanStructuredNetwork':
+        """Load model from checkpoint, including neural units."""
+        config: ModelConfig = checkpoint['config']
+        feature_extractor: FeatureExtractor = checkpoint['feature_extractor']
 
-        if version == "2":
-            # SBE or aggregate: may have stages[] or queryPlanner.winningPlan.queryPlan
-            if "stages" in explain_output:
-                # Aggregate pipeline: get the cursor's queryPlan
-                cursor_stage = explain_output["stages"][0]
-                if "$cursor" in cursor_stage:
-                    wp = cursor_stage["$cursor"]["queryPlanner"]["winningPlan"]
-                    return wp.get("queryPlan", wp)
-            wp = explain_output.get("queryPlanner", {}).get("winningPlan", {})
-            return wp.get("queryPlan", wp)
-        else:
-            # Classic engine
-            wp = explain_output.get("queryPlanner", {}).get("winningPlan", {})
-            return wp
+        model = PlanStructuredNetwork(config, feature_extractor)
 
-    @staticmethod
-    def extract_execution_tree(explain_output: Dict) -> Dict:
-        """
-        Extract the execution stats tree from an explain output (for training).
-        """
-        version = explain_output.get("explainVersion", "1")
+        operators: dict[str, NnOperator] = checkpoint['operators']
+        for operator in operators.values():
+            model.__add_unit_if_not_exists(operator)
 
-        if version == "2":
-            if "stages" in explain_output:
-                cursor_stage = explain_output["stages"][0]
-                if "$cursor" in cursor_stage:
-                    return cursor_stage["$cursor"]["executionStats"]["executionStages"]
-            return explain_output.get("executionStats", {}).get("executionStages", {})
-        else:
-            return explain_output.get("executionStats", {}).get("executionStages", {})
+        # Load trained weights
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.to(device)
+        model.eval()
 
-    @staticmethod
-    def get_collection_from_explain(explain_output: Dict) -> str:
-        """Extract collection name from explain output."""
-        version = explain_output.get("explainVersion", "1")
-        if version == "2":
-            if "stages" in explain_output:
-                cursor_stage = explain_output["stages"][0]
-                if "$cursor" in cursor_stage:
-                    ns = cursor_stage["$cursor"]["queryPlanner"].get("namespace", "")
-                    return ns.split(".")[-1] if "." in ns else ns
-        ns = explain_output.get("queryPlanner", {}).get("namespace", "")
-        return ns.split(".")[-1] if "." in ns else ns
+        return model
 
-    def _normalize_stage(self, stage: str) -> str:
-        """Normalize stage name for unit lookup."""
-        # Keep all stages distinct - no grouping needed for MongoDB
-        return stage
+    def to_checkpoint(self) -> dict:
+        """Serialization to a file-friendly dictionary."""
+        return {
+            'config': self.config,
+            'operators': self.operators,
+            'feature_extractor': self.feature_extractor,
+            # Learned parameters of the model.
+            'model_state_dict': self.state_dict(),
+        }
 
-    # ------------------------------------------------------------------
-    # Unit creation and management
-    # ------------------------------------------------------------------
+    def print_summary(self):
+        """Print a summary of the neural units in the model."""
+        print(f'Initialized {len(self.units)} neural units. Total parameters: {self.count_parameters():,}.')
 
-    def initialize_units_from_plans(self, plans: List[Dict]):
-        """
-        Scan all plan trees to discover operator types and create neural units.
-        plans: list of explain outputs (full explain dicts).
-        """
-        type_children_pairs = set()
+    def count_parameters(self) -> int:
+        """Count total number of parameters in the model."""
+        return sum(p.numel() for p in self.parameters())
 
-        def collect(node):
-            stage = self._normalize_stage(node.get("stage", "UNKNOWN"))
-            children = self.get_children(node)
-            num_children = len(children)
-            type_children_pairs.add((stage, num_children))
-            for child in children:
-                collect(child)
-
-        for plan in plans:
-            tree = self.extract_plan_tree(plan)
-            collect(tree)
-
-        print(f"\nFound {len(type_children_pairs)} operator/children combinations:")
-        for stage, nc in sorted(type_children_pairs):
-            feat_dim = self.feature_extractor.get_feature_dim(stage)
-            print(f"  {stage} (children={nc}): feature_dim={feat_dim}")
-            op_key = f"{stage}_{nc}"
-            self.operator_info[op_key] = {
-                "node_type": stage,
-                "feature_dim": feat_dim,
-                "num_children": nc,
-            }
-            self._create_unit(stage, feat_dim, nc)
-
-        total_params = sum(p.numel() for p in self.parameters())
-        print(f"\nInitialized {len(self.units)} neural units, {total_params:,} parameters")
-
-    def initialize_units_from_operator_info(self, operator_info: Dict):
-        """Recreate units from saved operator info (for loading checkpoints)."""
-        for op_key, info in operator_info.items():
-            self._create_unit(info["node_type"], info["feature_dim"], info["num_children"])
-        self.operator_info = dict(operator_info)
-
-    def _create_unit(self, stage: str, feature_dim: int, num_children: int = 0):
-        op_key = f"{stage}_{num_children}"
-        if op_key in self.units:
-            return self.units[op_key]
-        unit = GenericUnit(
-            input_dim=feature_dim,
-            num_children=num_children,
-            hidden_dim=self.hidden_dim,
-            num_layers=self.num_layers,
-            data_vec_dim=self.data_vec_dim,
-        )
-        self.units[op_key] = unit
-        return unit
-
-    def get_unit(self, stage: str, num_children: int) -> nn.Module:
-        op_key = f"{stage}_{num_children}"
-        if op_key not in self.units:
-            # Dynamic creation for unseen combinations
-            feat_dim = self.feature_extractor.get_feature_dim(stage)
-            return self._create_unit(stage, feat_dim, num_children)
-        return self.units[op_key]
-
-    def get_operator_info(self) -> Dict:
-        return dict(self.operator_info)
-
-    # ------------------------------------------------------------------
-    # Forward pass
-    # ------------------------------------------------------------------
-
-    def process_node(self, node: Dict, collection_name: str,
-                     cache: Dict = None) -> torch.Tensor:
-        """
-        Recursively process a plan tree node bottom-up.
-
-        Returns: tensor [1, 1 + data_vec_dim]  (latency + data vector)
-        """
-        if cache is None:
-            cache = {}
-
-        node_id = id(node)
-        if node_id in cache:
-            return cache[node_id]
-
-        stage = self._normalize_stage(node.get("stage", "UNKNOWN"))
-        children = self.get_children(node)
-        children_outputs = []
-        for child in children:
-            child_out = self.process_node(child, collection_name, cache)
-            children_outputs.append(child_out)
-
-        num_children = len(children_outputs)
-        unit = self.get_unit(stage, num_children)
-
-        # Extract features
-        features = self.feature_extractor.extract_features(node, collection_name)
-        device = next(self.parameters()).device
-        feat_tensor = torch.FloatTensor(features).unsqueeze(0).to(device)
-
-        if children_outputs:
-            children_concat = torch.cat(children_outputs, dim=1)
-            unit_input = torch.cat([feat_tensor, children_concat], dim=1)
-        else:
-            unit_input = feat_tensor
-
-        output = unit(unit_input)
-        cache[node_id] = output
-        return output
-
-    def forward(self, plan_tree: Dict, collection_name: str) -> torch.Tensor:
+    def forward(self, plan_tree: dict, collection_name: str) -> torch.Tensor:
         """
         Predict latency for a query plan.
 
@@ -214,13 +75,133 @@ class PlanStructuredNetwork(nn.Module):
 
         Returns: scalar predicted latency (ms)
         """
-        cache = {}
-        output = self.process_node(plan_tree, collection_name, cache)
+        cache: dict[int, torch.Tensor] = {}
+        output = self.__process_plan_node(plan_tree, collection_name, cache)
         return output[:, 0]  # latency
 
-    def get_all_node_predictions(self, plan_tree: Dict,
-                                 collection_name: str) -> Dict:
-        """Get predictions for all nodes (used in loss computation)."""
-        cache = {}
-        self.process_node(plan_tree, collection_name, cache)
-        return cache
+    def __process_plan_node(self, node: dict, collection_name: str, cache: dict[int, torch.Tensor]) -> torch.Tensor:
+        """
+        Recursively process a plan tree node bottom-up.
+
+        Returns: tensor [1, 1 + data_vec_dim]  (latency + data vector)
+        """
+        node_id = id(node)
+        if node_id in cache:
+            return cache[node_id]
+
+        child_outputs = []
+        for child in _get_node_children(node):
+            child_output = self.__process_plan_node(child, collection_name, cache)
+            # Extract data vector from child
+            child_outputs.append(child_output)
+
+        node_features = self.feature_extractor.extract_features(node, collection_name)
+        device = next(self.parameters()).device
+        node_features_tensor = torch.FloatTensor(node_features).unsqueeze(0).to(device)
+
+        type = node.get('stage', 'UNKNOWN')
+        operator = NnOperator(
+            type=type,
+            num_children=len(child_outputs),
+            feature_dim=self.feature_extractor.get_feature_dim(type),
+        )
+        unit = self.__get_unit(operator)
+
+        if child_outputs:
+            child_concat = torch.cat(child_outputs, dim=1)
+            unit_input = torch.cat([node_features_tensor, child_concat], dim=1)
+        else:
+            unit_input = node_features_tensor
+
+        output = unit(unit_input)
+
+        cache[node_id] = output
+
+        return output
+
+    def __get_unit(self, operator: NnOperator) -> nn.Module:
+        op_key = operator.key()
+        if op_key not in self.units:
+            # Potential fallback: could try to find the closest num_children.
+            # For now, we'll just error out.
+            raise NeuralUnitNotFoundException(operator)
+
+        # Operator consistency check - maybe not needed?
+        if op_key not in self.operators:
+            raise ValueError(f'Operator not found: {op_key}. Available operators: {list(self.operators.keys())}')
+        op_original = self.operators[op_key]
+        if op_original.feature_dim != operator.feature_dim:
+            raise ValueError(f'Feature dimension mismatch for operator {op_key}: expected {op_original.feature_dim}, got {operator.feature_dim}.')
+
+        return self.units[op_key]
+
+    def __add_unit_if_not_exists(self, operator: NnOperator):
+        """Creates a neural unit for a specific operator type (unless already exists)."""
+        op_key = operator.key()
+        if op_key in self.units:
+            return
+
+        self.units[op_key] = create_neural_unit(
+            op_type=operator.type,
+            input_dim=operator.feature_dim,
+            num_children=operator.num_children,
+            config=self.config,
+        )
+        self.operators[op_key] = operator
+
+class OperatorCollector():
+    """
+    - Assembles neural units into trees.
+    - Creates a neural network with structure isomorphic to a query plan.
+    - Each operator in the plan is replaced by its corresponding neural unit.
+    - The network recursively computes outputs bottom-up through the tree.
+    """
+    def __init__(self, feature_extractor: FeatureExtractor):
+        self.feature_extractor = feature_extractor
+
+    @staticmethod
+    def run(feature_extractor: FeatureExtractor, plans: list[dict]) -> list[NnOperator]:
+        collector = OperatorCollector(feature_extractor)
+        return collector.__collect_unique_operators(plans)
+
+    def __collect_unique_operators(self, plans: list[dict]) -> list[NnOperator]:
+        """Collect all unique operators from the plans."""
+        # Pairs of (operator_type, num_children).
+        operator_pairs = set[tuple[str, int]]()
+        for plan in plans:
+            operator_pairs.update(self.__collect_operator_pairs(plan))
+
+        # Sort pairs for consistent ordering.
+        sorted_pairs = sorted(list(operator_pairs))
+
+        print(f'\nFound {len(sorted_pairs)} operator/children combinations:')
+        operators = list[NnOperator]()
+
+        for op_type, num_children in sorted(operator_pairs):
+            feature_dim = self.feature_extractor.get_feature_dim(op_type)
+            print(f'  - {op_type} (children: {num_children}, feature_dim: {feature_dim})')
+            operators.append(NnOperator(op_type, num_children, feature_dim))
+
+        return operators
+
+    def __collect_operator_pairs(self, node: dict) -> set[tuple[str, int]]:
+        """Recursively collect operator types and their children counts."""
+        output = set[tuple[str, int]]()
+
+        op_type = node.get('stage', 'UNKNOWN')
+        children = _get_node_children(node)
+        output.add((op_type, len(children)))
+
+        for child in children:
+            output.update(self.__collect_operator_pairs(child))
+
+        return output
+
+def _get_node_children(node: dict) -> list[dict]:
+    """Get child stages of a plan node (handles both inputStage/inputStages)."""
+    children = []
+    if 'inputStage' in node:
+        children.append(node['inputStage'])
+    if 'inputStages' in node:
+        children.extend(node['inputStages'])
+    return children

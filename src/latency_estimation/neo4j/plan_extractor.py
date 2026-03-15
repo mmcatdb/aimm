@@ -4,6 +4,7 @@ import numpy as np
 from common.database import Database
 from common.drivers import Neo4jDriver, cypher
 from latency_estimation.abstract import BaseDataset
+from common.utils import ProgressTracker
 
 class PlanExtractor:
     """
@@ -13,54 +14,45 @@ class PlanExtractor:
     - Parsing the plan structure
     - Recording ground truth latencies
     """
-    def __init__(self, driver: Neo4jDriver, database: Database):
+    def __init__(self, driver: Neo4jDriver, database: Database[str]):
         self.driver = driver
         self.database = database
 
-    def collect_training_dataset(self, num_queries: int, num_runs_per_query: int, show_details: bool = False) -> BaseDataset:
+    def collect_training_dataset(self, num_queries: int, num_runs: int, show_details: bool = False) -> BaseDataset[str]:
         """
         Collect a workload of query plans and execution times.
         Args:
             num_queries: Total number of queries to generate
-            num_runs_per_query: Number of executions per query for averaging
+            num_runs: Number of executions per query for averaging
         """
         queries = self.database.get_train_queries(num_queries)
 
-        print(f'Collecting {len(queries)} query plans...')
-        print(f'Each query will be executed {num_runs_per_query} times for averaging.\n')
+        progress = ProgressTracker.limited(len(queries))
+        progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
 
         plans = []
         execution_times = []
 
         for i, query in enumerate(queries):
-            if i % 50 == 0:
-                print(f'Progress: {i}/{len(queries)} ({100 * i // len(queries)}%)')
-
             try:
                 # Get plan and execution time
-                plan, execution_time = self.__explain_plan_and_measure(query, num_runs_per_query, show_details=show_details)
+                plan, execution_time = self.__explain_plan_and_measure(query, num_runs, show_details=show_details)
 
                 plans.append(plan)
                 execution_times.append(execution_time)
-
-                if i % 100 == 0 and i > 0:
-                    print(f'Extracted {i} / {len(queries)} plans...')
+                progress.track()
 
             except Exception as e:
                 print(f'\nError executing query {i}: {e}')
                 print(f'Query preview: {query[:100]}...\n')
                 continue
 
-        # TODO
-        # print(f'\n{"=" * 60}')
-        # print(f'Workload collection complete!')
-        # print(f'  Total queries: {len(queries)}')
-        # print(f'  Average execution time: {np.mean(execution_times):.4f}s')
-        # print(f'  Min/Max execution time: {np.min(execution_times):.4f}s / {np.max(execution_times):.4f}s')
-        # print(f'{"=" * 60}\n')
+        progress.finish()
 
-        print(f'\nCollected {len(plans)} query plans.')
-        return BaseDataset(queries, plans, execution_times)
+        dataset = BaseDataset(queries, plans, execution_times)
+
+        print(f'\nCollected {len(dataset)} query plans.')
+        return dataset
 
     def __explain_plan_and_measure(self, query: str, num_runs: int, show_details: bool = False) -> tuple[dict, float]:
         """

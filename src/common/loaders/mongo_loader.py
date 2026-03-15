@@ -1,12 +1,12 @@
 import csv
 from abc import ABC, abstractmethod
-from datetime import datetime
+import datetime
 from enum import Enum
 import json
 import os
+from pymongo import ASCENDING
 from common.utils import ProgressTracker
-from common.daos.mongo_dao import MongoDAO, IndexSchema
-from common.daos.postgres_dao import ColumnSchema
+from common.loaders.postgres_loader import ColumnSchema
 from common.drivers import MongoDriver
 import re
 
@@ -14,7 +14,6 @@ class MongoLoader(ABC):
     """A class to load data into a Mongo database."""
     def __init__(self, driver: MongoDriver):
         self._driver = driver
-        self._dao = MongoDAO(driver)
 
     @abstractmethod
     def name(self) -> str:
@@ -27,7 +26,7 @@ class MongoLoader(ABC):
         pass
 
     @abstractmethod
-    def _get_indexes(self) -> list[IndexSchema]:
+    def _get_indexes(self) -> list['IndexSchema']:
         """Returns the list of indexes to be created."""
         pass
 
@@ -42,29 +41,61 @@ class MongoLoader(ABC):
 
         if do_reset:
             print('\nResetting database...')
-            self._dao.reset_database()
+            self.__reset_database()
             print('Database reset completed.')
 
         print('\nCreating constraints...')
         for index in self._get_indexes():
-            self._dao.create_index(index)
+            self.__create_index(index)
         # TODO some other indexes?
         print('Constraints created.')
 
         print('\nLoading data...')
         for schema in self._get_schemas():
-            self._populate_collection(schema)
+            self.__populate_kind(schema)
         print('Data loading completed.')
 
-    def _populate_collection(self, schema: 'DocumentSchema'):
+    def __reset_database(self):
+        database = self._driver.database()
+        collection_names = database.list_collection_names()
+        for entity in reversed(collection_names):
+            try:
+                database.drop_collection(entity)
+                print(f'Collection "{entity}" has been dropped in MongoDB.')
+            except Exception as e:
+                print(f'Skipping delete for "{entity}": {e}')
+
+    def __create_index(self, index: 'IndexSchema'):
+        """The keys can be nested, e.g., `user.address.street`."""
+        collection = self._driver.collection(index.kind)
+        # The direction shouldn't matter. ASCENDING is the default.
+        keys = [(key, ASCENDING) for key in index.keys]
+
+        unique = 'unique ' if index.is_unique else ''
+        message = f'{unique}index on "{index.keys}" for collection "{index.kind}"'
+
+        try:
+            collection.create_index(keys, unique=index.is_unique)
+            print(f'Created {message}')
+        except Exception as e:
+            print(f'Could not create {message}: {e}')
+
+    def __populate_kind(self, schema: 'DocumentSchema'):
         collection_name = schema.source.kind
-        print(f'Loading collection "{collection_name}"...')
+        collection = self._driver.collection(collection_name)
+        rows = self._cache[schema.source.kind].get_all()
 
-        for row in self._cache[schema.source.kind].get_all():
-            document = self._create_mongo_document(schema, row)
-            self._dao.insert(collection_name, document)
+        progress = ProgressTracker.limited(len(rows))
+        progress.start(f'Loading collection "{collection_name}"... ')
 
-    def _create_mongo_document(self, schema: 'DocumentSchema', row: 'CsvRow') -> dict:
+        for row in rows:
+            document = self.__create_mongo_document(schema, row)
+            collection.insert_one(document)
+            progress.track()
+
+        progress.finish()
+
+    def __create_mongo_document(self, schema: 'DocumentSchema', row: 'CsvRow') -> dict:
         output = {}
 
         for key, property in schema.properties.items():
@@ -79,10 +110,10 @@ class MongoLoader(ABC):
 
             if child.is_array:
                 child_rows = table.get_non_unique(child.child_join, parent_index_key)
-                child_value = [self._create_mongo_document(child.schema, child_row) for child_row in child_rows]
+                child_value = [self.__create_mongo_document(child.schema, child_row) for child_row in child_rows]
             else:
                 child_row = table.get_unique(child.child_join, parent_index_key)
-                child_value = self._create_mongo_document(child.schema, child_row)
+                child_value = self.__create_mongo_document(child.schema, child_row)
 
             output[key] = child_value
 
@@ -98,10 +129,9 @@ class MongoLoader(ABC):
         print(f'Using .tbl files directly from the import directory: "{self._import_directory}"\n')
 
         for kind in self._cache.values():
-            filename = kind.schema.kind + '.tbl'
-            filepath = os.path.join(self._import_directory, filename)
-            if not os.path.isfile(filepath):
-                raise Exception(f'Required file not found in import directory: {filepath}')
+            path = os.path.join(self._import_directory, kind.schema.kind + '.tbl')
+            if not os.path.isfile(path):
+                raise Exception(f'Required file not found in import directory: {path}')
 
         # Load all kinds. The order doesn't matter, since they will reference each other via the cache, not via the database.
         for kind in self._cache.values():
@@ -119,6 +149,13 @@ class MongoLoader(ABC):
         for property in schema.properties.values():
             if isinstance(property, ComplexProperty):
                 self._find_required_tables(property.schema, property.child_join, property.is_array)
+
+class IndexSchema:
+    def __init__(self, kind: str, keys: list[str], is_unique=False):
+        """The keys can be nested, e.g., `user.address.street`."""
+        self.kind = kind
+        self.keys = keys
+        self.is_unique = is_unique
 
 #region Csv cache
 
@@ -180,11 +217,10 @@ class CachedCsvTable:
         self.__indexes_uniqueness[columns] = is_unique
 
     def load(self, import_directory: str):
-        progress = ProgressTracker(f'Loading data for kind "{self.schema.kind}"... ')
-        progress.print_prefix()
+        progress = ProgressTracker.unlimited()
+        progress.start(f'Loading data for kind "{self.schema.kind}"... ')
 
-        filename = self.schema.kind + '.tbl'
-        path = os.path.join(import_directory, filename)
+        path = os.path.join(import_directory, self.schema.kind + '.tbl')
 
         with open(path, 'r') as file:
             reader = csv.reader(file, delimiter='|')
@@ -206,8 +242,8 @@ class CachedCsvTable:
         values = self.__indexes[columns]
         is_unique = self.__indexes_uniqueness[columns]
 
-        progress = ProgressTracker(f'   - Creating index on columns {columns}... ')
-        progress.print_prefix()
+        progress = ProgressTracker.limited(len(self.__rows))
+        progress.start(f'   - Creating index on columns {columns}... ')
 
         for row in self.__rows:
             key = get_index_key_for_row(columns, row)
@@ -259,10 +295,10 @@ def csv_value_to_mongo(value: str, typ: CsvType):
             return False
         raise ValueError(f'Invalid bool: {value}')
     if typ == CsvType.DATETIME:
-        return datetime.fromisoformat(value)
+        return datetime.datetime.fromisoformat(value)
     if typ == CsvType.DATE:
         # MongoDB doesn't have a separate date type, so we store dates as datetimes with time set to 00:00:00.
-        return datetime.fromisoformat(value)
+        return datetime.datetime.fromisoformat(value)
     if typ == CsvType.JSON:
         return json.loads(value)
     if typ == CsvType.STRING_LIST:
@@ -302,13 +338,8 @@ class MongoPostgresBuilder:
             self.__key_mapper.add_kind(kind, columns)
 
     def document(self, csv_kind: str, properties: dict[str, 'MongoPropertyInit']) -> DocumentSchema:
-        """Convenience method to defined document schemas from their csv source."""
-        if not self.__csv_schemas:
-            raise Exception('CSV schemas not defined. Make sure to call _define_csv_schemas_from_postgres in _get_schemas before defining any document schemas.')
-
-        csv_schema = self.__csv_schemas.get(csv_kind)
-        if not csv_schema:
-            raise ValueError(f'CSV schema not found for kind: {csv_kind}')
+        """Convenience method to define document schemas from their csv source."""
+        csv_schema = self.__get_csv_schema(csv_kind)
 
         mapped_properties: dict[str, MongoProperty] = {}
         for key, property in properties.items():
@@ -317,13 +348,27 @@ class MongoPostgresBuilder:
         return DocumentSchema(csv_schema, mapped_properties)
 
     def nested(self, csv_kind: str, properties: dict[str, 'MongoPropertyInit'], parent_join: int | str, child_join: int | str, is_array = False) -> 'ComplexPropertyInit':
-        """Convenience method to defined nested properties."""
+        """Convenience method to define nested properties."""
         schema = self.document(csv_kind, properties)
         return self.nest(schema, parent_join, child_join, is_array)
 
     def nest(self, schema: DocumentSchema, parent_join: int | str, child_join: int | str, is_array = False) -> 'ComplexPropertyInit':
-        """Convenience method to defined nested properties."""
+        """Convenience method to define nested properties."""
         return ComplexPropertyInit(schema, parent_join, child_join, is_array)
+
+    def plain_copy(self, csv_kind: str) -> DocumentSchema:
+        """Convenience method to define a document schema with all properties mapped directly from the csv (no nesting)."""
+        csv_schema = self.__get_csv_schema(csv_kind)
+        # For some reason, dict[str, int] can't be assigned to dict[str, MongoProperty] even though int is a valid MongoProperty. However, we still want to copy the dict, so we just might as well ...
+        properties: dict[str, MongoProperty] = {name: index for name, index in self.__key_mapper.get_all_properties(csv_kind).items()}
+
+        return DocumentSchema(csv_schema, properties)
+
+    def __get_csv_schema(self, csv_kind: str) -> CsvSchema:
+        csv_schema = self.__csv_schemas.get(csv_kind)
+        if not csv_schema:
+            raise ValueError(f'CSV schema not found for kind: {csv_kind}')
+        return csv_schema
 
 type_pattern = re.compile(r'([A-Z]+)')
 
@@ -381,6 +426,10 @@ class KeyToIndexMap:
         if isinstance(join, str):
             return (self.map_simple(kind, join),)
         return tuple((column if isinstance(column, int) else self.map_simple(kind, column)) for column in join)
+
+    def get_all_properties(self, kind: str) -> dict[str, int]:
+        """Returns a map of { property_name: index }. Useful for copying all properties from a csv schema."""
+        return self.__kinds[kind]
 
 CsvJoinInit = str | int | tuple[str | int, ...]
 """Either string | int (for one join) or a tuple of such (for multiple keys). Strings are interpreted as keys in the csv schema, integers are indexes in such schema."""

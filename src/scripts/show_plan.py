@@ -1,18 +1,13 @@
 import sys
 import textwrap
 import argparse
-from common.config import Config
+from common.config import Config, DatasetName
 from common.drivers import PostgresDriver, Neo4jDriver, DriverType
-from common.driver_provider import DatasetName
 from common.utils import auto_close, trim_to_block, exit_with_error
 from datasets.databases import find_database, get_available_dataset_names
 
 def main(rawArgs: list[str] | None = None):
-    parser = argparse.ArgumentParser(description='Show a query plan visually.',
-        # TODO Are these settings needed?
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent(__doc__ or ''),
-    )
+    parser = argparse.ArgumentParser(description='Show a query plan visually.')
     subparsers = parser.add_subparsers(dest='database', required=True)
 
     common_args(subparsers.add_parser(DriverType.POSTGRES.value), DriverType.POSTGRES)

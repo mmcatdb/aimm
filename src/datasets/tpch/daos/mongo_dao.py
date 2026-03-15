@@ -1,11 +1,23 @@
 from typing_extensions import override
-from common.daos.mongo_dao import MongoDAO
 from common.drivers import MongoDriver
-from datasets.tpch.tpch_dao import TpchDAO
+from datasets.tpch.daos.tpch_dao import TpchDAO
 
-class TpchMongoDAO(MongoDAO, TpchDAO):
+class TpchMongoDAO(TpchDAO):
     def __init__(self, driver: MongoDriver):
-        super().__init__(driver)
+        self.driver = driver
+        self._db = driver.database()
+
+    @override
+    def find(self, entity: str, query_params):
+        collection = self._db[entity]
+        mongo_query = {}
+        for key, value in query_params.items():
+            if key.endswith('__in'):
+                mongo_query[key[:-4]] = {'$in': value}
+            else:
+                mongo_query[key] = value
+
+        return list(collection.find(mongo_query, {'_id': 0}))
 
     @override
     def get_all_lineitems(self):

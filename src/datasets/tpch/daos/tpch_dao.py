@@ -2,6 +2,14 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 class TpchDAO(ABC):
+    @abstractmethod
+    def find(self, entity: str, query_params) -> Any:
+        """
+        Handles simple conditional queries
+        Supports exact matches (key1 = val1 AND key2 = val2...), and IN clauses (key__in = [v1, v2,...])
+        """
+        pass
+
     #region Selection, Projection, Source (of data)
 
     @abstractmethod

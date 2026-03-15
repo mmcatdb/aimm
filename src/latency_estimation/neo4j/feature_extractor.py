@@ -13,6 +13,7 @@ class FeatureExtractor:
     Extracts and encodes features from Neo4j query plan operators.
     Maintains vocabularies for categorical features across the dataset.
     """
+
     def __init__(self):
         self.identifiers_vocab = set()
 
@@ -166,7 +167,6 @@ class FeatureExtractor:
         # Calculate total dimension
         dim = 0
 
-
         # EstimatedRows (1)
         dim += 1
 
@@ -240,8 +240,8 @@ class FeatureExtractor:
         vector = np.zeros(len(vocab_list), dtype=np.float32)
 
         if value in vocab_list:
-            idx = vocab_list.index(value)
-            vector[idx] = 1.0
+            index = vocab_list.index(value)
+            vector[index] = 1.0
 
         return vector
 
@@ -255,8 +255,8 @@ class FeatureExtractor:
 
         for value in values:
             if value in vocab_list:
-                idx = vocab_list.index(value)
-                vector[idx] = 1.0
+                index = vocab_list.index(value)
+                vector[index] = 1.0
 
         return vector
 

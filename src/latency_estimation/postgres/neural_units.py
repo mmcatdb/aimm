@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from latency_estimation.train_config import ModelConfig
+from latency_estimation.config import ModelConfig
 
 class NeuralUnit(nn.Module):
     """
@@ -57,14 +57,10 @@ class NeuralUnit(nn.Module):
         # Pass through hidden layers
         h = self.hidden_layers(x)
 
-        # Generate outputs
         latency = self.latency_output(h)
         data_vec = self.data_output(h)
 
-        # Concatenate: [latency, data_vector]
-        output = torch.cat([latency, data_vec], dim=1)
-
-        return output
+        return torch.cat([latency, data_vec], dim=1)
 
 class GenericUnit(NeuralUnit):
     """
@@ -86,7 +82,7 @@ class GenericUnit(NeuralUnit):
         super().__init__(total_input_dim, data_vec_dim=data_vec_dim, **kwargs)
 
 def create_neural_unit(op_type: str, input_dim: int, num_children: int, config: ModelConfig):
-    """Create a neural unit for a given operator type."""
+    """Creates a neural unit for a given operator type."""
     return GenericUnit(
         input_dim=input_dim,
         num_children=num_children,

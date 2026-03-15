@@ -1,11 +1,12 @@
 import sys
 import time
+from turtle import st
 from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
 import dataclasses, json
 from contextlib import contextmanager
 import textwrap
 
-# Add small epsilon to avoid division by zero
+# Add small epsilon to avoid division by zero or log(0).
 EPSILON = 1e-8
 
 class JsonEncoder(json.JSONEncoder):
@@ -141,16 +142,43 @@ def trim_to_block(text: str) -> str:
 
     return text
 
+MIN_REPORT_INTERVAL_S = 0.2
+
 class ProgressTracker:
-    def __init__(self, prefix='', start_interval=1000, growth=1.5):
+    def __init__(self, start_interval: int, growth: float, show_percents_from_total: int | None):
+        self.start_interval = start_interval
+        self.growth = growth
+        self.show_percents_from_total = show_percents_from_total
+
+        self.next_report: int
+        self.interval: int
+
+        self.prefix: str
+        self.count: int
+        self.start_time: float
+        self.last_time: float
+
+    @staticmethod
+    def unlimited(start_interval=1000, growth=1.5) -> 'ProgressTracker':
+        """Use this when you don't know the total number of items in advance. It will report at exponentially increasing intervals."""
+        return ProgressTracker(start_interval, growth, None)
+
+    @staticmethod
+    def limited(total: int, steps=100, show_percents=True) -> 'ProgressTracker':
+        """Use this when you know the total number of items in advance. It will try to report after a fixed interval."""
+        start_interval = max(1, total // steps)
+        show_percents_from_total = total if show_percents else None
+        return ProgressTracker(start_interval, 1, show_percents_from_total)
+
+    def start(self, prefix: str):
+        """Starts the trcker and sets the prefix. Also prints the first message so make sure to call this before anything that might cause an exception."""
         self.prefix = prefix
         self.count = 0
-        self.next_report = start_interval
-        self.interval = start_interval
-        self.growth = growth
+        self.next_report = self.start_interval
+        self.interval = self.start_interval
         self.start_time = time.time()
+        self.last_time = self.start_time
 
-    def print_prefix(self):
         sys.stdout.write(self.prefix)
         sys.stdout.flush()
 
@@ -163,14 +191,21 @@ class ProgressTracker:
             self.next_report += self.interval
 
     def finish(self):
-        self._print()
+        self._print(True)
         sys.stdout.write('\n')
         sys.stdout.flush()
 
-    def _print(self):
-        elapsed = time.time() - self.start_time
+    def _print(self, force=False):
+        now = time.time()
+        if not force and now - self.last_time < MIN_REPORT_INTERVAL_S:
+            # Don't report too frequently to avoid spamming the console and hurting performance. This can happen if the growth factor is too small or if the total number of items is small.
+            return
+        self.last_time = now
+
+        elapsed = now - self.start_time
         rate = self.count / elapsed if elapsed > 0 else 0
-        message = f'{self.prefix}{self.count:,} rows ({rate:,.0f} rows/s)'
+        percents = f', {self.count / self.show_percents_from_total * 100:.1f}%' if self.show_percents_from_total is not None else ''
+        message = f'{self.prefix}{self.count:,} ({rate:,.0f}/s{percents})'
         sys.stdout.write('\r' + message)
         sys.stdout.flush()
 

@@ -4,8 +4,8 @@ from typing import cast
 from contextlib import contextmanager
 from typing_extensions import LiteralString
 from psycopg2.pool import SimpleConnectionPool
-from psycopg2.extensions import connection as PostgresConnection
-from psycopg2.extensions import cursor as PostgresCursor
+from psycopg2.extensions import connection as PostgresConnection, cursor as PostgresCursor
+from psycopg2.extras import RealDictCursor
 from pymongo import MongoClient
 from neo4j import GraphDatabase
 
@@ -99,11 +99,21 @@ class PostgresDriver():
             result = cursor.fetchone()
             return int(result[0]) if result and result[0] is not None else 0
 
+    def execute(self, query: str, params=None):
+        with self.cursor(cursor_factory = RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            if cursor.description:
+                results = cursor.fetchall()
+                return results
+
+        raise ValueError('Query did not return any results.')
+
 class MongoConfig:
-    def __init__(self, host: str, port: int, database: str):
+    # def __init__(self, host: str, port: int, database: str):
+    def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self.database = database
+        # self.database = database
 
 class MongoDriver():
     """
@@ -111,13 +121,16 @@ class MongoDriver():
     database = mongo.database()
     database.myCollection.find({ ... })
     """
-    def __init__(self, config: MongoConfig):
+    def __init__(self, config: MongoConfig, database: str):
         self.config = config
         self._client = MongoClient(f'mongodb://{config.host}:{config.port}')
-        self._database = self._client[config.database]
+        self._database = self._client[database]
 
     def database(self):
         return self._database
+
+    def collection(self, name: str):
+        return self._database[name]
 
     def close(self):
         self._client.close()
@@ -182,6 +195,11 @@ class Neo4jDriver():
             relationship_count = result.get('relationship_count', 0) if result else 0
 
             return node_count + relationship_count
+
+    def execute(self, query: str, params=None):
+        with self.session() as session:
+            result = session.run(cypher(query), params)
+            return [record.data() for record in result]
 
     # Neo4j doesn't provide a straightforward way to get the total size of the database ... and we don't want to return inaccurate results.
 

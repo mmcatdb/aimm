@@ -1,8 +1,13 @@
+from enum import Enum
 from typing import Any
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 from common.drivers import PostgresConfig, MongoConfig, Neo4jConfig
+
+class DatasetName(Enum):
+    TPCH = 'tpch'
+    EDBT = 'edbt'
 
 class Config:
     def __init__(self, postgres: PostgresConfig, mongo: MongoConfig, neo4j: Neo4jConfig, rest: dict[str, Any] = {}):
@@ -19,6 +24,9 @@ class Config:
     # Load .env manually if needed (outside Docker).
     DEFAULT_CONFIG_PATH = Path.joinpath(Path.cwd(), '.env')
 
+    def dataset_import_directory(self, dataset: DatasetName) -> str:
+        return os.path.join(self.import_directory, dataset.value)
+
     @staticmethod
     def load(path: str | None = None) -> 'Config':
         try:
@@ -28,32 +36,31 @@ class Config:
             exit(1)
 
         return Config(
-            Config.loadPostgres(),
-            Config.loadMongo(),
-            Config.loadNeo4j(),
-            Config.loadRest(),
+            Config.__loadPostgres(),
+            Config.__loadMongo(),
+            Config.__loadNeo4j(),
+            Config.__loadRest(),
         )
 
     @staticmethod
-    def loadPostgres() -> PostgresConfig:
+    def __loadPostgres() -> PostgresConfig:
         return PostgresConfig(
             host = _string('POSTGRES_HOST'),
             port = _int('POSTGRES_PORT'),
             root_database = _string('POSTGRES_ROOT_DATABASE'),
             user = _string('POSTGRES_USER'),
-            password = _string('POSTGRES_PASSWORD')
+            password = _string('POSTGRES_PASSWORD'),
         )
 
     @staticmethod
-    def loadMongo() -> MongoConfig:
+    def __loadMongo() -> MongoConfig:
         return MongoConfig(
             host = _string('MONGO_HOST'),
             port = _int('MONGO_PORT'),
-            database = _string('MONGO_DATABASE')
         )
 
     @staticmethod
-    def loadNeo4j() -> Neo4jConfig:
+    def __loadNeo4j() -> Neo4jConfig:
         return Neo4jConfig(
             host = _string('NEO4J_HOST'),
             ports = {
@@ -62,11 +69,11 @@ class Config:
                 'edbt': _int('NEO4J_EDBT_PORT'),
             },
             user = _string('NEO4J_USER'),
-            password = _string('NEO4J_PASSWORD')
+            password = _string('NEO4J_PASSWORD'),
         )
 
     @staticmethod
-    def loadRest() -> dict[str, Any]:
+    def __loadRest() -> dict[str, Any]:
         return {
             'import_directory': _string('IMPORT_DIRECTORY', 'data/inputs'),
             'cache_directory': _string('CACHE_DIRECTORY', 'data/cache'),

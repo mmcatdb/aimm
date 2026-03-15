@@ -17,7 +17,7 @@ class PlanStructuredTrainer:
     """
     def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int):
         self.__model = model
-        self.__optimizer = optim.SGD(model.parameters(), lr = learning_rate, momentum = 0.9)
+        self.__optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
         self.__loss_history: list[float] = []
         self.__batch_size = batch_size
 
@@ -218,10 +218,10 @@ def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
     """
     groups = defaultdict(list)
 
-    for idx, item in enumerate(batch):
+    for index, item in enumerate(batch):
         plan = item['plan']
         struct_hash = compute_plan_structure_hash(plan)
-        groups[struct_hash].append(idx)
+        groups[struct_hash].append(index)
 
     return groups
 
@@ -243,16 +243,16 @@ def compute_plan_structure_hash(plan: dict) -> str:
 
     return structure_sig(plan)
 
-class PostgresDataset(BaseDataset):
-    """Extends BaseDataset with node_latencies for PostgreSQL plans."""
+class PostgresDataset(BaseDataset[str]):
+    """Extends BaseDataset with nodes_latencies for PostgreSQL plans."""
     def __init__(self, queries: list[str], plans: list[dict], execution_times: list[float]):
         super().__init__(queries, plans, execution_times)
 
         # Extract actual latencies for all nodes in all plans
-        self.node_latencies = []
+        self.nodes_latencies = []
         for plan in plans:
             node_times = self._extract_node_latencies(plan)
-            self.node_latencies.append(node_times)
+            self.nodes_latencies.append(node_times)
 
     def _extract_node_latencies(self, node: dict) -> dict[int, float]:
         """
@@ -277,9 +277,9 @@ class PostgresDataset(BaseDataset):
         return latencies
 
     @override
-    def __getitem__(self, idx):
-        item = super().__getitem__(idx)
-        item['node_latencies'] = self.node_latencies[idx]
+    def __getitem__(self, index):
+        item = super().__getitem__(index)
+        item['node_latencies'] = self.nodes_latencies[index]
         return item
 
     @override
