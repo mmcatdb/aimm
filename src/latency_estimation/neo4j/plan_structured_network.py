@@ -4,7 +4,6 @@ import torch.nn as nn
 from latency_estimation.common import NnOperator
 from latency_estimation.config import ModelConfig
 from latency_estimation.plan_structured_network import BasePlanStructuredNetwork, OperatorCollector
-from latency_estimation.neo4j.neural_units import Estimation, create_neural_unit
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
 class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
@@ -38,7 +37,18 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
     @override
     def _create_unit(self, operator: NnOperator) -> nn.Module:
-        return create_neural_unit(self.config, operator)
+        # The root operator (ProduceResults) is special in that it estimates latency.
+        # ProduceResults should always be the root.
+        is_root_op = (operator.type == 'ProduceResults')
+
+        return GenericUnit(
+            input_dim=operator.feature_dim,
+            num_children=operator.num_children,
+            data_vec_dim=self.config.data_vec_dim,
+            hidden_dim=self.config.hidden_dim,
+            num_layers=self.config.num_layers,
+            is_root=is_root_op,
+        )
 
     def forward(self, plan: dict) -> torch.Tensor:
         """
@@ -71,7 +81,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
     #     """
     #     pass
 
-    def __process_plan_node(self, node: dict, cache: dict[int, Estimation]) -> Estimation:
+    def __process_plan_node(self, node: dict, cache: dict[int, 'Estimation']) -> 'Estimation':
         """
         Recursively process a query plan node.
         Args:
@@ -121,3 +131,97 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
         cache[node_id] = output
 
         return output
+
+
+class Estimation:
+    def __init__(self, data: torch.Tensor, latency: torch.Tensor | None):
+        self.data = data
+        """Data vector output [batch_size, data_vec_dim]"""
+        self.latency = latency
+        """Latency estimation [batch_size, 1] (only if is_root=True)"""
+
+class NeuralUnit(nn.Module):
+    """
+    Base class for operator-level neural units.
+
+    For Neo4j, internal units output only data vectors.
+    Only the root unit (ProduceResults) outputs latency estimation.
+    """
+    def __init__(self, input_dim: int, hidden_dim: int, data_vec_dim: int, num_layers: int, is_root: bool = False):
+        """
+        Args:
+            input_dim: Size of input feature vector
+            hidden_dim: Size of hidden layers
+            data_vec_dim: Size of output data vector (default 32)
+            num_layers: Number of hidden layers
+            is_root: Whether this is the root unit (ProduceResults) that estimates latency
+        """
+        super().__init__()
+
+        self.input_dim = input_dim
+        self.data_vec_dim = data_vec_dim
+        self.is_root = is_root
+
+        # Build hidden layers
+        layers = []
+        current_dim = input_dim
+
+        for i in range(num_layers):
+            layers.append(nn.Linear(current_dim, hidden_dim))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(0.2))
+            current_dim = hidden_dim
+
+        self.hidden_layers = nn.Sequential(*layers)
+
+        # Output layer: data vector for all units
+        self.data_output = nn.Linear(hidden_dim, data_vec_dim)
+
+        # Latency output: only for root unit
+        if is_root:
+            self.latency_output = nn.Linear(hidden_dim, 1)
+            # Use softplus to ensure positive latency estimations
+            self.latency_activation = nn.Softplus()
+
+    def forward(self, x: torch.Tensor) -> Estimation:
+        """
+        Forward pass through the neural unit.
+        Args:
+            x: Input tensor [batch_size, input_dim]
+        """
+        # Pass through hidden layers
+        h = self.hidden_layers(x)
+
+        # Always output data vector
+        data_vec = self.data_output(h)
+
+        # Only root unit estimates latency
+        latency = None
+        if self.is_root:
+            latency = self.latency_activation(self.latency_output(h))
+
+        return Estimation(data_vec, latency)
+
+class GenericUnit(NeuralUnit):
+    """
+    Generic neural unit for Neo4j operators.
+
+    Handles variable number of children by concatenating their data vectors
+    with the operator's own features.
+    """
+
+    def __init__(self, input_dim: int, num_children: int, data_vec_dim: int, **kwargs):
+        """
+        Args:
+            input_dim: Size of operator's feature vector (without children)
+            num_children: Number of child operators
+            data_vec_dim: Size of data vector output
+            **kwargs: Passed to NeuralUnit (hidden_dim, num_layers, etc.)
+        """
+        # Total input = operator features + (data_vec_dim * num_children)
+        total_input_dim = input_dim + (data_vec_dim * num_children)
+
+        super().__init__(total_input_dim, data_vec_dim=data_vec_dim, **kwargs)
+
+        self.num_children = num_children
+        self.operator_feature_dim = input_dim
