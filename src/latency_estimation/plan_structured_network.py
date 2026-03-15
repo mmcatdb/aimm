@@ -3,7 +3,6 @@ from typing import Generic, TypeVar
 import torch.nn as nn
 from latency_estimation.common import NnOperator
 from latency_estimation.config import ModelConfig
-from latency_estimation.neo4j.neural_units import create_neural_unit
 from latency_estimation.feature_extractor import BaseFeatureExtractor
 from latency_estimation.exceptions import NeuralUnitNotFoundException
 
