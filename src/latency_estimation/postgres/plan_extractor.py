@@ -3,49 +3,55 @@ import time
 from common.database import Database
 from common.drivers import PostgresDriver
 from latency_estimation.postgres.trainer import PostgresDataset
+from common.utils import ProgressTracker
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from PostgreSQL."""
 
-    def __init__(self, driver: PostgresDriver, database: Database):
+    def __init__(self, driver: PostgresDriver, database: Database[str]):
         self.driver = driver
         self.database = database
 
-    def collect_training_dataset(self, num_queries: int, clear_cache: bool = True) -> PostgresDataset:
+    def collect_training_dataset(self, num_queries: int, num_runs: int, clear_cache: bool = True) -> PostgresDataset:
         """
         Collect a dataset of query plans and execution times.
         Args:
             num_queries: Number of queries to collect
+            num_runs: Number of executions per query for averaging
             clear_cache: Whether to clear cache before each query (slower but more realistic)
         """
         queries = self.database.get_train_queries(num_queries)
 
-        print(f'Collecting {len(queries)} query plans...')
         if not clear_cache:
             print('Note: Cache clearing is disabled for faster collection.')
             print('      Set clear_cache=True for cold-cache measurements.\n')
+
+        progress = ProgressTracker.limited(len(queries))
+        progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
 
         final_queries = []
         plans = []
         execution_times = []
 
         for i, query in enumerate(queries):
-            if i % 50 == 0:
-                print(f'Progress: {i}/{len(queries)} ({100 * i // len(queries)}%)')
-
             try:
                 plan, execution_time = self.explain_plan_and_measure(query, clear_cache=clear_cache)
                 final_queries.append(query)
                 plans.append(plan)
                 execution_times.append(execution_time)
+                progress.track()
 
             except Exception as e:
                 print(f'\nError executing query {i}: {e}')
                 print(f'Query preview: {query[:100]}...\n')
                 continue
 
-        print(f'\nCollected {len(plans)} query plans.')
-        return PostgresDataset(final_queries, plans, execution_times)
+        progress.finish()
+
+        dataset = PostgresDataset(final_queries, plans, execution_times)
+
+        print(f'\nCollected {len(dataset)} query plans.')
+        return dataset
 
     def explain_plan_and_measure(self, query: str, clear_cache: bool = True) -> tuple[dict, float]:
         """

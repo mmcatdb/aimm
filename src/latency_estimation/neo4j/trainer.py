@@ -39,7 +39,7 @@ class PlanStructuredTrainer:
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: BaseDataset, batch_size: int | None = None) -> dict[str, float]:
+    def evaluate(self, dataset: BaseDataset[str], batch_size: int | None = None) -> dict[str, float]:
         """
         Evaluate model on a dataset.
         Returns:
@@ -104,7 +104,7 @@ class PlanStructuredTrainer:
         print(f'  P95 R: {metrics["p95_q_error"] * 100:.2f} %')
         print('')
 
-    def train_epoch(self, dataset: BaseDataset, batch_size: int | None = None, shuffle: bool = True) -> float:
+    def train_epoch(self, dataset: BaseDataset[str], batch_size: int | None = None, shuffle: bool = True) -> float:
         """
         Args:
             dataset: Training dataset
@@ -166,11 +166,11 @@ class PlanStructuredTrainer:
         # Group plans by structure for efficiency
         structure_groups = group_plans_by_structure(batch)
 
-        for structure_hash, indices in structure_groups.items():
+        for structure_hash, indexes in structure_groups.items():
             # Process plans with same structure together
-            for idx in indices:
-                plan = batch[idx]['plan']
-                execution_time = batch[idx]['execution_time']
+            for index in indexes:
+                plan = batch[index]['plan']
+                execution_time = batch[index]['execution_time']
 
                 # Forward pass through model
                 estimated_latency = self.__model(plan)
@@ -189,9 +189,7 @@ class PlanStructuredTrainer:
         log_targets = torch.log1p(targets)
 
         # Compute MSE on log values -> MSLE
-        loss = self.criterion(log_preds, log_targets)
-
-        return loss
+        return self.criterion(log_preds, log_targets)
 
 def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
     """
@@ -202,14 +200,14 @@ def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
         batch: List of batch items (dicts with 'plan' key)
 
     Returns:
-        Mapping from structure hash to indices in batch
+        Mapping from structure hash to indexes in batch
     """
     groups = defaultdict(list)
 
-    for idx, item in enumerate(batch):
+    for index, item in enumerate(batch):
         plan = item['plan']
         structure = compute_plan_structure_hash(plan)
-        groups[structure].append(idx)
+        groups[structure].append(index)
 
     return groups
 
@@ -236,4 +234,3 @@ def compute_plan_structure_hash(plan: dict) -> str:
         return f'{op_type}({",".join(child_sigs)})'
 
     return structure_sig(plan)
-

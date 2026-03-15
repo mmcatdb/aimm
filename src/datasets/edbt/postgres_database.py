@@ -1,9 +1,9 @@
 from typing_extensions import override
+from common.config import DatasetName
 from common.database import Database
 from common.drivers import DriverType
-from common.driver_provider import DatasetName
 
-class EdbtPostgresDatabase(Database):
+class EdbtPostgresDatabase(Database[str]):
     def __init__(self):
         super().__init__(DatasetName.EDBT, DriverType.POSTGRES)
 

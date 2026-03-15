@@ -157,7 +157,7 @@ def _node_label(node: dict) -> str:
     label += _fmt_cost(node)
     return label
 
-# Node-type → short label
+# Node-type -> short label
 NODE_ICONS: dict[str, str] = {
     'Seq Scan':              'SCAN',
     'Index Scan':            'ISCAN',

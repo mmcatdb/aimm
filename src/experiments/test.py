@@ -1,10 +1,12 @@
-from datasets.edbt.postgres_database import EdbtPostgresDatabase
+from common.config import DatasetName
 from latency_estimation.postgres.context import PostgresContext
-from datasets.edbt.neo4j_database import EdbtNeo4jDatabase
 from latency_estimation.neo4j.context import Neo4jContext
 from common.drivers import cypher
 import pprint
 from experiments.__main__ import main as experiments_main
+
+# FIXME this
+TEST_DATASET = DatasetName.EDBT
 
 def main():
     # test_plans()
@@ -20,8 +22,8 @@ def split(args: str) -> list[str]:
     return args.split(' ')
 
 def test_plans():
-    ctx = PostgresContext.create(database=EdbtPostgresDatabase())
-    # ctx = Neo4jContext.create(database=EdbtNeo4jDatabase())
+    ctx = PostgresContext.create(dataset=TEST_DATASET)
+    # ctx = Neo4jContext.create(database=TEST_DATASET)
 
     query = '''
         SELECT product.title

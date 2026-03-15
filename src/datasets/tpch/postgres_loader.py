@@ -1,6 +1,5 @@
 from typing_extensions import override
-from common.loaders.postgres_loader import PostgresLoader
-from common.daos.postgres_dao import ColumnSchema
+from common.loaders.postgres_loader import PostgresLoader, ColumnSchema
 
 class TpchPostgresLoader(PostgresLoader):
     @override

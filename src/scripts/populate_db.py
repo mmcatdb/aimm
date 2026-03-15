@@ -1,6 +1,6 @@
 import argparse
-from common.config import Config
-from common.driver_provider import DriverProvider, DatasetName, dataset_import_directory
+from common.config import Config, DatasetName
+from common.driver_provider import DriverProvider
 from common.drivers import DriverType, PostgresDriver, MongoDriver, Neo4jDriver
 from common.utils import auto_close
 from datasets.databases import get_available_dataset_names
@@ -38,18 +38,17 @@ class Context:
         self.config = Config.load()
         self.dbs = DriverProvider.default(self.config)
         self.do_reset = not args.no_reset
-        self.import_directory = args.import_dir or dataset_import_directory(self.config, self.dataset)
+        self.import_directory = args.import_dir or self.config.dataset_import_directory(self.dataset)
 
 def populate_postgres(ctx: Context):
-    from common.daos.postgres_dao import PostgresDAO
+    from common.loaders.postgres_loader import create_database_if_not_exists
 
     # Postgres databases have to be created explicitly, so let's do that.
-    rootDriver = ctx.dbs.get_for_database(ctx.config.postgres.root_database, PostgresDriver)
+    rootDriver = ctx.dbs.get(ctx.config.postgres.root_database, PostgresDriver)
     with auto_close(rootDriver):
-        rootDao = PostgresDAO(rootDriver)
-        rootDao.create_database_if_not_exists(ctx.database_name)
+        create_database_if_not_exists(rootDriver, ctx.database_name)
 
-    driver = ctx.dbs.get_for_database(ctx.database_name, PostgresDriver)
+    driver = ctx.dbs.get(ctx.database_name, PostgresDriver)
     with auto_close(driver):
         if ctx.dataset == DatasetName.EDBT:
             from datasets.edbt.postgres_loader import EdbtPostgresLoader
@@ -65,7 +64,7 @@ def populate_postgres(ctx: Context):
 def populate_mongo(ctx: Context):
     # Mongo databases are created automatically by writing in them. So, nothing to do here.
 
-    driver = ctx.dbs.get_for_database(ctx.database_name, MongoDriver)
+    driver = ctx.dbs.get(ctx.database_name, MongoDriver)
     with auto_close(driver):
         if ctx.dataset == DatasetName.EDBT:
             raise NotImplementedError('MongoDB loading is not implemented yet for EDBT.')
@@ -82,7 +81,7 @@ def populate_mongo(ctx: Context):
 def populate_neo4j(ctx: Context):
     # Neo4j databases have to run in separate containers (the free edition doesn't support multiple databases). So, nothing to do here.
 
-    driver = ctx.dbs.get_for_database(ctx.database_name, Neo4jDriver)
+    driver = ctx.dbs.get(ctx.database_name, Neo4jDriver)
     with auto_close(driver):
         if ctx.dataset == DatasetName.EDBT:
             from datasets.edbt.neo4j_loader import EdbtNeo4jLoader

@@ -1,9 +1,81 @@
-from __future__ import annotations
 import random
-from common.config import Config
-from common.driver_provider import DriverProvider
-from search.query_engine import QueryEngine
+from common.query_engine import QueryEngine
 import math
+
+class MCTS:
+    def __init__(self, query_engine: QueryEngine, tables: tuple[str, ...]):
+        self.query_engine = query_engine
+        self.ALL_TABLES = tables
+        self.explored_states = set()
+        self.state_to_node_map: dict[tuple[str, ...], MCTSNode] = dict()
+
+    def run(self, cur_state: tuple[str, ...], iterations=100):
+        self.explored_states.clear()
+        self.state_to_node_map.clear()
+
+        best_mapping = self.state_to_mapping(cur_state)
+        print(best_mapping)
+        _, exec_time = self.perform_simulation(best_mapping)
+        best_time = exec_time
+
+        root = MCTSNode(self, cur_state, None)
+
+        for i in range(iterations):
+            print(f'Iteration {i + 1}')
+
+            # TODO? Make path a set straight away, since there are several to-set conversions in MCTSNode methods
+            path = [root]
+            previous_states = {cur_state}   # Set for the O(1) membership checks
+            node = root
+
+            # 1. Selection
+            while True:
+                if not node.is_fully_expanded(previous_states) or node.is_leaf(path):
+                    break
+                node = node.get_best_child(path)
+                path.append(node)
+                previous_states.add(node.state)
+
+            print(f'Selected node to expand with state: {node.state}')
+
+            # 2. Expansion
+            if not node.is_fully_expanded(previous_states):
+                node, is_new_node = node.expand(previous_states)
+                path.append(node)
+                previous_states.add(node.state)
+
+                if is_new_node:
+                    # 3. Simulation
+                    schema_mapping = self.state_to_mapping(node.state)
+                    reward, exec_time = self.perform_simulation(schema_mapping)
+
+                    print(f'Time: {exec_time}s with state: {node.state}')
+
+                    if exec_time < best_time:
+                        best_time = exec_time
+                        best_mapping = schema_mapping
+                else:
+                    reward = node.avg_value()
+            else:
+                reward = node.avg_value()
+
+            path_has_duplicates = len(path) != len(set(path))
+            if path_has_duplicates:
+                raise RuntimeError(f'ERROR: path has some duplicate states:\n  {[node.state for node in path]}')
+
+            # 4. Backpropagation
+            for node in path:
+                node.update_stats(reward)
+
+        return best_mapping, best_time
+
+    def perform_simulation(self, mapping: dict[str, str]) -> tuple[float, float]:
+        execution_time = self.query_engine.measure_queries(mapping, verbose=False)
+        reward = 100 / (execution_time + 0.001)
+        return reward, execution_time
+
+    def state_to_mapping(self, state: tuple[str, ...]) -> dict[str, str]:
+        return dict(zip(self.ALL_TABLES, state))
 
 class MCTSNode:
     def __init__(self, mcts: MCTS, state, parent):
@@ -31,7 +103,7 @@ class MCTSNode:
     def get_base_actions(self):
         actions = []
         for i, current_db in enumerate(self.state):
-            for db in self.mcts.dbs.available_drivers():
+            for db in self.mcts.query_engine.available_databases():
                 if db == current_db:
                     continue
 
@@ -109,90 +181,3 @@ class MCTSNode:
         best_score = max(ucb1(child) for child in viable_children)
         best_children = [child for child in viable_children if ucb1(child) == best_score]
         return random.choice(best_children)
-
-class MCTS:
-    def __init__(self, dbs: DriverProvider, tables: tuple[str, ...]):
-        self.dbs = dbs
-        self.ALL_TABLES = tables
-        self.explored_states = set()
-        self.state_to_node_map: dict[tuple[str, ...], MCTSNode] = dict()
-
-    def run(self, cur_state: tuple[str, ...], iterations=100):
-        self.explored_states.clear()
-        self.state_to_node_map.clear()
-
-        best_mapping = self.state_to_mapping(cur_state)
-        print(best_mapping)
-        _, exec_time = self.perform_simulation(best_mapping)
-        best_time = exec_time
-
-        root = MCTSNode(self, cur_state, None)
-
-        for i in range(iterations):
-            print(f'Iteration {i + 1}')
-
-            # TODO? Make path a set straight away, since there are several to-set conversions in MCTSNode methods
-            path = [root]
-            previous_states = {cur_state}   # Set for the O(1) membership checks
-            node = root
-
-            # 1. Selection
-            while True:
-                if not node.is_fully_expanded(previous_states) or node.is_leaf(path):
-                    break
-                node = node.get_best_child(path)
-                path.append(node)
-                previous_states.add(node.state)
-
-            print(f'Selected node to expand with state: {node.state}')
-
-            # 2. Expansion
-            if not node.is_fully_expanded(previous_states):
-                node, is_new_node = node.expand(previous_states)
-                path.append(node)
-                previous_states.add(node.state)
-
-                if is_new_node:
-                    # 3. Simulation
-                    schema_mapping = self.state_to_mapping(node.state)
-                    reward, exec_time = self.perform_simulation(schema_mapping)
-
-                    print(f'Time: {exec_time}s with state: {node.state}')
-
-                    if exec_time < best_time:
-                        best_time = exec_time
-                        best_mapping = schema_mapping
-                else:
-                    reward = node.avg_value()
-            else:
-                reward = node.avg_value()
-
-            path_has_duplicates = len(path) != len(set(path))
-            if path_has_duplicates:
-                raise RuntimeError(f'ERROR: path has some duplicate states:\n  {[node.state for node in path]}')
-
-            # 4. Backpropagation
-            for node in path:
-                node.update_stats(reward)
-
-        return best_mapping, best_time
-
-    def perform_simulation(self, mapping: dict[str, str]) -> tuple[float, float]:
-        query_engine = QueryEngine(self.dbs, mapping)
-        execution_time = query_engine.run_queries(verbose=False)
-        reward = 100 / (execution_time + 0.001)
-        return reward, execution_time
-
-    def state_to_mapping(self, state: tuple[str, ...]) -> dict[str, str]:
-        return dict(zip(self.ALL_TABLES, state))
-
-def main():
-    tables = ('customer', 'orders', 'supplier', 'part', 'partsupp', 'lineitem')
-    initial_mapping = tuple(['postgres'] * len(tables))
-    dbs = DriverProvider.default(Config.load())
-    mcts = MCTS(dbs, tables)
-    best_mapping, best_time = mcts.run(initial_mapping, iterations=50)
-    print(f'Final best mapping: {best_mapping} with time {best_time}s')
-
-if __name__ == '__main__':
-    main()

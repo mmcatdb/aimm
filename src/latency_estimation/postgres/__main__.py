@@ -5,7 +5,7 @@ import json
 from common.utils import JsonEncoder, auto_close, exit_with_error
 from common.database import TestQuery
 from latency_estimation.common import format_latency, load_queries, parse_queries, print_dataset_summary, truncate_query
-from latency_estimation.train_config import TrainConfig
+from latency_estimation.config import TrainConfig, TestConfig
 from latency_estimation.postgres.context import PostgresContext
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.postgres.trainer import PlanStructuredTrainer
@@ -18,7 +18,7 @@ def main(rawArgs: list[str] | None = None):
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     train_args(subparsers.add_parser('train', help='Train a new QPP-Net model'))
-    evaluate_args(subparsers.add_parser('evaluate', help='Evaluate a trained QPP-Net model'))
+    test_args(subparsers.add_parser('test', help='Test a trained QPP-Net model'))
     estimate_args(subparsers.add_parser('estimate', help='Estimate query latency using a trained QPP-Net model'))
 
     args = parser.parse_args(rawArgs)
@@ -28,8 +28,8 @@ def main(rawArgs: list[str] | None = None):
     with auto_close(ctx):
         if args.command == 'train':
             train_run(args, ctx)
-        elif args.command == 'evaluate':
-            evaluate_run(args, ctx)
+        elif args.command == 'test':
+            test_run(args, ctx)
         elif args.command == 'estimate':
             estimate_run(args, ctx)
 
@@ -39,10 +39,11 @@ def train_args(parser: argparse.ArgumentParser):
 def train_run(args: argparse.Namespace, ctx: PostgresContext):
     config = TrainConfig.from_arguments(args)
 
-    print(f'\n[2/7] Collecting {config.num_queries} query plans...')
-    print('This may take a while as each query is executed...')
+    print(f'\n[1/7] Configuration:')
+    print(config)
 
-    dataset = ctx.load_dataset(config.num_queries)
+    print(f'\n[2/7] Collecting {config.num_queries} query plans...')
+    dataset = ctx.load_dataset(config.num_queries, config.num_runs)
 
     print(f'\nDataset Statistics:')
     print_dataset_summary(dataset)
@@ -93,8 +94,10 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     # Step 7: Final evaluation
     print('\n[7/7] Final Evaluation...')
     print('\n' + '=' * 80)
+
     print('TRAINING SET PERFORMANCE')
     print('=' * 80)
+
     train_metrics = trainer.evaluate(train_dataset)
     for metric, value in train_metrics.items():
         if 'error' in metric or 'mae' in metric:
@@ -112,7 +115,6 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
         else:
             print(f'  {metric}: {value:.4f}')
 
-    # Save model with operator information
     print('\n' + '=' * 80)
     print('Saving model...')
     print('=' * 80)
@@ -126,46 +128,42 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     print(f'Final Test Relative Error: {test_metrics["mre"]:.4f}')
     print(f'Estimations within factor of 1.5: {test_metrics["le1.5_q_error"] * 100:.1f}%')
 
-def evaluate_args(parser: argparse.ArgumentParser):
-    parser.add_argument('--checkpoint', '-c', type=str, required=True, help='Path to trained model')
+def test_args(parser: argparse.ArgumentParser):
+    TestConfig.postgres().add_arguments(parser)
+
     parser.add_argument('--no-actual', action='store_true', help='Skip actual execution time measurement')
-    parser.add_argument('--runs', type=int, default=10, help='Number of runs for actual execution measurement')
     parser.add_argument('--no-plots', action='store_true', help='Skip generating plots')
-    parser.add_argument('--query', '-q', type=str, action='append', dest='queries', help='Additional SQL query to evaluate (can be used multiple times)')
-    parser.add_argument('--query-only', '-qo', action='store_true', help='Only evaluate the provided --query arguments, skip built-in test queries')
 
-def evaluate_run(args: argparse.Namespace, ctx: PostgresContext):
-    model = ctx.load_model(args.checkpoint)
+def test_run(args: argparse.Namespace, ctx: PostgresContext):
+    config = TestConfig.from_arguments(args)
 
-    print('\nGenerating test queries...')
-    test_queries: list[TestQuery] = [] if args.query_only else ctx.database.get_test_queries()
+    if config.queries:
+        test_queries: list[TestQuery[str]] = []
+        for i, content in enumerate(config.queries, 1):
+            test_queries.append(TestQuery(f'custom-{i}', f'Custom Query {i}', content))
 
-    # Add user-provided queries
-    if args.queries:
-        for i, content in enumerate(args.queries, 1):
-            query = TestQuery(f'custom-{i}', f'Custom Query {i}', content)
-            test_queries.append(query)
-        print(f'Added {len(args.queries)} custom query/queries')
+        print(f'\nAdded {len(test_queries)} custom query/queries')
+    else:
+        print('\nGenerating test queries...')
+        test_queries = ctx.database.get_test_queries()
 
     if not test_queries:
-        print('Error: No queries to evaluate. Provide queries with --query or remove --query-only flag.')
-        return
+        exit_with_error('No queries to test. Provide queries with --query or use the built-in test queries.')
 
-    print(f'Total queries to evaluate: {len(test_queries)}')
+    print(f'Total queries to test: {len(test_queries)}')
 
     # Run evaluation
+    model = ctx.load_model(config.checkpoint)
     evaluator = ModelEvaluator(ctx.extractor, model)
     results = evaluator.evaluate_multiple_queries(
         test_queries,
         measure_actual=not args.no_actual,
-        num_runs=args.runs
+        num_runs=config.num_runs
     )
     evaluator.print_summary(results)
 
-    results_path = os.path.join(ctx.config.results_directory, 'evaluation_results.json')
-    plot_path = os.path.join(ctx.config.results_directory, 'evaluation_plots.png')
-
     # Save results
+    results_path = os.path.join(ctx.config.results_directory, 'evaluation_results.json')
     print(f'\nSaving results to {results_path}...')
     with open(results_path, 'w') as file:
         json.dump(results, file, indent=2, cls=JsonEncoder)
@@ -173,6 +171,7 @@ def evaluate_run(args: argparse.Namespace, ctx: PostgresContext):
     # Generate plots
     if not args.no_plots:
         try:
+            plot_path = os.path.join(ctx.config.results_directory, 'evaluation_plots.png')
             evaluator.plot_results(results, save_path=plot_path)
         except Exception as e:
             print(f'Error: Could not generate plots: {e}')

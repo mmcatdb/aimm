@@ -1,68 +1,52 @@
 import time
-from common.driver_provider import DriverProvider, DatasetName
+from typing_extensions import override
+from common.query_engine import QueryEngine
+from common.config import DatasetName
+from common.driver_provider import DriverProvider
 from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
-from datasets.tpch.postgres_dao import TpchPostgresDAO
-from datasets.tpch.mongo_dao import TpchMongoDAO
-from datasets.tpch.neo4j_dao import TpchNeo4jDAO
+from datasets.tpch.daos.tpch_dao import TpchDAO
+from datasets.tpch.daos.postgres_dao import TpchPostgresDAO
+from datasets.tpch.daos.mongo_dao import TpchMongoDAO
+from datasets.tpch.daos.neo4j_dao import TpchNeo4jDAO
 
-class QueryEngine:
-    def __init__(self, dbs: DriverProvider, schema_mapping: dict[str, str]):
-        self.schema_mapping = schema_mapping
-        self.daos = {
-            'postgres': TpchPostgresDAO(dbs.get(DatasetName.TPCH, PostgresDriver)),
-            'mongo': TpchMongoDAO(dbs.get(DatasetName.TPCH, MongoDriver)),
-            'neo4j': TpchNeo4jDAO(dbs.get(DatasetName.TPCH, Neo4jDriver)),
+class TpchQueryEngine(QueryEngine):
+    def __init__(self, daos: dict[str, TpchDAO]):
+        self.__daos = daos
+
+    @staticmethod
+    def create(dbs: DriverProvider):
+        daos: dict[str, TpchDAO] = {
+            'postgres': TpchPostgresDAO(dbs.get(DatasetName.TPCH.value, PostgresDriver)),
+            'mongo': TpchMongoDAO(dbs.get(DatasetName.TPCH.value, MongoDriver)),
+            'neo4j': TpchNeo4jDAO(dbs.get(DatasetName.TPCH.value, Neo4jDriver)),
         }
 
-    def get_dao_for_entity(self, entity: str):
-        db_type = self.schema_mapping[entity]
-        if not db_type:
-            raise ValueError(f'Entity "{entity}" not found in schema mapping.')
-        return self.daos[db_type]
+        return TpchQueryEngine(daos)
 
+    @override
+    def available_databases(self) -> list[str]:
+        return list(self.__daos.keys())
 
-    def find(self, entity: str, query_params):
-        dao = self.get_dao_for_entity(entity)
-        return dao.find(entity, query_params)
-
-    def find_lineitems_for_customer(self, customer_name):
-        # Find the customer
-        customer_dao = self.get_dao_for_entity('customer')
-        customers = customer_dao.find('customer', {'c_name': customer_name})
-        if not customers: return []
-        customer = customers[0]
-
-        # Find all orders for the customer
-        orders_dao = self.get_dao_for_entity('orders')
-        orders = orders_dao.find('orders', {'o_custkey': customer['c_custkey']})
-        if not orders: return []
-
-        # Get all order keys from the results
-        order_keys = [order['o_orderkey'] for order in orders]
-
-        # Find all lineitems for the given orders
-        lineitem_dao = self.get_dao_for_entity('lineitem')
-        all_lineitems = lineitem_dao.find('lineitem', {'l_orderkey__in': order_keys})
-
-        return all_lineitems
-
-    def run_queries(self, customer_name='Customer#000000007', verbose=True) -> float:
+    @override
+    def measure_queries(self, mapping: dict[str, str], verbose=True) -> float:
         # Queries from: https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/mysql/queries.md
+
+        self.__mapping = mapping
 
         start = checkpoint = time.time()
 
         if verbose:
-            print(f'Customers stored in: {self.schema_mapping["customer"]}')
-            print(f'Orders stored in: {self.schema_mapping["orders"]}')
-            print(f'Lineitems stored in: {self.schema_mapping["lineitem"]}')
-            print(f'Parts stored in: {self.schema_mapping["part"]}')
-            print(f'Suppliers stored in: {self.schema_mapping["supplier"]}')
-            print(f'PartSupp stored in: {self.schema_mapping["partsupp"]}')
+            print(f'Customers stored in: {self.__mapping["customer"]}')
+            print(f'Orders stored in: {self.__mapping["orders"]}')
+            print(f'Lineitems stored in: {self.__mapping["lineitem"]}')
+            print(f'Parts stored in: {self.__mapping["part"]}')
+            print(f'Suppliers stored in: {self.__mapping["supplier"]}')
+            print(f'PartSupp stored in: {self.__mapping["partsupp"]}')
             print('=' * 50)
 
-        lineitem_dao = self.get_dao_for_entity('lineitem')
-        customer_dao = self.get_dao_for_entity('customer')
-        order_dao = self.get_dao_for_entity('orders')
+        lineitem_dao = self.__get_dao_for_entity('lineitem')
+        customer_dao = self.__get_dao_for_entity('customer')
+        order_dao = self.__get_dao_for_entity('orders')
 
         # -----------  A1  -----------
         lineitems = lineitem_dao.get_all_lineitems()
@@ -113,24 +97,25 @@ class QueryEngine:
         checkpoint = time.time()
 
         # -----------  Join  ---------
-        lineitems = self.find_lineitems_for_customer(customer_name)
+        customer_name='Customer#000000007'
+        lineitems = self.__find_lineitems_for_customer(customer_name)
         if verbose:
             print(f'Found {len(lineitems)} lineitems for customer: {customer_name}')
             print(f'Time taken for Join: {time.time() - checkpoint:.2f} seconds')
             print('-' * 50)
         checkpoint = time.time()
 
-        self.run_part_supplier_queries(verbose=verbose)
+        self.__run_part_supplier_queries(verbose=verbose)
 
         if verbose:
             print(f'Finished. Total time taken: {time.time() - start:.2f} seconds')
 
         return round(time.time() - start, 2)
 
-    def run_part_supplier_queries(self, verbose=True):
-        part_dao = self.get_dao_for_entity('part')
-        supplier_dao = self.get_dao_for_entity('supplier')
-        partsupp_dao = self.get_dao_for_entity('partsupp')
+    def __run_part_supplier_queries(self, verbose=True):
+        part_dao = self.__get_dao_for_entity('part')
+        supplier_dao = self.__get_dao_for_entity('supplier')
+        partsupp_dao = self.__get_dao_for_entity('partsupp')
         start = checkpoint = time.time()
 
         # P1
@@ -188,3 +173,32 @@ class QueryEngine:
         # if verbose:
         #     print(f'AGG2) Avg supply cost by size groups: {len(avg_supplycost)}')
         #     print(f'Time AGG2: {time.time() - checkpoint:.2f}s')
+
+    def __find_lineitems_for_customer(self, customer_name):
+        # Find the customer
+        customer_dao = self.__get_dao_for_entity('customer')
+        customers = customer_dao.find('customer', {'c_name': customer_name})
+        if not customers:
+            return []
+        customer = customers[0]
+
+        # Find all orders for the customer
+        orders_dao = self.__get_dao_for_entity('orders')
+        orders = orders_dao.find('orders', {'o_custkey': customer['c_custkey']})
+        if not orders:
+            return []
+
+        # Get all order keys from the results
+        order_keys = [order['o_orderkey'] for order in orders]
+
+        # Find all lineitems for the given orders
+        lineitem_dao = self.__get_dao_for_entity('lineitem')
+        all_lineitems = lineitem_dao.find('lineitem', {'l_orderkey__in': order_keys})
+
+        return all_lineitems
+
+    def __get_dao_for_entity(self, entity: str):
+        db_type = self.__mapping[entity]
+        if not db_type:
+            raise ValueError(f'Entity "{entity}" not found in schema mapping.')
+        return self.__daos[db_type]

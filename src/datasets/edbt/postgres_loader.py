@@ -1,6 +1,5 @@
 from typing_extensions import override
-from common.loaders.postgres_loader import PostgresLoader
-from common.daos.postgres_dao import ColumnSchema, IndexSchema
+from common.loaders.postgres_loader import PostgresLoader, ColumnSchema, IndexSchema
 
 # TODO review is for customer_id, not person_id
 # TODO order_item should not have seller_id (can get from product)

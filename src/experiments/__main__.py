@@ -1,6 +1,7 @@
+
 import argparse
 from common.utils import auto_close, data_size_quantity, pretty_print_int
-from common.driver_provider import DatasetName
+from common.config import DatasetName
 from latency_estimation.exceptions import NeuralUnitNotFoundException
 from latency_estimation.common import NnOperator
 
@@ -13,14 +14,14 @@ def main(rawArgs: list[str] | None = None):
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     subparsers.add_parser('check', help='Check database connections and sizes')
-    evaluate_args(subparsers.add_parser('evaluate', help='Evaluate models'))
+    test_args(subparsers.add_parser('test', help='Test models'))
 
     args = parser.parse_args(rawArgs)
 
     if args.command == 'check':
         check_run()
-    elif args.command == 'evaluate':
-        evaluate_run(args)
+    elif args.command == 'test':
+        test_run(args)
 
 def check_run():
     from common.config import Config
@@ -28,7 +29,7 @@ def check_run():
 
     config = Config.load()
     postgres = PostgresDriver(config.postgres, TEST_DATASET.value)
-    mongo = MongoDriver(config.mongo)
+    mongo = MongoDriver(config.mongo, TEST_DATASET.value)
     neo4j = Neo4jDriver(config.neo4j, TEST_DATASET.value)
 
     print('Checking database connections and sizes ...')
@@ -74,28 +75,27 @@ def check_run():
 
     print('Done.')
 
-def evaluate_args(parser: argparse.ArgumentParser):
+def test_args(parser: argparse.ArgumentParser):
     parser.add_argument('--checkpoint', '-c', type=str, required=True, help='Path to trained model')
     parser.add_argument('--database', '-d', type=str, required=True, help='Either "postgres" or "neo4j"')
 
-def evaluate_run(args: argparse.Namespace):
-    print(f'Evaluating {args.database} model\n')
+def test_run(args: argparse.Namespace):
+    print(f'Testing {args.database} model\n')
 
     if args.database == 'postgres':
-        evaluate_postgres(args.checkpoint)
+        test_postgres(args.checkpoint)
     elif args.database == 'neo4j':
-        evaluate_neo4j(args.checkpoint)
+        test_neo4j(args.checkpoint)
     else:
         print(f'Unsupported database type: {args.database}')
 
-def evaluate_postgres(checkpoint: str):
-    from datasets.edbt.postgres_database import EdbtPostgresDatabase
+def test_postgres(checkpoint: str):
     from latency_estimation.postgres.context import PostgresContext
     from latency_estimation.postgres.latency_estimator import LatencyEstimator
 
     missing_operators: set[str] = set()
 
-    ctx = PostgresContext.create(database=EdbtPostgresDatabase())
+    ctx = PostgresContext.create(dataset=TEST_DATASET)
     with auto_close(ctx):
         model = ctx.load_model(checkpoint)
         estimator = LatencyEstimator(ctx.extractor, model)
@@ -114,14 +114,13 @@ def evaluate_postgres(checkpoint: str):
 
     try_print_missing_operators(missing_operators, model.get_units())
 
-def evaluate_neo4j(checkpoint: str):
-    from datasets.edbt.neo4j_database import EdbtNeo4jDatabase
+def test_neo4j(checkpoint: str):
     from latency_estimation.neo4j.context import Neo4jContext
     from latency_estimation.neo4j.latency_estimator import LatencyEstimator
 
     missing_operators: set[str] = set()
 
-    ctx = Neo4jContext.create(database=EdbtNeo4jDatabase())
+    ctx = Neo4jContext.create(dataset=TEST_DATASET)
     with auto_close(ctx):
         model = ctx.load_model(checkpoint)
         estimator = LatencyEstimator(ctx.extractor, model)

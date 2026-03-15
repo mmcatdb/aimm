@@ -1,7 +1,10 @@
+from typing import Generic, TypeVar
 from sklearn.externals.array_api_compat.numpy import ndarray
 from torch.utils.data import Dataset
 
-class BaseDataset(Dataset):
+TQuery = TypeVar('TQuery')
+
+class BaseDataset(Dataset, Generic[TQuery]):
     """
     Dataset of query plans with execution times.
 
@@ -10,7 +13,7 @@ class BaseDataset(Dataset):
     - plan: The query execution plan (from EXPLAIN)
     - execution_time: Actual measured execution time in seconds
     """
-    def __init__(self, queries: list[str], plans: list[dict], execution_times: list[float],
+    def __init__(self, queries: list[TQuery], plans: list[dict], execution_times: list[float],
     ):
         assert len(queries) == len(plans) == len(execution_times), 'Queries, plans, and execution times must have same length'
 
@@ -21,15 +24,15 @@ class BaseDataset(Dataset):
     def __len__(self):
         return len(self.queries)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, index):
         return {
-            'query': self.queries[idx],
-            'plan': self.plans[idx],
-            'execution_time': self.execution_times[idx]
+            'query': self.queries[index],
+            'plan': self.plans[index],
+            'execution_time': self.execution_times[index]
         }
 
     def subset(self, indexes: list[int] | ndarray) -> 'BaseDataset':
-        """Create a subset of the dataset based on given indices."""
+        """Create a subset of the dataset based on given indexes."""
         return BaseDataset(
             queries = [self.queries[i] for i in indexes],
             plans = [self.plans[i] for i in indexes],

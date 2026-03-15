@@ -1,6 +1,8 @@
+from math import nan
 import torch
 import numpy as np
 from tabulate import tabulate
+from dataclasses import dataclass
 from common.database import TestQuery
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
@@ -11,7 +13,7 @@ class ModelEvaluator:
         self.extractor = extractor
         self.model = model
 
-    def evaluate_multiple_queries(self, queries: list[TestQuery], num_runs: int) -> list['Result']:
+    def evaluate_multiple_queries(self, queries: list[TestQuery[str]], num_runs: int) -> list['Result']:
         """
         Evaluate multiple queries.
 
@@ -92,7 +94,7 @@ class ModelEvaluator:
             percent_below = (count_below / total_queries) * 100
             print(f'  R-value < {threshold}: {count_below} queries ({percent_below:.2f}%)')
 
-    def evaluate_query(self, query: TestQuery, num_runs: int) -> 'Result':
+    def evaluate_query(self, query: TestQuery[str], num_runs: int) -> 'Result':
         """
         Evaluate a single query.
 
@@ -101,8 +103,9 @@ class ModelEvaluator:
         """
         print(f'\nEvaluating: {query.label()}')
 
-        result = Result(query.label(), query.content)
-        result.plan = self.extractor.explain_plan(query.content)
+        plan = self.extractor.explain_plan(query.content)
+        result = Result(query.label(), query.content, plan)
+
         estimated_latency = self.__estimate_latency(result.plan)
         actual_latency, result.std_latency, _ = self.extractor.measure_query(query.content, num_runs)
 
@@ -125,15 +128,15 @@ class ModelEvaluator:
         with torch.no_grad():
             return self.model(plan).item()
 
+@dataclass
 class Result:
     """Holds a single query evaluation result."""
-    def __init__(self, name: str, content: str):
-        self.name = name
-        self.content = content
+    name: str
+    content: str
+    plan: dict
 
-        self.estimated_latency: float
-        self.actual_latency: float
-        self.std_latency: float
-        self.absolute_error: float
-        self.r_value: float
-        self.plan: dict
+    estimated_latency: float = nan
+    actual_latency: float = nan
+    std_latency: float = nan
+    absolute_error: float = nan
+    r_value: float = nan

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from latency_estimation.common import NnOperator
-from latency_estimation.train_config import ModelConfig
+from latency_estimation.config import ModelConfig
 from latency_estimation.neo4j.neural_units import Estimation, create_neural_unit
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.exceptions import NeuralUnitNotFoundException
@@ -27,7 +27,7 @@ class PlanStructuredNetwork(nn.Module):
         model = PlanStructuredNetwork(config, feature_extractor)
 
         for operator in OperatorCollector.run(feature_extractor, plans):
-            model._add_unit_if_not_exists(operator)
+            model.__add_unit_if_not_exists(operator)
 
         return model
 
@@ -41,8 +41,9 @@ class PlanStructuredNetwork(nn.Module):
 
         operators: dict[str, NnOperator] = checkpoint['operators']
         for operator in operators.values():
-            model._add_unit_if_not_exists(operator)
+            model.__add_unit_if_not_exists(operator)
 
+        # Load trained weights
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(device)
         model.eval()
@@ -79,7 +80,7 @@ class PlanStructuredNetwork(nn.Module):
             Estimated latency (scalar tensor [1, 1])
         """
         # Process the entire plan tree
-        cache = dict[int, Estimation]()
+        cache: dict[int, Estimation] = {}
         output = self.__process_plan_node(plan, cache)
 
         # Root should have estimated latency
@@ -124,9 +125,9 @@ class PlanStructuredNetwork(nn.Module):
         node_features_tensor = torch.tensor(node_features, dtype=torch.float32)
 
         operator = NnOperator(
-            type = node.get('operatorType', 'Unknown').replace('@neo4j', ''),
-            num_children = len(child_outputs),
-            feature_dim = len(node_features),
+            type=node.get('operatorType', 'Unknown').replace('@neo4j', ''),
+            num_children=len(child_outputs),
+            feature_dim=len(node_features),
         )
         unit = self.__get_unit(operator)
 
@@ -168,17 +169,17 @@ class PlanStructuredNetwork(nn.Module):
 
         return self.units[op_key]
 
-    def _add_unit_if_not_exists(self, operator: NnOperator):
-        """Create a neural unit for a specific operator type (unless already exists)."""
+    def __add_unit_if_not_exists(self, operator: NnOperator):
+        """Creates a neural unit for a specific operator type (unless already exists)."""
         op_key = operator.key()
         if op_key in self.units:
             return
 
         self.units[op_key] = create_neural_unit(
-            op_type = operator.type,
-            input_dim = operator.feature_dim,
-            num_children = operator.num_children,
-            config = self.config,
+            op_type=operator.type,
+            input_dim=operator.feature_dim,
+            num_children=operator.num_children,
+            config=self.config,
         )
         self.operators[op_key] = operator
 
@@ -207,12 +208,11 @@ class OperatorCollector():
         # Sort pairs for consistent ordering.
         sorted_pairs = sorted(list(operator_pairs))
 
-        print(f'\nFound {len(operator_pairs)} unique operator type/children combinations:')
+        print(f'\nFound {len(sorted_pairs)} unique operator type/children combinations:')
+        operators = list[NnOperator]()
+
         for op_type, num_children in sorted_pairs:
             print(f'  - {op_type} (children: {num_children})')
-
-        operators = list[NnOperator]()
-        for op_type, num_children in sorted_pairs:
             feature_dim = self.feature_extractor.get_feature_dim(op_type)
             operators.append(NnOperator(op_type, num_children, feature_dim))
 
@@ -222,7 +222,6 @@ class OperatorCollector():
         """Recursively collect operator types and their children counts."""
         output = set[tuple[str, int]]()
 
-        # Normalize scan types to 'Scan' for unified neural unit.
         op_type = node.get('operatorType', 'Unknown').replace('@neo4j', '')
         children = node.get('children', [])
         output.add((op_type, len(children)))

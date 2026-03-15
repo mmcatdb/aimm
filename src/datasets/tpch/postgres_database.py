@@ -1,10 +1,10 @@
 from typing_extensions import override
+from common.config import DatasetName
 from common.database import Database
 from common.drivers import DriverType
-from common.driver_provider import DatasetName
 import random
 
-class TpchPostgresDatabase(Database):
+class TpchPostgresDatabase(Database[str]):
     NUM_QUERY_TYPES = 6 # Total number of different query types implemented
 
     def __init__(self):

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from latency_estimation.common import NnOperator
-from latency_estimation.train_config import ModelConfig
+from latency_estimation.config import ModelConfig
 from latency_estimation.postgres.neural_units import create_neural_unit
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
 from latency_estimation.exceptions import NeuralUnitNotFoundException
@@ -27,7 +27,7 @@ class PlanStructuredNetwork(nn.Module):
         model = PlanStructuredNetwork(config, feature_extractor)
 
         for operator in OperatorCollector.run(feature_extractor, plans):
-            model._add_unit_if_not_exists(operator)
+            model.__add_unit_if_not_exists(operator)
 
         return model
 
@@ -41,7 +41,7 @@ class PlanStructuredNetwork(nn.Module):
 
         operators: dict[str, NnOperator] = checkpoint['operators']
         for operator in operators.values():
-            model._add_unit_if_not_exists(operator)
+            model.__add_unit_if_not_exists(operator)
 
         # Load trained weights
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -136,9 +136,9 @@ class PlanStructuredNetwork(nn.Module):
         node_features_tensor = torch.FloatTensor(node_features).unsqueeze(0).to(device)
 
         operator = NnOperator(
-            type = _normalize_op_type(node.get('Node Type', '')),
-            num_children = len(child_outputs),
-            feature_dim = len(node_features),
+            type=_normalize_op_type(node.get('Node Type', '')),
+            num_children=len(child_outputs),
+            feature_dim=len(node_features),
         )
         unit = self.__get_unit(operator)
 
@@ -175,17 +175,17 @@ class PlanStructuredNetwork(nn.Module):
 
         return self.units[op_key]
 
-    def _add_unit_if_not_exists(self, operator: NnOperator):
-        """Create a neural unit for a specific operator type (unless already exists)."""
+    def __add_unit_if_not_exists(self, operator: NnOperator):
+        """Creates a neural unit for a specific operator type (unless already exists)."""
         op_key = operator.key()
         if op_key in self.units:
             return
 
         self.units[op_key] = create_neural_unit(
-            op_type = operator.type,
-            input_dim = operator.feature_dim,
-            num_children = operator.num_children,
-            config = self.config,
+            op_type=operator.type,
+            input_dim=operator.feature_dim,
+            num_children=operator.num_children,
+            config=self.config,
         )
         self.operators[op_key] = operator
 
@@ -214,12 +214,11 @@ class OperatorCollector():
         # Sort pairs for consistent ordering.
         sorted_pairs = sorted(list(operator_pairs))
 
-        print(f'\nFound {len(operator_pairs)} unique operator type/children combinations:')
+        print(f'\nFound {len(sorted_pairs)} unique operator type/children combinations:')
+        operators = list[NnOperator]()
+
         for op_type, num_children in sorted_pairs:
             print(f'  - {op_type} (children: {num_children})')
-
-        operators = list[NnOperator]()
-        for op_type, num_children in sorted_pairs:
             feature_dim = self.feature_extractor.get_feature_dim(op_type)
             operators.append(NnOperator(op_type, num_children, feature_dim))
 

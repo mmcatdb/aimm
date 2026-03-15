@@ -1,6 +1,5 @@
 import argparse
-from common.config import Config
-from common.driver_provider import DatasetName, dataset_import_directory
+from common.config import Config, DatasetName
 from common.utils import exit_with_exception
 from datasets.databases import get_available_dataset_names
 
@@ -13,7 +12,7 @@ def main(rawArgs: list[str] | None = None):
 
     config = Config.load()
     dataset = DatasetName(args.dataset[0])
-    import_directory = args.import_dir or dataset_import_directory(config, dataset)
+    import_directory = args.import_dir or config.dataset_import_directory(dataset)
 
     if dataset == DatasetName.EDBT:
         generate_edbt(config, import_directory, args.scale)

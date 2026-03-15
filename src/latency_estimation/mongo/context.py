@@ -1,27 +1,27 @@
 from common.config import Config, DatasetName
-from common.database import Database
-from common.drivers import DriverType, Neo4jDriver
+from common.database import Database, MongoQuery
+from common.drivers import DriverType, MongoDriver
 from datasets.databases import find_database, TRAIN_DATASET
 from latency_estimation.common import load_checkpoint_file, load_dataset, save_checkpoint_file
-from latency_estimation.neo4j.plan_extractor import PlanExtractor
-from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
-from latency_estimation.neo4j.trainer import PlanStructuredTrainer
+from latency_estimation.mongo.plan_extractor import PlanExtractor
+from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
+from latency_estimation.mongo.trainer import PlanStructuredTrainer
 
-class Neo4jContext:
+class MongoContext:
     def __init__(self, quiet: bool):
         self.quiet = quiet
         self.config: Config
-        self.driver: Neo4jDriver
-        self.database: Database[str]
+        self.driver: MongoDriver
+        self.database: Database[MongoQuery]
         self.extractor: PlanExtractor
 
     @staticmethod
-    def create(quiet: bool = False, dataset: DatasetName = TRAIN_DATASET) -> 'Neo4jContext':
-        ctx = Neo4jContext(quiet)
+    def create(quiet: bool = False, dataset: DatasetName = TRAIN_DATASET) -> 'MongoContext':
+        ctx = MongoContext(quiet)
         ctx.quiet = quiet
         ctx.config = Config.load()
-        ctx.driver = Neo4jDriver(ctx.config.neo4j, dataset.value)
-        ctx.database = find_database(dataset, DriverType.NEO4J)
+        ctx.driver = MongoDriver(ctx.config.mongo, dataset.value)
+        ctx.database = find_database(dataset, DriverType.MONGO)
         ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
         return ctx
 
@@ -29,7 +29,7 @@ class Neo4jContext:
         self.driver.close()
 
     def load_dataset(self, num_queries: int, num_runs: int):
-        cache_path = f'{self.config.cache_directory}/{self.database.id()}_{num_queries}_{num_runs}.pkl'
+        cache_path = f'{self.config.cache_directory}/{self.database.id()}_{num_queries}.pkl'
 
         return load_dataset(cache_path, lambda: self.extractor.collect_training_dataset(num_queries, num_runs))
 
@@ -42,7 +42,7 @@ class Neo4jContext:
     def checkpoint_path(self, suffix: str) -> str:
         return f'{self.config.checkpoint_directory}/{self.database.id()}_{suffix}.pt'
 
-    def load_model(self, path: str | None) -> PlanStructuredNetwork:
+    def load_model(self, path: str | None = None) -> PlanStructuredNetwork:
         if not self.quiet:
             print('Loading trained model...')
 

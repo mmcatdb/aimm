@@ -139,30 +139,30 @@ class TpchNeo4jLoader(Neo4jLoader):
         # Create relationships for simple foreign keys
 
         print('Creating Nation -> Region relationships...')
-        self._dao.execute('''
+        self._driver.execute('''
             MATCH (n:Nation), (r:Region {r_regionkey: n.n_regionkey})
             CREATE (n)-[:IS_IN_REGION]->(r)
         ''')
         # Remove redundant foreign key property
-        self._dao.execute('MATCH (n:Nation) REMOVE n.n_regionkey')
+        self._driver.execute('MATCH (n:Nation) REMOVE n.n_regionkey')
 
         print('Creating Customer -> Nation relationships...')
-        self._dao.execute('''
+        self._driver.execute('''
             MATCH (c:Customer), (n:Nation {n_nationkey: c.c_nationkey})
             CREATE (c)-[:IS_IN_NATION]->(n)
         ''')
-        self._dao.execute('MATCH (c:Customer) REMOVE c.c_nationkey')
+        self._driver.execute('MATCH (c:Customer) REMOVE c.c_nationkey')
 
         print('Creating Supplier -> Nation relationships...')
-        self._dao.execute('''
+        self._driver.execute('''
             MATCH (s:Supplier), (n:Nation {n_nationkey: s.s_nationkey})
             CREATE (s)-[:IS_IN_NATION]->(n)
         ''')
-        self._dao.execute('MATCH (s:Supplier) REMOVE s.s_nationkey')
+        self._driver.execute('MATCH (s:Supplier) REMOVE s.s_nationkey')
 
         print('Creating Customer -> Order relationships...')
-        self._dao.execute('''
+        self._driver.execute('''
             MATCH (c:Customer), (o:Order {o_custkey: c.c_custkey})
             CREATE (c)-[:PLACED]->(o)
         ''')
-        self._dao.execute('MATCH (o:Order) REMOVE o.o_custkey')
+        self._driver.execute('MATCH (o:Order) REMOVE o.o_custkey')
