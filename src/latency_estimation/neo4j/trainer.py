@@ -6,6 +6,7 @@ import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON
 from latency_estimation.abstract import BaseDataset
+from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 
 class PlanStructuredTrainer:
@@ -223,8 +224,8 @@ def compute_plan_structure_hash(plan: dict) -> str:
         Hash string representing the plan structure
     """
     def structure_sig(node):
-        op_type = node.get('operatorType', 'Unknown').replace('@neo4j', '')
-        children = node.get('children', [])
+        op_type = FeatureExtractor.get_node_type(node)
+        children = FeatureExtractor.get_node_children(node)
 
         if not children:
             return op_type

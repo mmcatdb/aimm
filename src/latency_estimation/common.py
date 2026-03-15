@@ -20,7 +20,7 @@ class NnOperator:
         """Get a unique key for this operator."""
         return f'{self.type}_{self.num_children}'
 
-TDataset = TypeVar('TDataset', bound = BaseDataset)
+TDataset = TypeVar('TDataset', bound=BaseDataset)
 
 def load_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset:
     if path is None:

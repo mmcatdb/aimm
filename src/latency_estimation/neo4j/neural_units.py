@@ -10,6 +10,7 @@ Key differences from PostgreSQL implementation:
 import torch
 import torch.nn as nn
 from latency_estimation.config import ModelConfig
+from latency_estimation.common import NnOperator
 
 class Estimation:
     def __init__(self, data: torch.Tensor, latency: torch.Tensor | None):
@@ -104,25 +105,18 @@ class GenericUnit(NeuralUnit):
         self.num_children = num_children
         self.operator_feature_dim = input_dim
 
-def create_neural_unit(op_type: str, input_dim: int, num_children: int, config: ModelConfig) -> NeuralUnit:
+def create_neural_unit(config: ModelConfig, operator: NnOperator) -> NeuralUnit:
     """
     Factory function to create a neural unit for a given operator type.
-
     For Neo4j, we use a generic unit for all operators.
     The root operator (ProduceResults) is special in that it estimates latency.
-
-    Args:
-        op_type: Neo4j operator type (e.g., 'ProduceResults', 'Filter', etc.)
-        input_dim: Size of operator's feature vector
-        num_children: Number of child operators
     """
-
     # ProduceResults should always be the root
-    is_root_op = (op_type == 'ProduceResults')
+    is_root_op = (operator.type == 'ProduceResults')
 
     return GenericUnit(
-        input_dim=input_dim,
-        num_children=num_children,
+        input_dim=operator.feature_dim,
+        num_children=operator.num_children,
         data_vec_dim=config.data_vec_dim,
         hidden_dim=config.hidden_dim,
         num_layers=config.num_layers,

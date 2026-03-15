@@ -2,6 +2,7 @@
 import argparse
 from common.utils import auto_close, data_size_quantity, pretty_print_int
 from common.config import DatasetName
+from common.drivers import DriverType
 from latency_estimation.exceptions import NeuralUnitNotFoundException
 from latency_estimation.common import NnOperator
 
@@ -75,19 +76,24 @@ def check_run():
 
     print('Done.')
 
+AVAILABLE_DATABASES = [type.value for type in [DriverType.POSTGRES, DriverType.NEO4J]]
+
 def test_args(parser: argparse.ArgumentParser):
-    parser.add_argument('--checkpoint', '-c', type=str, required=True, help='Path to trained model')
-    parser.add_argument('--database', '-d', type=str, required=True, help='Either "postgres" or "neo4j"')
+    parser.add_argument('database', nargs=1, choices=AVAILABLE_DATABASES, help='Type of database to test.')
+    # The checkpoint is required since we usually want to test on a different dataset than we trained on, so we can't rely on the default checkpoint path.
+    parser.add_argument('--checkpoint', '-c', type=str, required=True,     help='Path to model checkpoint.')
 
 def test_run(args: argparse.Namespace):
-    print(f'Testing {args.database} model\n')
+    type = DriverType(args.database[0])
 
-    if args.database == 'postgres':
+    print(f'Testing {type.value} model')
+
+    if type == DriverType.POSTGRES:
         test_postgres(args.checkpoint)
-    elif args.database == 'neo4j':
+    elif type == DriverType.NEO4J:
         test_neo4j(args.checkpoint)
     else:
-        print(f'Unsupported database type: {args.database}')
+        print(f'Unsupported database type: {type.value}')
 
 def test_postgres(checkpoint: str):
     from latency_estimation.postgres.context import PostgresContext
@@ -151,7 +157,7 @@ def try_print_missing_operators(missing: set[str], available: list[NnOperator]):
         print(f'  - {operator}')
     print('Available operators:')
     for operator in available:
-        print(f'  - {operator.type}')
+        print(f'  - {operator.key()}')
 
 if __name__ == '__main__':
     main()

@@ -70,6 +70,10 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, train_dataset.plans)
     model.print_summary()
 
+    if config.dry_run:
+        print('\nDry run complete. Exiting before training.')
+        return
+
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size, config.num_epochs, args.warmup_epochs)
 

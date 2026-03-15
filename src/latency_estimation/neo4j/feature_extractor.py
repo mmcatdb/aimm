@@ -1,10 +1,13 @@
+from typing_extensions import override
+
 import numpy as np
 from typing import Any
 from collections import defaultdict
 import re
 from common.utils import EPSILON
+from latency_estimation.feature_extractor import BaseFeatureExtractor
 
-class FeatureExtractor:
+class FeatureExtractor(BaseFeatureExtractor):
     """
     Feature extraction from Neo4j query plans.
     Converts the Neo4j plan tree into vectorized inputs for neural units.
@@ -20,6 +23,16 @@ class FeatureExtractor:
         # Statistics for normalization
         # Changed from lambda to dict to enable pickling
         self.stats = defaultdict(self._default_stats)
+
+    @staticmethod
+    @override
+    def get_node_type(node: dict) -> str:
+        return node.get('operatorType', 'Unknown').replace('@neo4j', '')
+
+    @staticmethod
+    @override
+    def get_node_children(node: dict) -> list[dict]:
+        return node.get('children', [])
 
     def _default_stats(self):
         """Default statistics dictionary for normalization."""
@@ -152,18 +165,10 @@ class FeatureExtractor:
 
         return feature_vector
 
-    def get_feature_dim(self, op_type: str | None = None) -> int:
-        """
-        Get the dimension of the feature vector for a given node type.
-        In Neo4j, all operators have the same feature vector size (unlike Postgres
-        where different operators had different features).
+    @override
+    def get_feature_dim(self, op_type: str) -> int:
+        # In Neo4j, all operators have the same feature vector size (unlike Postgres where different operators had different features).
 
-        Args:
-            op_type: The operator type
-
-        Returns:
-            The dimension of the feature vector
-        """
         # Calculate total dimension
         dim = 0
 

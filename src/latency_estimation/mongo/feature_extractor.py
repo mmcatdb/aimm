@@ -1,8 +1,11 @@
+from typing_extensions import override
+
 import numpy as np
 from collections import defaultdict
 import math
 from common.utils import EPSILON
 from common.drivers import MongoDriver
+from latency_estimation.feature_extractor import BaseFeatureExtractor
 
 # All known MongoDB execution stages (not used right now)
 # KNOWN_STAGES = [
@@ -24,7 +27,7 @@ FILTER_OPS = [
     '$and', '$or', '$nor', '$not',
 ]
 
-class FeatureExtractor:
+class FeatureExtractor(BaseFeatureExtractor):
     """
     Feature extraction from MongoDB query plans.
     Handles both Classic Engine (explainVersion '1') and SBE (explainVersion '2') plans.
@@ -44,6 +47,22 @@ class FeatureExtractor:
         self.numeric_stats = {}
         # Collection stats cache (loaded before training/inference)
         self.collection_stats: dict[str, dict[str, int | float]] = {}
+
+    @staticmethod
+    @override
+    def get_node_type(node: dict) -> str:
+        return node.get('stage', 'UNKNOWN')
+
+    @staticmethod
+    @override
+    def get_node_children(node: dict) -> list[dict]:
+        # Handle both inputStage and inputStages
+        children = []
+        if 'inputStage' in node:
+            children.append(node['inputStage'])
+        if 'inputStages' in node:
+            children.extend(node['inputStages'])
+        return children
 
     # TODO Not sure about this - why does mongo has these stats but postgres / neo4j don't?
     def build_collection_stats(self, driver: MongoDriver):
@@ -78,7 +97,7 @@ class FeatureExtractor:
         numeric_features = defaultdict(list)
 
         def traverse(node):
-            stage = node.get('stage', 'UNKNOWN')
+            stage = self.get_node_type(node)
             self.stage_vocab.add(stage)
 
             # Collect collection names
@@ -96,11 +115,8 @@ class FeatureExtractor:
                     numeric_features[key].append(float(node[key]))
 
             # Recurse children
-            if 'inputStage' in node:
-                traverse(node['inputStage'])
-            if 'inputStages' in node:
-                for child in node['inputStages']:
-                    traverse(child)
+            for child in self.get_node_children(node):
+                traverse(child)
 
         for plan in plans:
             traverse(plan)
@@ -132,33 +148,33 @@ class FeatureExtractor:
 
     def extract_features(self, node: dict, collection_name: str) -> np.ndarray:
         """Extract feature vector for a single plan node."""
-        stage = node.get('stage', 'UNKNOWN')
+        op_type = self.get_node_type(node)
         features = []
 
         # 1. Stage one-hot
-        features.extend(self.__one_hot(stage, self.stage_vocab))
+        features.extend(self.__one_hot(op_type, self.stage_vocab))
 
         # 2. Global collection features
         features.extend(self.__extract_global_features(collection_name))
 
         # 3. Stage-specific features
-        if stage == 'COLLSCAN':
+        if op_type == 'COLLSCAN':
             features.extend(self.__extract_collscan(node))
-        elif stage in ('IXSCAN', 'EXPRESS_IXSCAN'):
+        elif op_type in ('IXSCAN', 'EXPRESS_IXSCAN'):
             features.extend(self.__extract_ixscan(node))
-        elif stage == 'FETCH':
+        elif op_type == 'FETCH':
             features.extend(self.__extract_fetch(node))
-        elif stage == 'SORT':
+        elif op_type == 'SORT':
             features.extend(self.__extract_sort(node))
-        elif stage in ('LIMIT', 'SKIP'):
-            features.extend(self.__extract_limit_skip(node, stage))
-        elif stage in ('PROJECTION_SIMPLE', 'PROJECTION_DEFAULT', 'PROJECTION_COVERED'):
+        elif op_type in ('LIMIT', 'SKIP'):
+            features.extend(self.__extract_limit_skip(node, op_type))
+        elif op_type in ('PROJECTION_SIMPLE', 'PROJECTION_DEFAULT', 'PROJECTION_COVERED'):
             features.extend(self.__extract_projection(node))
-        elif stage == 'GROUP':
+        elif op_type == 'GROUP':
             features.extend(self.__extract_group(node))
-        elif stage == 'EQ_LOOKUP':
+        elif op_type == 'EQ_LOOKUP':
             features.extend(self.__extract_eq_lookup(node))
-        elif stage in ('AND_HASH', 'AND_SORTED', 'OR', 'SORT_MERGE'):
+        elif op_type in ('AND_HASH', 'AND_SORTED', 'OR', 'SORT_MERGE'):
             features.extend(self.__extract_merge_ops(node))
         else:
             # Generic fallback: filter + direction
@@ -166,27 +182,27 @@ class FeatureExtractor:
 
         return np.array(features, dtype=np.float32)
 
-    def get_feature_dim(self, stage: str) -> int:
-        """Get total feature dimension for a given stage type."""
+    @override
+    def get_feature_dim(self, op_type: str) -> int:
         base_dim = len(self.stage_vocab) + self.__dim_global_features()
 
-        if stage == 'COLLSCAN':
+        if op_type == 'COLLSCAN':
             return base_dim + self.__dim_collscan()
-        elif stage in ('IXSCAN', 'EXPRESS_IXSCAN'):
+        elif op_type in ('IXSCAN', 'EXPRESS_IXSCAN'):
             return base_dim + self.__dim_ixscan()
-        elif stage == 'FETCH':
+        elif op_type == 'FETCH':
             return base_dim + self.__dim_fetch()
-        elif stage == 'SORT':
+        elif op_type == 'SORT':
             return base_dim + self.__dim_sort()
-        elif stage in ('LIMIT', 'SKIP'):
+        elif op_type in ('LIMIT', 'SKIP'):
             return base_dim + self.__dim_limit_skip()
-        elif stage in ('PROJECTION_SIMPLE', 'PROJECTION_DEFAULT', 'PROJECTION_COVERED'):
+        elif op_type in ('PROJECTION_SIMPLE', 'PROJECTION_DEFAULT', 'PROJECTION_COVERED'):
             return base_dim + self.__dim_projection()
-        elif stage == 'GROUP':
+        elif op_type == 'GROUP':
             return base_dim + self.__dim_group()
-        elif stage == 'EQ_LOOKUP':
+        elif op_type == 'EQ_LOOKUP':
             return base_dim + self.__dim_eq_lookup()
-        elif stage in ('AND_HASH', 'AND_SORTED', 'OR', 'SORT_MERGE'):
+        elif op_type in ('AND_HASH', 'AND_SORTED', 'OR', 'SORT_MERGE'):
             return base_dim + self.__dim_merge_ops()
         else:
             return base_dim + self.__dim_generic()

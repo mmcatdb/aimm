@@ -1,8 +1,11 @@
+from typing_extensions import override
+
 import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON
+from latency_estimation.feature_extractor import BaseFeatureExtractor
 
-class FeatureExtractor:
+class FeatureExtractor(BaseFeatureExtractor):
     """
     Feature extraction from PostgreSQL query plans.
     Converts the JSON plan tree into vectorized inputs for neural units.
@@ -28,6 +31,19 @@ class FeatureExtractor:
 
         # Statistics for normalization (mean, std)
         self.numeric_stats = {}
+
+    @staticmethod
+    @override
+    def get_node_type(node: dict) -> str:
+        type = node.get('Node Type', '')
+
+        # Normalize node type for neural unit lookup. All scan types (Seq Scan, Index Scan, etc.) are unified to 'Scan'.
+        return 'Scan' if 'Scan' in type else type
+
+    @staticmethod
+    @override
+    def get_node_children(node: dict) -> list[dict]:
+        return node.get('Plans', [])
 
     def build_vocabularies(self, plans: list[dict]):
         """
@@ -118,9 +134,8 @@ class FeatureExtractor:
         else:
             return self.__extract_common_features(node)
 
+    @override
     def get_feature_dim(self, op_type: str) -> int:
-        """Get the dimension of the feature vector for a given node type."""
-
         # NOTE: Everything except 'Node Type' isn't necessary to be here, but it gives better overview of the features.
         # - This is because `__extract_common_features` doesn't care if 'Plan Width', 'Plan Rows', etc. are in the node or not.
         dummy_node = {

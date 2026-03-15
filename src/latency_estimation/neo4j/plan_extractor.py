@@ -5,6 +5,7 @@ from common.database import Database
 from common.drivers import Neo4jDriver, cypher
 from latency_estimation.abstract import BaseDataset
 from common.utils import ProgressTracker
+from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
 class PlanExtractor:
     """
@@ -132,10 +133,10 @@ class PlanExtractor:
             total_operators += 1
             max_depth = max(max_depth, depth)
 
-            op_type = node.get('operatorType', 'Unknown').replace('@neo4j', '')
+            op_type = FeatureExtractor.get_node_type(node)
             operator_counts[op_type] = operator_counts.get(op_type, 0) + 1
 
-            for child in node.get('children', []):
+            for child in FeatureExtractor.get_node_children(node):
                 analyze_node(child, depth + 1)
 
         for plan in plans:

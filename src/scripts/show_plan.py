@@ -1,5 +1,4 @@
 import sys
-import textwrap
 import argparse
 from common.config import Config, DatasetName
 from common.drivers import PostgresDriver, Neo4jDriver, DriverType
@@ -26,14 +25,14 @@ def main(rawArgs: list[str] | None = None):
 def common_args(parser: argparse.ArgumentParser, type: DriverType):
     parser.add_argument('dataset', nargs=1, choices=get_available_dataset_names(), help=f'Name of the dataset. Needed to select the database.')
     parser.add_argument('query', nargs='?', help='Query string or a test query ID (if such query exists). Read from stdin if omitted.')
-    parser.add_argument('--tree', type=bool, default=True, help='Print the visual tree.')
-    parser.add_argument('--json', type=bool, default=False, help='Print the raw JSON.')
+    parser.add_argument('--tree', action=argparse.BooleanOptionalAction, default=True, help='Print the visual tree.')
+    parser.add_argument('--json', action='store_true', help='Print the raw JSON.')
 
     if type == DriverType.POSTGRES:
-        parser.add_argument('--profile', type=bool, default=False, help='Use EXPLAIN ANALYZE (actually runs the query; DML is rolled back).')
-        parser.add_argument('--no-cache', type=bool, default=False, help='Issue DISCARD ALL before running (requires --profile).')
+        parser.add_argument('--profile', action='store_true', help='Use EXPLAIN ANALYZE (actually runs the query; DML is rolled back).')
+        parser.add_argument('--no-cache', action='store_true', help='Issue DISCARD ALL before running (requires --profile).')
     elif type == DriverType.NEO4J:
-        parser.add_argument('--profile', type=bool, default=False, help='Use PROFILE instead of EXPLAIN (actually runs the query; DML is rolled back).')
+        parser.add_argument('--profile', action='store_true', help='Use PROFILE instead of EXPLAIN (actually runs the query; DML is rolled back).')
 
 def postgres_run(args: argparse.Namespace):
     from common.explainers.postgres_explainer import PostgresExplainer
