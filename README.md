@@ -64,6 +64,7 @@ python -m latency_estimation.mongo test
 - Explain query plan:
 ```bash
 python -m scripts.show_plan postgres tpch "UPDATE orders SET o_totalprice = 0 WHERE o_orderkey = 1"
+python -m scripts.show_plan postgres tpch Q7
 ```
 
 ```bash

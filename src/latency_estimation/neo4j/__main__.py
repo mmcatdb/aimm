@@ -56,7 +56,6 @@ def train_run(args: argparse.Namespace, ctx: Neo4jContext):
     feature_dim = len(sample_features)
     print(f'\nFeature vector dimension: {feature_dim}')
 
-
     print('\n[4/7] Splitting dataset...')
     split_index = int(len(dataset) * config.train_split)
     indexes = np.random.permutation(len(dataset))
@@ -67,15 +66,18 @@ def train_run(args: argparse.Namespace, ctx: Neo4jContext):
     print(f'Training set: {len(train_dataset)} queries')
     print(f'Test set: {len(test_dataset)} queries')
 
-    start_time = time.time()
-
     print('\n[5/7] Creating plan-structured neural network...')
     model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, train_dataset.plans)
     model.print_summary()
 
+    if config.dry_run:
+        print('\nDry run complete. Exiting before training.')
+        return
+
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size)
 
+    start_time = time.time()
     best_test_loss = float('inf')
 
     for epoch in range(config.num_epochs):

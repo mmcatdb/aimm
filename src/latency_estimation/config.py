@@ -1,4 +1,4 @@
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, BooleanOptionalAction
 
 class ModelConfig:
     """Parameters that don't change during training or evaluation."""
@@ -20,6 +20,7 @@ class TrainConfig:
         batch_size: int = 32,
         num_epochs: int = 100,
         learning_rate: float = 0.001,
+        dry_run: bool = False,
         model: ModelConfig = ModelConfig(),
     ):
         self.num_queries = num_queries
@@ -28,6 +29,7 @@ class TrainConfig:
         self.batch_size = batch_size
         self.num_epochs = num_epochs
         self.learning_rate = learning_rate
+        self.dry_run = dry_run
         self.model = model
 
     @staticmethod
@@ -53,15 +55,16 @@ class TrainConfig:
         )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
-        parser.add_argument('--num-queries',   type=int,   default=self.num_queries,        help='Number of queries to collect')
-        parser.add_argument('--num-runs',      type=int,   default=self.num_runs,           help='Number of executions per query for averaging')
-        parser.add_argument('--train-split',   type=float, default=self.train_split,        help='Fraction of data for training')
-        parser.add_argument('--batch-size',    type=int,   default=self.batch_size,         help='Batch size for training')
-        parser.add_argument('--num-epochs',    type=int,   default=self.num_epochs,         help='Number of training epochs')
-        parser.add_argument('--learning-rate', type=float, default=self.learning_rate,      help='Learning rate for optimizer')
-        parser.add_argument('--hidden-dim',    type=int,   default=self.model.hidden_dim,   help='Hidden dimension size')
-        parser.add_argument('--num-layers',    type=int,   default=self.model.num_layers,   help='Number of hidden layers per neural unit')
-        parser.add_argument('--data-vec-dim',  type=int,   default=self.model.data_vec_dim, help='Data vector dimension size')
+        parser.add_argument('--num-queries',   type=int,   default=self.num_queries,        help='Number of queries to collect.')
+        parser.add_argument('--num-runs',      type=int,   default=self.num_runs,           help='Number of executions per query for averaging.')
+        parser.add_argument('--train-split',   type=float, default=self.train_split,        help='Fraction of data for training.')
+        parser.add_argument('--batch-size',    type=int,   default=self.batch_size,         help='Batch size for training.')
+        parser.add_argument('--num-epochs',    type=int,   default=self.num_epochs,         help='Number of training epochs.')
+        parser.add_argument('--learning-rate', type=float, default=self.learning_rate,      help='Learning rate for optimizer.')
+        parser.add_argument('--hidden-dim',    type=int,   default=self.model.hidden_dim,   help='Hidden dimension size.')
+        parser.add_argument('--num-layers',    type=int,   default=self.model.num_layers,   help='Number of hidden layers per neural unit.')
+        parser.add_argument('--data-vec-dim',  type=int,   default=self.model.data_vec_dim, help='Data vector dimension size.')
+        parser.add_argument('--dry-run',       action=BooleanOptionalAction, default=self.dry_run, help='Only print statistics about the dataset.')
 
     @staticmethod
     def from_arguments(args: Namespace) -> 'TrainConfig':
@@ -72,6 +75,7 @@ class TrainConfig:
             batch_size=args.batch_size,
             num_epochs=args.num_epochs,
             learning_rate=args.learning_rate,
+            dry_run=args.dry_run,
             model=ModelConfig(
                 hidden_dim=args.hidden_dim,
                 num_layers=args.num_layers,
@@ -90,6 +94,7 @@ class TrainConfig:
             f'hidden_dim = {self.model.hidden_dim},\n'
             f'num_layers = {self.model.num_layers},\n'
             f'data_vec_dim = {self.model.data_vec_dim},\n'
+            f'dry_run = {self.dry_run},'
         )
 
 class TestConfig:
@@ -119,8 +124,8 @@ class TestConfig:
         )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
-        parser.add_argument('--checkpoint', '-c', type=str,                                  help='Path to model checkpoint. Defaults to the "best" model')
-        parser.add_argument('--num-runs',         type=int, default=self.num_runs,           help='Number of executions per query for averaging')
+        parser.add_argument('--checkpoint', '-c', type=str, default=self.checkpoint,         help='Path to model checkpoint. Defaults to the "best" model.')
+        parser.add_argument('--num-runs',         type=int, default=self.num_runs,           help='Number of executions per query for averaging.')
         parser.add_argument('--query', '-q',      type=str, action='append', dest='queries', help='Additional query to test (can be used multiple times). Disables built-in test queries.')
 
     @staticmethod

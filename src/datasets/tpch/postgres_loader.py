@@ -1,5 +1,5 @@
 from typing_extensions import override
-from common.loaders.postgres_loader import PostgresLoader, ColumnSchema
+from common.loaders.postgres_loader import PostgresLoader, ColumnSchema, IndexSchema
 
 class TpchPostgresLoader(PostgresLoader):
     @override
@@ -15,7 +15,19 @@ class TpchPostgresLoader(PostgresLoader):
     @override
     def _get_indexes(self):
         return [
-            # TODO add more indexes based on the queries we want to run
+            IndexSchema('nation', [ 'n_regionkey' ]),
+            IndexSchema('customer', [ 'c_nationkey' ]),
+            IndexSchema('orders', [ 'o_custkey' ]),
+            IndexSchema('supplier', [ 's_nationkey' ]),
+            IndexSchema('partsupp', [ 'ps_partkey' ]),
+            IndexSchema('partsupp', [ 'ps_suppkey' ]),
+            IndexSchema('lineitem', [ 'l_orderkey' ]),
+            IndexSchema('lineitem', [ 'l_partkey' ]),
+            IndexSchema('lineitem', [ 'l_suppkey' ]),
+
+            # These fields are by far the most common in queries:
+            IndexSchema('orders', [ 'o_orderdate' ]),
+            IndexSchema('lineitem', [ 'l_shipdate' ]),
         ]
 
 def get_postgres_tpch_schemas() -> dict[str, list[ColumnSchema]]:

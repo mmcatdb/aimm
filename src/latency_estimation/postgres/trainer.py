@@ -8,6 +8,7 @@ import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON
 from latency_estimation.abstract import BaseDataset
+from latency_estimation.postgres.feature_extractor import FeatureExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 
 class PlanStructuredTrainer:
@@ -231,13 +232,13 @@ def compute_plan_structure_hash(plan: dict) -> str:
     Plans with identical structure can be batched together.
     """
     def structure_sig(node):
-        op_type = node.get('Node Type', '')
-        num_children = len(node.get('Plans', []))
+        op_type = FeatureExtractor.get_node_type(node)
+        children = FeatureExtractor.get_node_children(node)
+        num_children = len(children)
 
         children_sig = []
-        if 'Plans' in node:
-            for child in node['Plans']:
-                children_sig.append(structure_sig(child))
+        for child in children:
+            children_sig.append(structure_sig(child))
 
         return f'{op_type}_{num_children}_{"_".join(sorted(children_sig))}'
 

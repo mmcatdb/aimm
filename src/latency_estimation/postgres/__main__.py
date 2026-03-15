@@ -66,6 +66,10 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, train_dataset.plans)
     model.print_summary()
 
+    if config.dry_run:
+        print('\nDry run complete. Exiting before training.')
+        return
+
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size)
 
@@ -131,8 +135,8 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
 def test_args(parser: argparse.ArgumentParser):
     TestConfig.postgres().add_arguments(parser)
 
-    parser.add_argument('--no-actual', action='store_true', help='Skip actual execution time measurement')
-    parser.add_argument('--no-plots', action='store_true', help='Skip generating plots')
+    parser.add_argument('--no-actual', action='store_true', help='Skip actual execution time measurement.')
+    parser.add_argument('--no-plots', action='store_true', help='Skip generating plots.')
 
 def test_run(args: argparse.Namespace, ctx: PostgresContext):
     config = TestConfig.from_arguments(args)

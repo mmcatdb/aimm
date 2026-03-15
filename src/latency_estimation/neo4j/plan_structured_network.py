@@ -1,34 +1,21 @@
+from typing_extensions import override
 import torch
 import torch.nn as nn
 from latency_estimation.common import NnOperator
 from latency_estimation.config import ModelConfig
+from latency_estimation.plan_structured_network import BasePlanStructuredNetwork, OperatorCollector
 from latency_estimation.neo4j.neural_units import Estimation, create_neural_unit
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
-from latency_estimation.exceptions import NeuralUnitNotFoundException
 
-class PlanStructuredNetwork(nn.Module):
-    """
-    Plan-structured neural network for Neo4j query performance estimation.
-    Maintains a library of neural units (one per operator type).
-    Dynamically assembles neural units to match query plan structure.
-    """
+class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
     def __init__(self, config: ModelConfig, feature_extractor: FeatureExtractor):
-        super().__init__()
-
-        self.config = config
-        self.feature_extractor = feature_extractor
-        self.units = nn.ModuleDict()
-        """One neural unit for each operator type"""
-        self.operators: dict[str, NnOperator] = {}
+        super().__init__(config, feature_extractor)
 
     @staticmethod
     def from_plans(config: ModelConfig, feature_extractor: FeatureExtractor, plans: list[dict]) -> 'PlanStructuredNetwork':
         """Create neural units by analyzing all operator types and their *number of children* in the training plans."""
         model = PlanStructuredNetwork(config, feature_extractor)
-
-        for operator in OperatorCollector.run(feature_extractor, plans):
-            model.__add_unit_if_not_exists(operator)
-
+        model._define_operators(OperatorCollector.run(feature_extractor, plans))
         return model
 
     @staticmethod
@@ -40,8 +27,7 @@ class PlanStructuredNetwork(nn.Module):
         model = PlanStructuredNetwork(config, feature_extractor)
 
         operators: dict[str, NnOperator] = checkpoint['operators']
-        for operator in operators.values():
-            model.__add_unit_if_not_exists(operator)
+        model._define_operators(list(operators.values()))
 
         # Load trained weights
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -50,26 +36,9 @@ class PlanStructuredNetwork(nn.Module):
 
         return model
 
-    def to_checkpoint(self) -> dict:
-        """Serialization to a file-friendly dictionary."""
-        return {
-            'config': self.config,
-            'operators': self.operators,
-            'feature_extractor': self.feature_extractor,
-            # Learned parameters of the model.
-            'model_state_dict': self.state_dict(),
-        }
-
-    def get_units(self) -> list[NnOperator]:
-        return list(self.operators.values())
-
-    def print_summary(self):
-        """Print a summary of the neural units in the model."""
-        print(f'Initialized {len(self.units)} neural units. Total parameters: {self.count_parameters():,}.')
-
-    def count_parameters(self) -> int:
-        """Count total number of parameters in the model."""
-        return sum(p.numel() for p in self.parameters())
+    @override
+    def _create_unit(self, operator: NnOperator) -> nn.Module:
+        return create_neural_unit(self.config, operator)
 
     def forward(self, plan: dict) -> torch.Tensor:
         """
@@ -116,7 +85,7 @@ class PlanStructuredNetwork(nn.Module):
 
         # Process children recursively
         child_outputs = []
-        for child in node.get('children', []):
+        for child in self.feature_extractor.get_node_children(node):
             child_output = self.__process_plan_node(child, cache)
             # Extract data vector from child
             child_outputs.append(child_output.data)
@@ -125,11 +94,11 @@ class PlanStructuredNetwork(nn.Module):
         node_features_tensor = torch.tensor(node_features, dtype=torch.float32)
 
         operator = NnOperator(
-            type=node.get('operatorType', 'Unknown').replace('@neo4j', ''),
+            type=self.feature_extractor.get_node_type(node),
             num_children=len(child_outputs),
             feature_dim=len(node_features),
         )
-        unit = self.__get_unit(operator)
+        unit = self._get_unit(operator)
 
         # Concatenate operator features with children data vectors
         if child_outputs:
@@ -150,84 +119,5 @@ class PlanStructuredNetwork(nn.Module):
 
         # Cache result
         cache[node_id] = output
-
-        return output
-
-    def __get_unit(self, operator: NnOperator) -> nn.Module:
-        op_key = operator.key()
-        if op_key not in self.units:
-            # Potential fallback: could try to find the closest num_children.
-            # For now, we'll just error out.
-            raise NeuralUnitNotFoundException(operator)
-
-        # Operator consistency check - maybe not needed?
-        if op_key not in self.operators:
-            raise ValueError(f'Operator not found: {op_key}. Available operators: {list(self.operators.keys())}')
-        op_original = self.operators[op_key]
-        if op_original.feature_dim != operator.feature_dim:
-            raise ValueError(f'Feature dimension mismatch for operator {op_key}: expected {op_original.feature_dim}, got {operator.feature_dim}.')
-
-        return self.units[op_key]
-
-    def __add_unit_if_not_exists(self, operator: NnOperator):
-        """Creates a neural unit for a specific operator type (unless already exists)."""
-        op_key = operator.key()
-        if op_key in self.units:
-            return
-
-        self.units[op_key] = create_neural_unit(
-            op_type=operator.type,
-            input_dim=operator.feature_dim,
-            num_children=operator.num_children,
-            config=self.config,
-        )
-        self.operators[op_key] = operator
-
-class OperatorCollector():
-    """
-    - Assembles neural units into trees.
-    - Creates a neural network with structure isomorphic to a query plan.
-    - Each operator in the plan is replaced by its corresponding neural unit.
-    - The network recursively computes outputs bottom-up through the tree.
-    """
-    def __init__(self, feature_extractor: FeatureExtractor):
-        self.feature_extractor = feature_extractor
-
-    @staticmethod
-    def run(feature_extractor: FeatureExtractor, plans: list[dict]) -> list[NnOperator]:
-        collector = OperatorCollector(feature_extractor)
-        return collector.__collect_unique_operators(plans)
-
-    def __collect_unique_operators(self, plans: list[dict]) -> list[NnOperator]:
-        """Collect all unique operators from the plans."""
-        # Pairs of (operator_type, num_children).
-        operator_pairs = set[tuple[str, int]]()
-        for plan in plans:
-            operator_pairs.update(self.__collect_operator_pairs(plan))
-
-        # Sort pairs for consistent ordering.
-        sorted_pairs = sorted(list(operator_pairs))
-
-        print(f'\nFound {len(sorted_pairs)} unique operator type/children combinations:')
-        operators = list[NnOperator]()
-
-        for op_type, num_children in sorted_pairs:
-            print(f'  - {op_type} (children: {num_children})')
-            feature_dim = self.feature_extractor.get_feature_dim(op_type)
-            operators.append(NnOperator(op_type, num_children, feature_dim))
-
-        return operators
-
-    def __collect_operator_pairs(self, node: dict) -> set[tuple[str, int]]:
-        """Recursively collect operator types and their children counts."""
-        output = set[tuple[str, int]]()
-
-        op_type = node.get('operatorType', 'Unknown').replace('@neo4j', '')
-        children = node.get('children', [])
-        output.add((op_type, len(children)))
-
-        # Recursively scan children.
-        for child in children:
-            output.update(self.__collect_operator_pairs(child))
 
         return output

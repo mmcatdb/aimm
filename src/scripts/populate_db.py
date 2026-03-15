@@ -29,7 +29,7 @@ def main(rawArgs: list[str] | None = None):
 def common_args(parser: argparse.ArgumentParser):
     parser.add_argument('dataset', nargs=1, choices=get_available_dataset_names(), help=f'Name of the dataset.')
     parser.add_argument('--import-dir', type=str, default=None, help='Path to the directory containing the input files. If not specified, defaults to "{IMPORT_DIRECTORY}/<dataset>".')
-    parser.add_argument('--no-reset', type=bool, default=False, help='Skip clearing the database beforehand.')
+    parser.add_argument('--no-reset', action='store_true', help='Skip clearing the database beforehand.')
 
 class Context:
     def setup(self, args: argparse.Namespace):
