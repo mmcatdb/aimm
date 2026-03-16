@@ -47,16 +47,14 @@ class EdbtPostgresDatabase(Database[str]):
 
         person_id = 1
         product_id = 1
-        self._test_query('Q6', 'Did this person buy this product? (via customer snapshots)', f'''
-            SELECT EXISTS (
-                SELECT 1
-                FROM customer c
-                JOIN "order" o ON o.customer_id = c.customer_id
-                JOIN order_item oi ON oi.order_id = o.order_id
+        self._test_query('Q6', 'How many times did this person buy this product? (via customer snapshots)', f'''
+            SELECT COUNT(*)
+            FROM customer c
+            JOIN "order" o ON o.customer_id = c.customer_id
+            JOIN order_item oi ON oi.order_id = o.order_id
                 WHERE c.person_id = '{person_id}'
                   AND oi.product_id = '{product_id}'
                   AND o.status IN ('paid', 'shipped')
-            ) AS has_bought
         ''')
 
         # OLAP focused (Postgres)

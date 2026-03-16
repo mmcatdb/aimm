@@ -1,9 +1,8 @@
-from typing_extensions import deprecated
 from common.config import DatasetName
 from common.database import Database
 from common.drivers import DriverType
 
-@deprecated('Use some unified database provider')
+# FIXME Use some unified database provider
 def find_database(dataset: DatasetName, type: DriverType) -> Database:
     if dataset == DatasetName.EDBT:
         if type == DriverType.POSTGRES:
