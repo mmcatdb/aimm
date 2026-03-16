@@ -29,7 +29,7 @@ class MongoContext:
         self.driver.close()
 
     def load_dataset(self, num_queries: int, num_runs: int):
-        cache_path = f'{self.config.cache_directory}/{self.database.id()}_{num_queries}.pkl'
+        cache_path = f'{self.config.cache_directory}/{self.database.id()}_{num_queries}_{num_runs}.pkl'
 
         return load_dataset(cache_path, lambda: self.extractor.collect_training_dataset(num_queries, num_runs))
 

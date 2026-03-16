@@ -69,5 +69,5 @@ python -m scripts.show_plan postgres tpch Q7
 
 ```bash
 python -m experiments check
-python -m experiments test -c data/checkpoints/tpch_neo4j_final.pt -d neo4j
+python -m experiments test postgres -c data/checkpoints/tpch_postgres_best.pt
 ```

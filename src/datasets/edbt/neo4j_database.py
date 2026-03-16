@@ -47,11 +47,11 @@ class EdbtNeo4jDatabase(Database[str]):
 
         person_id = 1
         product_id = 1
-        self._test_query('Q6', 'Did this person buy this product? (via customer snapshots)', f'''
+        self._test_query('Q6', 'How many times did this person buy this product? (via customer snapshots)', f'''
             MATCH (p:Person {{person_id: {person_id}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid', 'shipped']
             MATCH (o)-[:HAS_ITEM]->(pr:Product {{product_id: {product_id}}})
-            RETURN COUNT(*) > 0 AS has_bought
+            RETURN COUNT(*) AS purchase_count
         ''')
 
         # OLAP focused (Postgres)

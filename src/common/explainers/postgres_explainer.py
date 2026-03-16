@@ -6,6 +6,8 @@ from rich.syntax import Syntax
 from rich.panel import Panel
 from common.drivers import PostgresDriver
 
+# See https://pganalyze.com/docs/explain for details on PostgreSQL EXPLAIN output structure.
+
 class PostgresExplainer:
     def __init__(self, driver: PostgresDriver) -> None:
         self._console = Console()
