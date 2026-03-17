@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import os
 from common.drivers import Neo4jDriver, cypher
-from common.utils import ProgressTracker
+from common.utils import ProgressTracker, print_warning
 
 class Neo4jLoader(ABC):
     """A class to load data into a Neo4j database."""
@@ -40,7 +40,8 @@ class Neo4jLoader(ABC):
             self._driver.verify()
             print('Successfully connected to Neo4j.')
         except Exception as e:
-            raise Exception(f'Failed to connect to Neo4j: {e}')
+            print_warning('Failed to connect to Neo4j.', e)
+            raise e
 
         self.__check_files()
 
@@ -73,7 +74,7 @@ class Neo4jLoader(ABC):
             try:
                 self._driver.execute(constraint)
             except Exception as e:
-                print(f'Constraint not found or could not be dropped: {constraint}... Error: {e}')
+                print_warning(f'Constraint not found or could not be dropped: {constraint}', e)
 
         progress = ProgressTracker.unlimited()
         progress.start('Deleting existing data... ')

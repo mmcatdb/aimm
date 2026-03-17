@@ -5,6 +5,7 @@ import random
 from typing import Generic, TypeVar
 from common.config import DatasetName
 from common.drivers import DriverType
+from common.utils import print_warning
 
 TQuery = TypeVar('TQuery')
 
@@ -77,6 +78,9 @@ class Database(ABC, Generic[TQuery]):
         day = random.randint(1, self.__days_in_month(month, year))
         return datetime.datetime(year, month, day)
 
+    def _random_date_string(self, start_year=1992, end_year=1998) -> str:
+        return self._random_date(start_year, end_year).strftime('%Y-%m-%d')
+
     def __days_in_month(self, month: int, year: int) -> int:
         if month == 2:
             return 29 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 28
@@ -113,10 +117,26 @@ class MongoFindQuery:
         self.limit = limit
         self.skip = skip
 
+    def __str__(self) -> str:
+        return json.dumps({
+            'collection': self.collection,
+            'filter': self.filter,
+            'projection': self.projection,
+            'sort': self.sort,
+            'limit': self.limit,
+            'skip': self.skip
+        }, indent=4)
+
 class MongoAggregateQuery:
     def __init__(self, collection: str, pipeline: list[dict]):
         self.collection = collection
         self.pipeline = pipeline
+
+    def __str__(self) -> str:
+        return json.dumps({
+            'collection': self.collection,
+            'pipeline': self.pipeline
+        }, indent=4)
 
 MongoQuery = MongoFindQuery | MongoAggregateQuery
 
@@ -136,5 +156,5 @@ def try_parse_mongo_query(query_str: str) -> MongoQuery | None:
                 skip=query_dict.get('skip'),
             )
     except (json.JSONDecodeError, KeyError) as e:
-        print(f'Invalid query format: {e}')
+        print_warning(f'Invalid query format', e)
         return None

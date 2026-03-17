@@ -1,6 +1,5 @@
 import sys
 import time
-from turtle import st
 from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
 import dataclasses, json
 from contextlib import contextmanager
@@ -17,8 +16,7 @@ class JsonEncoder(json.JSONEncoder):
         return super().default(o)
 
 class Closeable(Protocol):
-    def close(self) -> None:
-        pass
+    def close(self) -> None: ...
 
 @contextmanager
 def auto_close(closeable: Closeable):
@@ -30,20 +28,42 @@ def auto_close(closeable: Closeable):
     finally:
         closeable.close()
 
-def exit_with_exception(e: Exception) -> NoReturn:
+def exit_with_exception(exception: Exception) -> NoReturn:
     """Use this in each top-level script in a catch block to print unexpected terminal exceptions."""
-    import sys
     import traceback
 
-    traceback.print_exc()
+    print(exception, file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 
-def exit_with_error(error: str) -> NoReturn:
-    """Use this to exit whenever a terminal yet expected error is encountered."""
-    import sys
+ERROR_TEXT = '\033[91m'    # bright red
+WARNING_TEXT = '\033[95m'  # bright magenta
+INFO_TEXT = '\033[94m'     # bright blue
+BOLD_TEXT = '\033[1m'
+RESET_BOLD_TEXT = '\033[22m'
+RESET_TEXT = '\033[0m'
 
-    print(f'Error: {error}', file=sys.stderr)
-    sys.exit(1)
+def exit_with_error(message: str, exception: Exception | None = None) -> NoReturn:
+    """Use this to exit whenever a terminal yet expected error is encountered. If the expected error is a result of an unexpected exception, provide it as well."""
+    print(f'{ERROR_TEXT}{BOLD_TEXT}Error:{RESET_BOLD_TEXT} {message}{RESET_TEXT}', file=sys.stderr)
+    if exception is not None:
+        exit_with_exception(exception)
+    else:
+        sys.exit(1)
+
+def print_warning(message: str, exception: Exception | None = None) -> None:
+    """Use this to print a warning message without exiting."""
+    print(f'{WARNING_TEXT}{BOLD_TEXT}Warning:{RESET_BOLD_TEXT} {message}{RESET_TEXT}', file=sys.stderr)
+    if exception is not None:
+        import traceback
+
+        print(exception, file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+
+def print_info(message: str) -> None:
+    """Use this to print an informational message."""
+    # Loggin should also go to stderr to avoid messing with the actual output of the script, which might be piped to another command or file.
+    print(f'{INFO_TEXT}{BOLD_TEXT}Info:{RESET_BOLD_TEXT} {message}{RESET_TEXT}', file=sys.stderr)
 
 def pretty_print_int(value: int) -> str:
     abs_val = abs(value)

@@ -38,7 +38,7 @@ class TpchPostgresDatabase(Database[str]):
         # TPC-H Query 3 variations
         for _ in range(queries_per_type):
             segment = random.choice(['BUILDING', 'AUTOMOBILE', 'MACHINERY', 'HOUSEHOLD', 'FURNITURE'])
-            date = f'1995-03-{random.randint(1, 31):02d}'
+            date = self._random_date_string()
             self._train_query(f'''
                 SELECT
                     l_orderkey,
@@ -58,7 +58,7 @@ class TpchPostgresDatabase(Database[str]):
 
         # TPC-H Query 5 variations
         for _ in range(queries_per_type):
-            year = random.randint(1993, 1997)
+            date = self._random_date_string()
             self._train_query(f'''
                 SELECT
                     SUM(l_extendedprice * (1 - l_discount)) as revenue
@@ -67,31 +67,30 @@ class TpchPostgresDatabase(Database[str]):
                     AND l_orderkey = o_orderkey
                     AND l_suppkey = s_suppkey
                     AND c_nationkey = s_nationkey
-                    AND o_orderdate >= date '{year}-01-01'
-                    AND o_orderdate < date '{year}-01-01' + interval '1 year'
+                    AND o_orderdate >= date '{date}'
+                    AND o_orderdate < date '{date}' + interval '1 year'
                 GROUP BY c_nationkey
                 ORDER BY revenue DESC
             ''')
 
         # TPC-H Query 6 variations
         for _ in range(queries_per_type):
-            year = random.randint(1993, 1997)
+            date = self._random_date_string()
             discount = random.uniform(0.02, 0.09)
             quantity = random.randint(20, 30)
             self._train_query(f'''
                 SELECT
                     SUM(l_extendedprice * l_discount) as revenue
                 FROM lineitem
-                WHERE l_shipdate >= date '{year}-01-01'
-                    AND l_shipdate < date '{year}-01-01' + interval '1 year'
+                WHERE l_shipdate >= date '{date}'
+                    AND l_shipdate < date '{date}' + interval '1 year'
                     AND l_discount BETWEEN {discount} - 0.01 AND {discount} + 0.01
                     AND l_quantity < {quantity}
             ''')
 
         # TPC-H Query 10 variations
         for _ in range(queries_per_type):
-            year = random.randint(1993, 1997)
-            month = random.randint(1, 12)
+            date = self._random_date_string()
             self._train_query(f'''
                 SELECT
                     c_custkey,
@@ -104,8 +103,8 @@ class TpchPostgresDatabase(Database[str]):
                 FROM customer, orders, lineitem
                 WHERE c_custkey = o_custkey
                     AND l_orderkey = o_orderkey
-                    AND o_orderdate >= date '{year}-{month:02d}-01'
-                    AND o_orderdate < date '{year}-{month:02d}-01' + interval '3 months'
+                    AND o_orderdate >= date '{date}'
+                    AND o_orderdate < date '{date}' + interval '3 months'
                     AND l_returnflag = 'R'
                 GROUP BY c_custkey, c_name, c_acctbal, c_phone, c_address, c_comment
                 ORDER BY revenue DESC
@@ -114,7 +113,7 @@ class TpchPostgresDatabase(Database[str]):
 
         # TPC-H Query 12 variations
         for _ in range(queries_per_type):
-            year = random.randint(1993, 1997)
+            date = self._random_date_string()
             mode1 = random.choice(['MAIL', 'SHIP', 'AIR', 'TRUCK'])
             mode2 = random.choice(['RAIL', 'FOB', 'REG AIR'])
             self._train_query(f'''
@@ -129,17 +128,15 @@ class TpchPostgresDatabase(Database[str]):
                     AND l_shipmode IN ('{mode1}', '{mode2}')
                     AND l_commitdate < l_receiptdate
                     AND l_shipdate < l_commitdate
-                    AND l_receiptdate >= date '{year}-01-01'
-                    AND l_receiptdate < date '{year}-01-01' + interval '1 year'
+                    AND l_receiptdate >= date '{date}'
+                    AND l_receiptdate < date '{date}' + interval '1 year'
                 GROUP BY l_shipmode
                 ORDER BY l_shipmode
             ''')
 
     @override
     def _generate_test_queries(self):
-        # ========================================================================
-        # CATEGORY 1: Simple Aggregation Queries
-        # ========================================================================
+        #region Simple Aggregation
 
         self._test_query('agg-1', 'Lineitem Summary', '''
             SELECT
@@ -215,9 +212,8 @@ class TpchPostgresDatabase(Database[str]):
             GROUP BY l_linestatus
         ''')
 
-        # ========================================================================
-        # CATEGORY 2: Simple Join Queries
-        # ========================================================================
+        #endregion
+        #region Simple Join
 
         self._test_query('join-1', 'Customer Orders', '''
             SELECT
@@ -308,9 +304,8 @@ class TpchPostgresDatabase(Database[str]):
             HAVING COUNT(*) > 10
         ''')
 
-        # ========================================================================
-        # CATEGORY 3: Complex Multi-table Joins
-        # ========================================================================
+        #endregion
+        #region Multi-table Join
 
         self._test_query('complex-join-1', 'Customer Segment Revenue', '''
             SELECT
@@ -423,9 +418,8 @@ class TpchPostgresDatabase(Database[str]):
             LIMIT 50
         ''')
 
-        # ========================================================================
-        # CATEGORY 4: Selective Scans with Filters
-        # ========================================================================
+        #endregion
+        #region Selective Scan + Filter
 
         self._test_query('selective-1', 'Discount Range', '''
             SELECT
@@ -511,9 +505,8 @@ class TpchPostgresDatabase(Database[str]):
             LIMIT 150
         ''')
 
-        # ========================================================================
-        # CATEGORY 5: Subquery Patterns
-        # ========================================================================
+        #endregion
+        #region Subquery Pattern
 
         self._test_query('subquery-1', 'High Value Customers', '''
             SELECT
@@ -618,9 +611,8 @@ class TpchPostgresDatabase(Database[str]):
             LIMIT 50
         ''')
 
-        # ========================================================================
-        # CATEGORY 6: Large Scans with Sorting
-        # ========================================================================
+        #endregion
+        #region Large Scan + Sorting
 
         self._test_query('large-scan-1', 'Sorted Lineitem by Price', '''
             SELECT
@@ -707,9 +699,8 @@ class TpchPostgresDatabase(Database[str]):
             LIMIT 300
         ''')
 
-        # ========================================================================
-        # CATEGORY 7: Aggregation with HAVING
-        # ========================================================================
+        #endregion
+        #region Aggregation + HAVING
 
         self._test_query('having-1', 'Large Order Aggregates', '''
             SELECT
@@ -794,3 +785,5 @@ class TpchPostgresDatabase(Database[str]):
             HAVING COUNT(o_orderkey) > 1000
             ORDER BY total_orders DESC
         ''')
+
+        #endregion

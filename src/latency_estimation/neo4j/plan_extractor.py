@@ -4,7 +4,7 @@ import numpy as np
 from common.database import Database
 from common.drivers import Neo4jDriver, cypher
 from latency_estimation.abstract import BaseDataset
-from common.utils import ProgressTracker
+from common.utils import ProgressTracker, print_warning
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
 class PlanExtractor:
@@ -44,8 +44,7 @@ class PlanExtractor:
                 progress.track()
 
             except Exception as e:
-                print(f'\nError executing query {i}: {e}')
-                print(f'Query preview: {query[:100]}...\n')
+                print_warning(f'Could not execute query on index {i}.', e)
                 continue
 
         progress.finish()

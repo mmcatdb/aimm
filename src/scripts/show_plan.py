@@ -3,7 +3,10 @@ import argparse
 from common.config import Config, DatasetName
 from common.drivers import PostgresDriver, Neo4jDriver, DriverType
 from common.utils import auto_close, trim_to_block, exit_with_error
+from common.explainers.common import OperatorNameFormatter
+from common.database import Database
 from datasets.databases import find_database, get_available_dataset_names
+from latency_estimation.context import BaseContext
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Show a query plan visually.')
@@ -27,6 +30,7 @@ def common_args(parser: argparse.ArgumentParser, type: DriverType):
     parser.add_argument('query', nargs='?', help='Query string or a test query ID (if such query exists). Read from stdin if omitted.')
     parser.add_argument('--tree', action=argparse.BooleanOptionalAction, default=True, help='Print the visual tree.')
     parser.add_argument('--json', action='store_true', help='Print the raw JSON.')
+    parser.add_argument('--all-queries', action='store_true', help='Use all queries from the provided dataset. The query argument is ignored.')
 
     if type == DriverType.POSTGRES:
         parser.add_argument('--profile', action='store_true', help='Use EXPLAIN ANALYZE (actually runs the query; DML is rolled back).')
@@ -38,52 +42,67 @@ def postgres_run(args: argparse.Namespace):
     from common.explainers.postgres_explainer import PostgresExplainer
 
     dataset = DatasetName(args.dataset[0])
-    query = get_query_from_input(args, DriverType.POSTGRES, dataset)
+    database = find_database(dataset, DriverType.POSTGRES)
+    queries = get_queries_from_input(args, database)
 
     config = Config.load()
+    operators = try_get_available_operators(config, database)
     driver = PostgresDriver(config.postgres, dataset.value)
 
     with auto_close(driver):
-        explainer = PostgresExplainer(driver)
+        explainer = PostgresExplainer(driver, operators)
 
-        plan = explainer.fetch_plan(query, do_profile=args.profile, do_discard=args.no_cache)
+        for query_id, query_content in queries:
+            if args.all_queries:
+                print(f'Query {query_id}:\n{trim_to_block(query_content)}\n')
 
-        if args.tree:
-            explainer.print_tree(plan)
-        if args.json:
-            print()
-            explainer.print_json(plan)
+            plan = explainer.fetch_plan(query_content, do_profile=args.profile, do_discard=args.no_cache)
+
+            if args.tree:
+                explainer.print_tree(plan)
+            if args.json:
+                print()
+                explainer.print_json(plan)
 
 def neo4j_run(args: argparse.Namespace):
     from common.explainers.neo4j_explainer import Neo4jExplainer
 
     dataset = DatasetName(args.dataset[0])
-    query = get_query_from_input(args, DriverType.NEO4J, dataset)
+    database = find_database(dataset, DriverType.NEO4J)
+    queries = get_queries_from_input(args, database)
 
     config = Config.load()
+    operators = try_get_available_operators(config, database)
     driver = Neo4jDriver(config.neo4j, dataset.value)
 
     with auto_close(driver):
-        explainer = Neo4jExplainer(driver)
+        explainer = Neo4jExplainer(driver, operators)
 
-        plan = explainer.fetch_plan(query, do_profile=args.profile)
+        for query_id, query_content in queries:
+            if args.all_queries:
+                print(f'Query {query_id}:\n{trim_to_block(query_content)}\n')
 
-        if args.tree:
-            explainer.print_tree(plan)
-        if args.json:
-            print()
-            explainer.print_json(plan)
+            plan = explainer.fetch_plan(query_content, do_profile=args.profile)
 
-def get_query_from_input(args: argparse.Namespace, driver: DriverType, dataset: DatasetName) -> str:
+            if args.tree:
+                explainer.print_tree(plan)
+            if args.json:
+                print()
+                explainer.print_json(plan)
+
+def get_queries_from_input(args: argparse.Namespace, database: Database) -> list[tuple[str, str]]:
+    """Returns a list of (query_id, query_content) tuples. The query_id is empty if the query was provided directly rather than by ID."""
+    if args.all_queries:
+        return [(query.id, query.content) for query in database.get_test_queries()]
+
     query_or_id = get_query_or_id_from_input(args)
-    database = find_database(dataset, driver)
 
     test_query = database.try_get_test_query(query_or_id)
     if test_query is not None:
         print(f'Found test query with ID "{test_query.id}":\n{trim_to_block(test_query.content)}\n')
-        return test_query.content
+        return [(test_query.id, test_query.content)]
 
-    return query_or_id
+    return [('', query_or_id)]
 
 def get_query_or_id_from_input(args: argparse.Namespace) -> str:
     if args.query:
@@ -104,6 +123,17 @@ def get_query_or_id_from_input(args: argparse.Namespace) -> str:
         exit_with_error('No query provided.')
 
     return query
+
+def try_get_available_operators(config: Config, database: Database) -> OperatorNameFormatter | None:
+    operator_list = BaseContext.load_available_operators(config, database)
+    if operator_list is None:
+        return None
+
+    operators = OperatorNameFormatter(False)
+    for operator in operator_list:
+        operators.add(operator)
+
+    return operators
 
 if __name__ == '__main__':
     main()

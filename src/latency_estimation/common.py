@@ -2,27 +2,15 @@ from argparse import Namespace
 from collections.abc import Callable
 import os
 import pickle
-import sys
 from typing import TypeVar
 import torch
 import numpy as np
 from latency_estimation.abstract import BaseDataset
-from common.utils import exit_with_error
-
-class NnOperator:
-    """Neural network node operator."""
-    def __init__(self, type: str, num_children: int, feature_dim: int):
-        self.type = type
-        self.num_children = num_children
-        self.feature_dim = feature_dim
-
-    def key(self) -> str:
-        """Get a unique key for this operator."""
-        return f'{self.type}_{self.num_children}'
+from common.utils import exit_with_error, print_warning, print_info
 
 TDataset = TypeVar('TDataset', bound=BaseDataset)
 
-def load_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset:
+def load_or_create_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset:
     if path is None:
         dataset = fallback()
         print(f'Collected {len(dataset)} query plans')
@@ -33,10 +21,14 @@ def load_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset
         with open(path, 'rb') as file:
             dataset = pickle.load(file)
             print(f'Loaded {len(dataset)} cached query plans')
+
             # No need to cache again
             return dataset
+
+    except FileNotFoundError:
+        print_info(f'No cached dataset found at {path}, collecting new query plans...')
     except Exception as e:
-        print('No cached dataset found, collecting new query plans...')
+        print_warning(f'Could not load cached dataset at {path}, collecting new query plans...', e)
 
     dataset = fallback()
 
@@ -46,7 +38,7 @@ def load_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset
             pickle.dump(dataset, file)
             print(f'Collected and cached {len(dataset)} query plans')
     except Exception as e:
-        print(f'Warning: Could not cache dataset to {path}: {e}')
+        print_warning(f'Could not cache dataset to {path}.', e)
 
     return dataset
 
@@ -69,15 +61,15 @@ def load_queries(args: Namespace, parser: Callable[[str], list[str]]) -> list[st
 
     return queries
 
-def save_checkpoint_file(path: str, dict: dict) -> None:
-    if os.path.isfile(path):
-        print(f'Warning: Overwriting existing checkpoint file at {path}', file=sys.stderr)
+def save_checkpoint_file(path: str, dict: dict, is_first_time: bool) -> None:
+    if is_first_time and os.path.isfile(path):
+        print_warning(f'Overwriting existing checkpoint file at {path}.')
 
     try:
         torch.save(dict, path)
     except Exception as e:
-        print(f'Error: Could not save checkpoint to {path}: {e}', file=sys.stderr)
-        raise e
+        # There is no point in continuing if we can't save the checkpoint.
+        exit_with_error(f'Could not save checkpoint to {path}.', e)
 
 def load_checkpoint_file(path: str, device: str) -> dict:
     try:
@@ -85,8 +77,7 @@ def load_checkpoint_file(path: str, device: str) -> dict:
     except FileNotFoundError:
         exit_with_error(f'Model checkpoint not found at {path}. Specify a valid --checkpoint path.')
     except Exception as e:
-        print(f'Error: Could not load checkpoint from {path}: {e}', file=sys.stderr)
-        raise e
+        exit_with_error(f'Could not load checkpoint from {path}.', e)
 
 def parse_queries(content: str) -> list[str]:
     """Works for both PostgreSQL and Neo4j query files."""
@@ -120,8 +111,6 @@ def parse_queries(content: str) -> list[str]:
 
 def format_latency(latency_seconds: float) -> str:
     """Format latency for human-readable output."""
-    if latency_seconds is None:
-        return 'ERROR'
     if latency_seconds < 0.001:
         return f'{latency_seconds * 1000000:.2f} µs'
     elif latency_seconds < 1:

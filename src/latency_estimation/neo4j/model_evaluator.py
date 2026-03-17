@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from tabulate import tabulate
 from dataclasses import dataclass
+from common.utils import print_warning
 from common.database import TestQuery
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
@@ -14,26 +15,48 @@ class ModelEvaluator:
         self.model = model
 
     def evaluate_multiple_queries(self, queries: list[TestQuery[str]], num_runs: int) -> list['Result']:
-        """
-        Evaluate multiple queries.
-
-        Args:
-            num_runs: Number of executions per query for averaging
-        """
         results: list['Result'] = []
 
         print(f'\nEvaluating {len(queries)} queries...')
-        print('=' * 70)
+        print('=' * 80)
 
         for query in queries:
             try:
                 result = self.evaluate_query(query, num_runs)
                 results.append(result)
             except Exception as e:
-                print(f'  ✗ Error evaluating {query.label()}: {str(e)}')
+                print_warning(f'Could not evaluate query {query.id}: {query.label()}.', e)
                 continue
 
         return results
+
+    def evaluate_query(self, query: TestQuery[str], num_runs: int) -> 'Result':
+        print(f'\nEvaluating: {query.label()}')
+
+        plan = self.extractor.explain_plan(query.content)
+        result = Result(query.label(), query.content, plan)
+
+        estimated_latency = self.__estimate_latency(result.plan)
+        actual_latency, result.std_latency, _ = self.extractor.measure_query(query.content, num_runs)
+
+        result.estimated_latency = estimated_latency
+        result.actual_latency = actual_latency
+
+        # Compute metrics
+        result.absolute_error = abs(estimated_latency - actual_latency)
+        result.r_value = max(estimated_latency / actual_latency, actual_latency / estimated_latency) \
+            if estimated_latency > 0 and actual_latency > 0 else float('inf')
+
+        print(f'  Estimated: {estimated_latency * 1000:.2f}ms')
+        print(f'  Actual: {actual_latency * 1000:.2f}ms (±{result.std_latency * 1000:.2f}ms)')
+        print(f'  Absolute Error: {result.absolute_error * 1000:.2f}ms')
+        print(f'  R-value: {result.r_value:.4f}')
+
+        return result
+
+    def __estimate_latency(self, plan: dict) -> float:
+        with torch.no_grad():
+            return self.model(plan).item()
 
     def print_summary(self, results: list['Result']):
         """Print summary statistics of evaluation results."""
@@ -41,9 +64,9 @@ class ModelEvaluator:
             print('\nNo results to summarize.')
             return
 
-        print('\n' + '=' * 70)
+        print('\n' + '=' * 80)
         print('Evaluation Summary')
-        print('=' * 70)
+        print('=' * 80)
 
         # Extract metrics
         absolute_errors = [r.absolute_error for r in results]
@@ -77,9 +100,9 @@ class ModelEvaluator:
                 f'{r.r_value:.4f}' if r.r_value != float('inf') else 'inf'
             ])
 
-        print('\n' + '=' * 70)
+        print('\n' + '=' * 80)
         print('Detailed Results')
-        print('=' * 70)
+        print('=' * 80)
         print(tabulate(
             table_data,
             headers=['Query', 'Estimated (ms)', 'Actual (ms)', 'Abs Error (ms)', 'R-value'],
@@ -93,40 +116,6 @@ class ModelEvaluator:
             count_below = sum(1 for r in results if r.r_value < threshold)
             percent_below = (count_below / total_queries) * 100
             print(f'  R-value < {threshold}: {count_below} queries ({percent_below:.2f}%)')
-
-    def evaluate_query(self, query: TestQuery[str], num_runs: int) -> 'Result':
-        """
-        Evaluate a single query.
-
-        Args:
-            num_runs: Number of executions for averaging
-        """
-        print(f'\nEvaluating: {query.label()}')
-
-        plan = self.extractor.explain_plan(query.content)
-        result = Result(query.label(), query.content, plan)
-
-        estimated_latency = self.__estimate_latency(result.plan)
-        actual_latency, result.std_latency, _ = self.extractor.measure_query(query.content, num_runs)
-
-        result.estimated_latency = estimated_latency
-        result.actual_latency = actual_latency
-
-        # Compute metrics
-        result.absolute_error = abs(estimated_latency - actual_latency)
-        result.r_value = max(estimated_latency / actual_latency, actual_latency / estimated_latency) \
-            if estimated_latency > 0 and actual_latency > 0 else float('inf')
-
-        print(f'  Estimated: {estimated_latency * 1000:.2f}ms')
-        print(f'  Actual: {actual_latency * 1000:.2f}ms (±{result.std_latency * 1000:.2f}ms)')
-        print(f'  Absolute Error: {result.absolute_error * 1000:.2f}ms')
-        print(f'  R-value: {result.r_value:.4f}')
-
-        return result
-
-    def __estimate_latency(self, plan: dict) -> float:
-        with torch.no_grad():
-            return self.model(plan).item()
 
 @dataclass
 class Result:

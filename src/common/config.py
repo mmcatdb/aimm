@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from common.drivers import PostgresConfig, MongoConfig, Neo4jConfig
+from common.utils import exit_with_error
 
 class DatasetName(Enum):
     TPCH = 'tpch'
@@ -31,9 +32,8 @@ class Config:
     def load(path: str | None = None) -> 'Config':
         try:
             load_dotenv(path or Config.DEFAULT_CONFIG_PATH)
-        except ImportError:
-            print('Error: can\'t load .env file')
-            exit(1)
+        except ImportError as e:
+            exit_with_error('Can\'t load .env file.', e)
 
         return Config(
             Config.__loadPostgres(),

@@ -3,7 +3,7 @@ import numpy as np
 from common.database import Database, MongoQuery, MongoFindQuery, MongoAggregateQuery
 from common.drivers import MongoDriver
 from latency_estimation.mongo.trainer import MongoDataset
-from common.utils import ProgressTracker
+from common.utils import ProgressTracker, print_warning
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from MongoDB."""
@@ -42,9 +42,7 @@ class PlanExtractor:
                 progress.track()
 
             except Exception as e:
-                print(f'\nError executing query {i}: {e}')
-                # print(f'Query preview: {query[:100]}...\n')
-                continue
+                print_warning(f'Could not execute query on index {i}.', e)
 
         progress.finish()
 

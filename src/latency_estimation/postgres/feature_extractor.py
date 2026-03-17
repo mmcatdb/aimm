@@ -1,5 +1,4 @@
 from typing_extensions import override
-
 import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON

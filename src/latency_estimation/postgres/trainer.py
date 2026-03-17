@@ -6,7 +6,7 @@ import torch
 import torch.optim as optim
 import numpy as np
 from collections import defaultdict
-from common.utils import EPSILON
+from common.utils import EPSILON, print_warning
 from latency_estimation.abstract import BaseDataset
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
@@ -39,28 +39,27 @@ class PlanStructuredTrainer:
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: 'PostgresDataset', batch_size: int | None = None) -> dict[str, float]:
+    def evaluate(self, dataset: 'PostgresDataset') -> dict[str, float]:
         """
         Evaluate model on a dataset.
         Returns:
             Dictionary of metrics (MAE, relative error, etc.)
         """
-        batch_size = batch_size if batch_size is not None else self.__batch_size
-
         self.__model.eval()
-
-        # Identity collate_fn - return list of items as-is
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=lambda x: x)
 
         estimations = []
         actuals = []
 
         with torch.no_grad():
-            for batch in dataloader:
-                for item in batch:
-                    estimated_latency = self.__model.forward(item['plan']).item()
-                    estimations.append(estimated_latency)
-                    actuals.append(item['execution_time'])
+            for item in dataset:
+                try:
+                    predicted_ms = self.__model(item['plan']).item()
+                except Exception as e:
+                    print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
+                    continue
+
+                estimations.append(predicted_ms)
+                actuals.append(item['execution_time'])
 
         # Convert to numpy arrays
         estimations = np.array(estimations)
@@ -186,20 +185,20 @@ class PlanStructuredTrainer:
             try:
                 all_outputs = self.__model.estimate_plan_latency_all_nodes(plan)
             except Exception as e:
-                print(f'Error processing plan: {e}. Skipping plan.')
+                print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
                 continue
 
             # Compute squared errors for all nodes
             for node_id, output_tensor in all_outputs.items():
-                pred_latency = output_tensor[0, 0] # Get latency (first element)
+                predicted_latency = output_tensor[0, 0] # Get latency (first element)
 
                 if node_id in node_latencies:
                     actual_latency = node_latencies[node_id]
 
                     # TODO is the device needed?
-                    actual_latency_tensor = torch.tensor(actual_latency, dtype=pred_latency.dtype, device=pred_latency.device)
+                    actual_latency_tensor = torch.tensor(actual_latency, dtype=predicted_latency.dtype, device=predicted_latency.device)
 
-                    squared_error = (pred_latency - actual_latency_tensor) ** 2
+                    squared_error = (predicted_latency - actual_latency_tensor) ** 2
                     total_squared_error += squared_error
                     total_nodes += 1
 

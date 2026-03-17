@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
-from common.utils import EPSILON
+from common.utils import EPSILON, print_warning
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.abstract import BaseDataset
 from common.database import MongoQuery
@@ -45,10 +45,8 @@ class PlanStructuredTrainer:
             'warmup_epochs': self.__warmup_epochs,
         }
 
-    def evaluate(self, dataset: 'MongoDataset', batch_size: int | None = None) -> dict[str, float]:
+    def evaluate(self, dataset: 'MongoDataset') -> dict[str, float]:
         """Evaluate model on a dataset, returning standard QPP metrics."""
-        batch_size = batch_size if batch_size is not None else self.__batch_size
-
         self.__model.eval()
 
         estimations = []
@@ -56,16 +54,19 @@ class PlanStructuredTrainer:
 
         with torch.no_grad():
             for item in dataset:
+                query: MongoQuery = item['query']
+
                 collection_name = item['query'].collection
                 plan = item['plan']
                 actual_ms = item['execution_time']
 
                 try:
-                    pred_ms = self.__model(plan, collection_name).item()
-                except Exception:
+                    predicted_ms = self.__model(plan, collection_name).item()
+                except Exception as e:
+                    print_warning(f'Could not compute model outputs for a query: \n{query}', e)
                     continue
 
-                estimations.append(pred_ms)
+                estimations.append(predicted_ms)
                 actuals.append(actual_ms)
 
         if not estimations:
@@ -153,16 +154,18 @@ class PlanStructuredTrainer:
         losses = []
 
         for item in batch:
-            collection_name = item['query'].collection
+            query: MongoQuery = item['query']
+            collection_name = query.collection
             plan = item['plan']
             actual_ms = item['execution_time']
 
             try:
-                pred_ms = self.__model(plan, collection_name)
+                predicted_ms = self.__model(plan, collection_name)
             except Exception as e:
+                print_warning(f'Could not compute model outputs for a query: \n{query}', e)
                 continue
 
-            log_pred = torch.log(pred_ms + EPSILON)
+            log_pred = torch.log(predicted_ms + EPSILON)
             log_actual = torch.log(torch.tensor(actual_ms + EPSILON, dtype=log_pred.dtype, device=log_pred.device))
             loss = (log_pred - log_actual) ** 2
             losses.append(loss)

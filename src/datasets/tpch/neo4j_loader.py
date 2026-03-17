@@ -16,7 +16,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             'CREATE CONSTRAINT IF NOT EXISTS FOR (r:Region) REQUIRE r.r_regionkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Nation) REQUIRE n.n_nationkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (c:Customer) REQUIRE c.c_custkey IS UNIQUE',
-            'CREATE CONSTRAINT IF NOT EXISTS FOR (o:Order) REQUIRE o.o_orderkey IS UNIQUE',
+            'CREATE CONSTRAINT IF NOT EXISTS FOR (o:Orders) REQUIRE o.o_orderkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (p:Part) REQUIRE p.p_partkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (s:Supplier) REQUIRE s.s_suppkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (ps:PartSupp) REQUIRE (ps.ps_partkey, ps.ps_suppkey) IS UNIQUE',
@@ -84,7 +84,7 @@ class TpchNeo4jLoader(Neo4jLoader):
         ''')
 
         self._load_csv('orders', '''
-            CREATE (:Order {
+            CREATE (:Orders {
                 o_orderkey: toInteger(row[0]),
                 o_custkey: toInteger(row[1]),
                 o_orderstatus: row[2],
@@ -102,7 +102,7 @@ class TpchNeo4jLoader(Neo4jLoader):
         self._load_csv('partsupp', '''
             MATCH (p:Part {p_partkey: toInteger(row[0])})
             MATCH (s:Supplier {s_suppkey: toInteger(row[1])})
-            CREATE (p)<-[:IS_FOR_PART]-(ps:PartSupp {
+            CREATE (p)<-[:FOR_PART]-(ps:PartSupp {
                 ps_partkey: toInteger(row[0]),
                 ps_suppkey: toInteger(row[1]),
                 ps_availqty: toInteger(row[2]),
@@ -112,11 +112,11 @@ class TpchNeo4jLoader(Neo4jLoader):
         ''', 'creating relationships to Part and Supplier')
 
         self._load_csv('lineitem', '''
-            MATCH (o:Order {o_orderkey: toInteger(row[0])})
+            MATCH (o:Orders {o_orderkey: toInteger(row[0])})
             MATCH (p:Part {p_partkey: toInteger(row[1])})
             MATCH (s:Supplier {s_suppkey: toInteger(row[2])})
-            MATCH (p)<-[:IS_FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s)
-            CREATE (o)-[:CONTAINS_ITEM]->(li:LineItem {
+            MATCH (p)<-[:FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s)
+            CREATE (o)-[:HAS_ITEM]->(li:LineItem {
                 l_orderkey: toInteger(row[0]),
                 l_partkey: toInteger(row[1]),
                 l_suppkey: toInteger(row[2]),
@@ -134,14 +134,14 @@ class TpchNeo4jLoader(Neo4jLoader):
                 l_shipmode: row[14],
                 l_comment: row[15]
             })-[:IS_PRODUCT_SUPPLY]->(ps)
-        ''', 'creating relationships to Order and PartSupp')
+        ''', 'creating relationships to Orders and PartSupp')
 
         # Create relationships for simple foreign keys
 
         print('Creating Nation -> Region relationships...')
         self._driver.execute('''
             MATCH (n:Nation), (r:Region {r_regionkey: n.n_regionkey})
-            CREATE (n)-[:IS_IN_REGION]->(r)
+            CREATE (n)-[:IN_REGION]->(r)
         ''')
         # Remove redundant foreign key property
         self._driver.execute('MATCH (n:Nation) REMOVE n.n_regionkey')
@@ -149,20 +149,20 @@ class TpchNeo4jLoader(Neo4jLoader):
         print('Creating Customer -> Nation relationships...')
         self._driver.execute('''
             MATCH (c:Customer), (n:Nation {n_nationkey: c.c_nationkey})
-            CREATE (c)-[:IS_IN_NATION]->(n)
+            CREATE (c)-[:IN_NATION]->(n)
         ''')
         self._driver.execute('MATCH (c:Customer) REMOVE c.c_nationkey')
 
         print('Creating Supplier -> Nation relationships...')
         self._driver.execute('''
             MATCH (s:Supplier), (n:Nation {n_nationkey: s.s_nationkey})
-            CREATE (s)-[:IS_IN_NATION]->(n)
+            CREATE (s)-[:IN_NATION]->(n)
         ''')
         self._driver.execute('MATCH (s:Supplier) REMOVE s.s_nationkey')
 
-        print('Creating Customer -> Order relationships...')
+        print('Creating Customer -> Orders relationships...')
         self._driver.execute('''
-            MATCH (c:Customer), (o:Order {o_custkey: c.c_custkey})
+            MATCH (c:Customer), (o:Orders {o_custkey: c.c_custkey})
             CREATE (c)-[:PLACED]->(o)
         ''')
-        self._driver.execute('MATCH (o:Order) REMOVE o.o_custkey')
+        self._driver.execute('MATCH (o:Orders) REMOVE o.o_custkey')

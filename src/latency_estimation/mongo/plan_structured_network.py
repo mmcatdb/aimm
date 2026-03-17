@@ -1,7 +1,7 @@
 from typing_extensions import override
 import torch
 import torch.nn as nn
-from latency_estimation.common import NnOperator
+from common.nn_operator import NnOperator
 from latency_estimation.config import ModelConfig
 from latency_estimation.plan_structured_network import BasePlanStructuredNetwork, OperatorCollector
 from latency_estimation.mongo.feature_extractor import FeatureExtractor

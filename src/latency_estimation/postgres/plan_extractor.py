@@ -3,7 +3,7 @@ import time
 from common.database import Database
 from common.drivers import PostgresDriver
 from latency_estimation.postgres.trainer import PostgresDataset
-from common.utils import ProgressTracker
+from common.utils import ProgressTracker, print_warning
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from PostgreSQL."""
@@ -42,9 +42,7 @@ class PlanExtractor:
                 progress.track()
 
             except Exception as e:
-                print(f'\nError executing query {i}: {e}')
-                print(f'Query preview: {query[:100]}...\n')
-                continue
+                print_warning(f'Could not execute query on index {i}.', e)
 
         progress.finish()
 
@@ -74,8 +72,8 @@ class PlanExtractor:
                     try:
                         cursor.execute('DISCARD ALL')
                     except Exception as e:
-                        # If DISCARD ALL fails, try alternative cache clearing
-                        print(f'Warning: Could not clear cache: {e}')
+                        # NICE_TO_HAVE If DISCARD ALL fails, try alternative cache clearing
+                        print_warning(f'Could not clear cache.', e)
                         pass
 
                 # Get the plan with execution statistics

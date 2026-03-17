@@ -29,10 +29,10 @@ class TpchMongoDatabase(Database[MongoQuery]):
         n = target // 10
         for _ in range(n):
             # lineitem date range with various operators and limits
-            d = self._random_date(1992, 1998)
+            date = self._random_date()
             op = random.choice(['$gte', '$lte', '$gt', '$lt'])
             self._train_query(MongoFindQuery('lineitem',
-                filter={'l_shipdate': {op: d}},
+                filter={'l_shipdate': {op: date}},
                 limit=random.choice([0, 10, 50, 100, 500, 1000]),
             ))
             # 'label': 'lineitem shipdate filter',
@@ -89,18 +89,16 @@ class TpchMongoDatabase(Database[MongoQuery]):
         #region Finds with sort
 
         for _ in range(n):
-            d = self._random_date(1995, 1998)
             self._train_query(MongoFindQuery('orders',
-                filter={'o_orderdate': {'$gte': d}},
+                filter={'o_orderdate': {'$gte': self._random_date()}},
                 sort={'o_totalprice': random.choice([-1, 1])},
                 limit=random.choice([10, 20, 50, 100]),
             ))
             # 'label': 'orders sorted by price',
 
         for _ in range(n):
-            d = self._random_date(1994, 1997)
             self._train_query(MongoFindQuery('lineitem',
-                filter={'l_shipdate': {'$gte': d}},
+                filter={'l_shipdate': {'$gte': self._random_date()}},
                 sort={'l_extendedprice': -1},
                 limit=random.choice([10, 50, 100, 200]),
             ))
@@ -110,9 +108,8 @@ class TpchMongoDatabase(Database[MongoQuery]):
         #region Aggregation with $group
 
         for _ in range(n):
-            d = self._random_date(1994, 1998)
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$gte': d}}},
+                {'$match': {'l_shipdate': {'$gte': self._random_date()}}},
                 {'$group': {
                     '_id': '$l_returnflag',
                     'count': {'$sum': 1},
@@ -123,9 +120,8 @@ class TpchMongoDatabase(Database[MongoQuery]):
             # 'label': 'lineitem group by returnflag',
 
         for _ in range(n):
-            d = self._random_date(1994, 1997)
             self._train_query(MongoAggregateQuery('orders', [
-                {'$match': {'o_orderdate': {'$gte': d}}},
+                {'$match': {'o_orderdate': {'$gte': self._random_date()}}},
                 {'$group': {
                     '_id': '$o_orderpriority',
                     'count': {'$sum': 1},
@@ -241,7 +237,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         for _ in range(n // 2):
             self._train_query(MongoFindQuery('lineitem',
-                filter={'l_shipdate': {'$gte': self._random_date(1996, 1998)}},
+                filter={'l_shipdate': {'$gte': self._random_date()}},
                 skip=random.randint(10, 1000),
                 limit=random.choice([10, 50, 100]),
             ))
@@ -262,9 +258,8 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         # TPC-H Q1 variants with varying date ranges (from narrow to full-table scan)
         for _ in range(n):
-            d = self._random_date(1992, 1998)
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$gte': d}}},
+                {'$match': {'l_shipdate': {'$gte': self._random_date()}}},
                 {'$group': {
                     '_id': {'flag': '$l_returnflag', 'status': '$l_linestatus'},
                     'sum_qty': {'$sum': '$l_quantity'},
@@ -278,9 +273,8 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         # TPC-H Q1 with $lte (matching evaluation style)
         for _ in range(n):
-            d = self._random_date(1994, 1998)
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$lte': d}}},
+                {'$match': {'l_shipdate': {'$lte': self._random_date()}}},
                 {'$group': {
                     '_id': {'rf': '$l_returnflag', 'ls': '$l_linestatus'},
                     'sum_qty': {'$sum': '$l_quantity'},
@@ -294,9 +288,8 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         # Simple lineitem aggregation (count + sum only, less accumulators)
         for _ in range(n // 2):
-            d = self._random_date(1994, 1998)
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$gte': d}}},
+                {'$match': {'l_shipdate': {'$gte': self._random_date()}}},
                 {'$group': {
                     '_id': '$l_returnflag',
                     'count': {'$sum': 1},

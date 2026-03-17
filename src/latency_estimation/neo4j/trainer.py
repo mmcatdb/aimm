@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
 from collections import defaultdict
-from common.utils import EPSILON
+from common.utils import EPSILON, print_warning
 from latency_estimation.abstract import BaseDataset
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
@@ -40,28 +40,27 @@ class PlanStructuredTrainer:
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: BaseDataset[str], batch_size: int | None = None) -> dict[str, float]:
+    def evaluate(self, dataset: BaseDataset[str]) -> dict[str, float]:
         """
         Evaluate model on a dataset.
         Returns:
             Dictionary with evaluation metrics
         """
-        batch_size = batch_size if batch_size is not None else self.__batch_size
-
         self.__model.eval()
-
-        # Identity collate_fn - return list of items as-is
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=lambda x: x)
 
         estimations = []
         actuals = []
 
         with torch.no_grad():
-            for batch in dataloader:
-                for item in batch:
-                    estimated_latency = self.__model(item['plan']).item()
-                    estimations.append(estimated_latency)
-                    actuals.append(item['execution_time'])
+            for item in dataset:
+                try:
+                    predicted_ms = self.__model(item['plan']).item()
+                except Exception as e:
+                    print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
+                    continue
+
+                estimations.append(predicted_ms)
+                actuals.append(item['execution_time'])
 
         # Convert to numpy arrays
         estimations = np.array(estimations)
@@ -170,13 +169,18 @@ class PlanStructuredTrainer:
         for structure_hash, indexes in structure_groups.items():
             # Process plans with same structure together
             for index in indexes:
-                plan = batch[index]['plan']
-                execution_time = batch[index]['execution_time']
+                item = batch[index]
+                plan = item['plan']
+                execution_time = item['execution_time']
 
-                # Forward pass through model
-                estimated_latency = self.__model(plan)
+                try:
+                    # TODO tensors vs floats? Why no .item()?
+                    predicted_ms = self.__model(plan)
+                except Exception as e:
+                    print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
+                    continue
 
-                estimations.append(estimated_latency)
+                estimations.append(predicted_ms)
                 targets.append(torch.tensor([[execution_time]], dtype=torch.float32))
                 # TODO not sure about this ... is the device needed?
                 # targets.append(torch.tensor([[execution_time]], dtype=torch.float32, device=self.device))
@@ -196,10 +200,8 @@ def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
     """
     Group plans in a batch by their structure.
     Plans with identical structure can share computation.
-
     Args:
         batch: List of batch items (dicts with 'plan' key)
-
     Returns:
         Mapping from structure hash to indexes in batch
     """
@@ -216,10 +218,8 @@ def compute_plan_structure_hash(plan: dict) -> str:
     """
     Compute a hash representing the structure of a query plan.
     Plans with identical structure can be batched together.
-
     Args:
         plan: Neo4j query plan (root node)
-
     Returns:
         Hash string representing the plan structure
     """

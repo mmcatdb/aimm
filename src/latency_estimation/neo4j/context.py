@@ -1,25 +1,23 @@
 from common.config import Config, DatasetName
-from common.database import Database
 from common.drivers import DriverType, Neo4jDriver
+from common.database import Database
 from datasets.databases import find_database, TRAIN_DATASET
-from latency_estimation.common import load_checkpoint_file, load_dataset, save_checkpoint_file
+from latency_estimation.context import BaseContext
+from latency_estimation.common import load_checkpoint_file, load_or_create_dataset, save_checkpoint_file
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.neo4j.trainer import PlanStructuredTrainer
 
-class Neo4jContext:
-    def __init__(self, quiet: bool):
-        self.quiet = quiet
-        self.config: Config
+class Neo4jContext(BaseContext):
+    def __init__(self, config: Config, quiet: bool):
+        super().__init__(config, quiet)
         self.driver: Neo4jDriver
         self.database: Database[str]
         self.extractor: PlanExtractor
 
     @staticmethod
     def create(quiet: bool = False, dataset: DatasetName = TRAIN_DATASET) -> 'Neo4jContext':
-        ctx = Neo4jContext(quiet)
-        ctx.quiet = quiet
-        ctx.config = Config.load()
+        ctx = Neo4jContext(Config.load(), quiet)
         ctx.driver = Neo4jDriver(ctx.config.neo4j, dataset.value)
         ctx.database = find_database(dataset, DriverType.NEO4J)
         ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
@@ -28,10 +26,11 @@ class Neo4jContext:
     def close(self):
         self.driver.close()
 
-    def load_dataset(self, num_queries: int, num_runs: int):
-        cache_path = f'{self.config.cache_directory}/{self.database.id()}_{num_queries}_{num_runs}.pkl'
-
-        return load_dataset(cache_path, lambda: self.extractor.collect_training_dataset(num_queries, num_runs))
+    def load_or_create_dataset(self, num_queries: int, num_runs: int):
+        return load_or_create_dataset(
+            self._dataset_path(num_queries, num_runs),
+            lambda: self.extractor.collect_training_dataset(num_queries, num_runs),
+        )
 
     # These methods don't change the internal state of the context for a good reason - the use case is much more complex than it seems.
     # The trainer has the model. Sometimes we need only the model, sometimes both. But the trainer should not depend on the model - we might want to create a different model.
@@ -39,15 +38,12 @@ class Neo4jContext:
     # Each component should be responsible for what it saves to the checkpoint. However, in that case, it shouldn't depend on what is saved by other components (e.g., the trainer shouldn't instantiate the model from the checkpoint - it should be given the model).
     # So, we provide "stupid" methods that just save or load the components without any logic.
 
-    def checkpoint_path(self, suffix: str) -> str:
-        return f'{self.config.checkpoint_directory}/{self.database.id()}_{suffix}.pt'
-
     def load_model(self, path: str | None) -> PlanStructuredNetwork:
         if not self.quiet:
             print('Loading trained model...')
 
         if not path:
-            path = self.checkpoint_path('best')
+            path = self._checkpoint_path('best')
 
         checkpoint = load_checkpoint_file(path, self.config.device)
         model = PlanStructuredNetwork.from_checkpoint(checkpoint['model'], self.config.device)
@@ -60,14 +56,16 @@ class Neo4jContext:
         return model
 
     def save_checkpoint(self, suffix: str, model: PlanStructuredNetwork, trainer: PlanStructuredTrainer, metrics: dict[str, float]) -> None:
-        path = self.checkpoint_path(suffix)
+        path = self._checkpoint_path(suffix)
 
         save_checkpoint_file(path, {
             'model': model.to_checkpoint(),
             'trainer': trainer.to_checkpoint(),
             # Measured metrics (just so that we can see them easily).
             'metrics': metrics,
-        })
+        }, not self.was_checkpoint_saved)
+
+        self.was_checkpoint_saved = True
 
         if not self.quiet:
             print(f'Model saved to {path}')
