@@ -46,12 +46,14 @@ class PostgresContext(BaseContext):
             path = self._checkpoint_path('best')
 
         checkpoint = load_checkpoint_file(path, self.config.device)
-        model = PlanStructuredNetwork.from_checkpoint(checkpoint['model'], self.config.device)
+        model_checkpoint = checkpoint['model'] if isinstance(checkpoint, dict) and 'model' in checkpoint else checkpoint
+        model = PlanStructuredNetwork.from_checkpoint(model_checkpoint, self.config.device)
 
         if not self.quiet:
             print('Model loaded successfully!\n')
             model.print_summary()
-            PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
+            if isinstance(checkpoint, dict) and 'metrics' in checkpoint:
+                PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
 
         return model
 
