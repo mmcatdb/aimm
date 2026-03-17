@@ -1,5 +1,4 @@
 from typing_extensions import override
-
 import numpy as np
 from typing import Any
 from collections import defaultdict

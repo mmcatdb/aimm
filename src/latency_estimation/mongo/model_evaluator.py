@@ -2,7 +2,7 @@ from math import nan
 import torch
 import numpy as np
 from dataclasses import dataclass
-from common.utils import EPSILON
+from common.utils import EPSILON, print_warning
 from common.database import TestQuery, MongoQuery, MongoFindQuery, MongoAggregateQuery
 from latency_estimation.mongo.plan_extractor import PlanExtractor
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
@@ -21,26 +21,31 @@ class ModelEvaluator:
         print(f'EVALUATING {len(queries)} QUERIES')
         print('=' * 80)
 
-        for test_query in queries:
-            query = test_query.content
+        for query in queries:
             try:
-                if isinstance(query, MongoFindQuery):
-                    r = self.__evaluate_find(query, num_runs=num_runs, label=test_query.label())
-                else:
-                    r = self.__evaluate_aggregate(query, num_runs=num_runs, label=test_query.label())
-
-                results.append(r)
-                status = 'OK' if r.r_value <= 2.0 else ('WARN' if r.r_value <= 5.0 else 'BAD')
-                print(
-                    f'  [{status:4s}] {r.label[:55]:55s}'
-                    f'  pred={r.predicted_ms:8.1f}ms  actual={r.actual_ms:8.1f}ms'
-                    f'  R={r.r_value:.2f}'
-                )
-
+                result = self.evaluate_query(query, num_runs)
+                results.append(result)
             except Exception as e:
-                print(f'  [ERR ] {test_query.label()[:55]:55s}  {e}')
+                print_warning(f'Could not evaluate query {query.id}: {query.label()}.', e)
 
         return results
+
+    def evaluate_query(self, query: TestQuery[MongoQuery], num_runs: int) -> 'Result':
+        print(f'\nEvaluating: {query.label()}')
+
+        content = query.content
+        if isinstance(content, MongoFindQuery):
+            result = self.__evaluate_find(content, num_runs=num_runs, label=query.label())
+        else:
+            result = self.__evaluate_aggregate(content, num_runs=num_runs, label=query.label())
+
+        status = 'OK' if result.r_value <= 2.0 else ('WARN' if result.r_value <= 5.0 else 'BAD')
+
+        print(f'  [{status:4s}] {result.label[:55]:55s}')
+        print(f'  pred={result.predicted_ms:8.1f}ms  actual={result.actual_ms:8.1f}ms')
+        print(f'  R={result.r_value:.2f}')
+
+        return result
 
     def __evaluate_find(self, query: MongoFindQuery, num_runs: int, label: str) -> 'Result':
         """Evaluate a single find query."""

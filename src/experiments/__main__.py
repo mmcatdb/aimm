@@ -1,10 +1,9 @@
-
 import argparse
-from common.utils import auto_close, data_size_quantity, pretty_print_int
+from common.utils import auto_close, data_size_quantity, pretty_print_int, print_warning, print_info, exit_with_error
 from common.config import DatasetName
 from common.drivers import DriverType
+from common.nn_operator import NnOperator
 from latency_estimation.exceptions import NeuralUnitNotFoundException
-from latency_estimation.common import NnOperator
 
 NUM_RUNS = 1
 # FIXME this
@@ -114,9 +113,11 @@ def test_postgres(checkpoint: str):
                 print_query_results(num_results, estimated, actual)
             except NeuralUnitNotFoundException as e:
                 missing_operators.add(e.operator.key())
-                print(f'Error: {e}\n')
+                print_warning(str(e))
             except Exception as e:
-                print(f'Error: {e}\n')
+                print_warning('Could not execute query.', e)
+
+            print()
 
     try_print_missing_operators(missing_operators, model.get_units())
 
@@ -139,14 +140,16 @@ def test_neo4j(checkpoint: str):
                 print_query_results(num_results, estimated, actual)
             except NeuralUnitNotFoundException as e:
                 missing_operators.add(e.operator.key())
-                print(f'Error: {e}\n')
+                print_warning(str(e))
             except Exception as e:
-                print(f'Error: {e}\n')
+                print_warning('Could not execute query.', e)
+
+            print()
 
         try_print_missing_operators(missing_operators, model.get_units())
 
 def print_query_results(num_results: int, estimated: float, actual: float):
-    print(f'Returned {num_results} rows. Estimated: {estimated * 1000:.2f} ms, Actual: {actual * 1000:.2f} ms\n')
+    print(f'Returned {num_results} rows. Estimated: {estimated * 1000:.2f} ms, Actual: {actual * 1000:.2f} ms.')
 
 def try_print_missing_operators(missing: set[str], available: list[NnOperator]):
     if not missing:

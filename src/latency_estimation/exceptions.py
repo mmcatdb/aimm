@@ -1,4 +1,4 @@
-from latency_estimation.common import NnOperator
+from common.nn_operator import NnOperator
 
 class NeuralUnitNotFoundException(Exception):
     def __init__(self, operator: NnOperator):

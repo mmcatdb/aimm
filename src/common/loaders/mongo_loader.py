@@ -5,7 +5,7 @@ from enum import Enum
 import json
 import os
 from pymongo import ASCENDING
-from common.utils import ProgressTracker
+from common.utils import ProgressTracker, print_warning
 from common.loaders.postgres_loader import ColumnSchema
 from common.drivers import MongoDriver
 import re
@@ -63,7 +63,7 @@ class MongoLoader(ABC):
                 database.drop_collection(entity)
                 print(f'Collection "{entity}" has been dropped in MongoDB.')
             except Exception as e:
-                print(f'Skipping delete for "{entity}": {e}')
+                print_warning(f'Skipping delete for "{entity}"', e)
 
     def __create_index(self, index: 'IndexSchema'):
         """The keys can be nested, e.g., `user.address.street`."""
@@ -78,7 +78,7 @@ class MongoLoader(ABC):
             collection.create_index(keys, unique=index.is_unique)
             print(f'Created {message}')
         except Exception as e:
-            print(f'Could not create {message}: {e}')
+            print_warning(f'Could not create {message}', e)
 
     def __populate_kind(self, schema: 'DocumentSchema'):
         collection_name = schema.source.kind

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 import torch.nn as nn
-from latency_estimation.common import NnOperator
+from common.nn_operator import NnOperator
 from latency_estimation.config import ModelConfig
 from latency_estimation.feature_extractor import BaseFeatureExtractor
 from latency_estimation.exceptions import NeuralUnitNotFoundException

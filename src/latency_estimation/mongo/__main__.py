@@ -46,7 +46,7 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     print(config)
 
     print(f'\n[2/7] Collecting {config.num_queries} query plans...')
-    dataset = ctx.load_dataset(config.num_queries, config.num_runs)
+    dataset = ctx.load_or_create_dataset(config.num_queries, config.num_runs)
 
     print(f'\nDataset Statistics:')
     print_dataset_summary(dataset)
@@ -69,6 +69,7 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     print('\n[5/7] Creating plan-structured neural network...')
     model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, train_dataset.plans)
     model.print_summary()
+    ctx.save_available_operators(model)
 
     if config.dry_run:
         print('\nDry run complete. Exiting before training.')
@@ -187,7 +188,7 @@ def test_run(args: argparse.Namespace, ctx: MongoContext):
     results_path = os.path.join(ctx.config.results_directory, 'evaluation_results.json')
     print(f'\nSaving results to {results_path}...')
     with open(results_path, 'w') as file:
-        json.dump(results, file, indent=2, cls=JsonEncoder)
+        json.dump(results, file, indent=4, cls=JsonEncoder)
 
 # def estimate_args(parser: argparse.ArgumentParser):
 #     pass

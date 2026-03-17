@@ -71,3 +71,11 @@ python -m scripts.show_plan postgres tpch Q7
 python -m experiments check
 python -m experiments test postgres -c data/checkpoints/tpch_postgres_best.pt
 ```
+
+## Development
+
+- Use this to find all available operators and then find the missing ones:
+```bash
+python -m latency_estimation.neo4j train --dry-run
+python -m scripts.show_plan neo4j edbt --all-queries
+```

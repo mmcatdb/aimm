@@ -1,6 +1,7 @@
 import os
 import argparse
 from common.config import Config
+from common.utils import print_warning
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Clean cache')
@@ -29,9 +30,9 @@ def plans_run(args: argparse.Namespace):
         path = os.path.join(cache_dir, filename)
         try:
             os.remove(path)
-            print(f'Deleted cache file: {path}')
+            print(f'Deleted file "{path}".')
         except Exception as e:
-            print(f'Error deleting file {path}: {e}')
+            print_warning(f'Could not delete file "{path}".', e)
 
 if __name__ == '__main__':
     main()

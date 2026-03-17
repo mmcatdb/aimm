@@ -1,29 +1,32 @@
-import sys
 import json
 import re
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
 from common.drivers import PostgresDriver
+from common.utils import print_info, print_warning
+from common.explainers.common import OperatorNameFormatter
+from latency_estimation.postgres.feature_extractor import FeatureExtractor
 
 # See https://pganalyze.com/docs/explain for details on PostgreSQL EXPLAIN output structure.
 
 class PostgresExplainer:
-    def __init__(self, driver: PostgresDriver) -> None:
+    def __init__(self, driver: PostgresDriver, operators: OperatorNameFormatter | None) -> None:
         self._console = Console()
         self._driver = driver
+        self._operators = operators
 
     def fetch_plan(self, query: str, do_profile: bool, do_discard: bool) -> dict:
         return fetch_plan(self._driver, query, do_profile, do_discard)
 
     def print_tree(self, plan: dict) -> None:
         """Print the plan tree with rich formatting."""
-        tree_string = plan_tree_to_string(plan)
+        tree_string = plan_tree_to_string(self._operators, plan)
         self._console.print(Panel(tree_string, title='[bold]Query Plan Tree[/bold]', border_style='blue'))
 
     def print_json(self, plan: dict) -> None:
         """Print the plan JSON with syntax highlighting."""
-        json_string = json.dumps(plan, indent=2)
+        json_string = json.dumps(plan, indent=4)
         self._console.print(Panel(
             Syntax(json_string, 'json', theme='monokai', line_numbers=False, word_wrap=False),
             title='[bold]Raw JSON Plan[/bold]',
@@ -40,10 +43,11 @@ def fetch_plan(driver: PostgresDriver, query: str, do_profile: bool, do_discard:
     is_dml = bool(DML_RE.match(query))
 
     if is_dml:
-        if do_profile:
-            print('Note: DML query detected — running inside a transaction that will be rolled back (no data will be modified).\n', file=sys.stderr)
-        else:
-            print('Note: DML query detected — using EXPLAIN without ANALYZE (estimated plan only, query will NOT be executed).\n', file=sys.stderr)
+        print_info(
+            'DML query detected — running inside a transaction that will be rolled back (no data will be modified).'
+            if do_profile else
+            'DML query detected — using EXPLAIN without ANALYZE (estimated plan only, query will NOT be executed).'
+        )
 
     # For DML with ANALYZE we wrap in a transaction and roll back so nothing is actually committed to the database.
     is_in_transaction = is_dml and do_profile
@@ -62,7 +66,7 @@ def fetch_plan(driver: PostgresDriver, query: str, do_profile: bool, do_discard:
                 try:
                     cursor.execute('DISCARD ALL;')
                 except Exception as e:
-                    print(f'Warning: DISCARD ALL failed: {e}', file=sys.stderr)
+                    print_warning('DISCARD ALL failed', e)
 
             options = 'FORMAT JSON, VERBOSE, COSTS'
             if do_profile:
@@ -91,7 +95,7 @@ def fetch_plan(driver: PostgresDriver, query: str, do_profile: bool, do_discard:
 #endregion
 #region Printing
 
-def plan_tree_to_string(plan: dict) -> str:
+def plan_tree_to_string(operators: OperatorNameFormatter | None, plan: dict) -> str:
     """Return the full visual tree as a single string."""
     root_node = plan.get('Plan', plan)  # handle both wrapped and bare plans
 
@@ -105,28 +109,33 @@ def plan_tree_to_string(plan: dict) -> str:
     if header_parts:
         header = '  ' + ' | '.join(header_parts) + '\n\n'
 
-    lines = _render_tree(root_node)
+    lines = _render_tree(operators, root_node)
     return header + '\n'.join(lines)
 
-def _render_tree(node: dict, prefix: str = '', is_last: bool = True) -> list[str]:
+def _render_tree(operators: OperatorNameFormatter | None, node: dict, prefix: str = '', is_last: bool = True) -> list[str]:
     """Recursively render the plan tree into a list of lines."""
     connector = '└─ ' if is_last else '├─ '
-    lines = [prefix + connector + _node_label(node)]
+    lines = [prefix + connector + _node_label(operators, node)]
 
     child_prefix = prefix + ('   ' if is_last else '│  ')
 
     children: list[dict] = node.get('Plans', [])
     for i, child in enumerate(children):
         last = i == len(children) - 1
-        lines.extend(_render_tree(child, child_prefix, last))
+        lines.extend(_render_tree(operators, child, child_prefix, last))
 
     return lines
 
-def _node_label(node: dict) -> str:
-    kind = node.get('Node Type', '?')
-    icon = NODE_ICONS.get(kind, kind.upper()[:8])
-    assert icon is not None, f'Unknown node type: {kind}'
-    label = icon
+def _node_label(operators: OperatorNameFormatter | None, node: dict) -> str:
+    """Generate a descriptive label for a plan node."""
+    op_type = FeatureExtractor.get_node_type(node)
+    num_children = len(node.get('Plans', []))
+    icon = NODE_ICONS.get(op_type, op_type.upper()[:8])
+    assert icon is not None, f'Unknown node type: {op_type}'
+    if icon is None:
+        print_warning(f'Unknown node type: {op_type}')
+        icon = op_type
+    label = operators.format(op_type, num_children, icon) if operators else icon
 
     extras: list[str] = []
     for key in ('Relation Name', 'Index Name', 'CTE Name', 'Function Name', 'Schema', 'Operation'):

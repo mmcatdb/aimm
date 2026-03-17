@@ -4,7 +4,7 @@ import numpy as np
 from tabulate import tabulate
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
-from common.utils import EPSILON
+from common.utils import EPSILON, print_warning
 from common.database import TestQuery
 from latency_estimation.postgres.plan_extractor import PlanExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
@@ -18,7 +18,6 @@ class ModelEvaluator:
     def evaluate_multiple_queries(self, queries: list[TestQuery[str]], measure_actual: bool, num_runs: int) -> list['Result']:
         """
         Evaluate multiple queries.
-
         Args:
             measure_actual: Whether to measure actual execution times
             num_runs: Number of runs for each query
@@ -34,10 +33,7 @@ class ModelEvaluator:
                 result = self.evaluate_query(query, measure_actual, num_runs)
                 results.append(result)
             except Exception as e:
-                print(f'\nError evaluating {query.label()}: {e}')
-                import traceback
-                traceback.print_exc()
-                continue
+                print_warning(f'Could not evaluate query {query.id}: {query.label()}.', e)
 
         return results
 
@@ -51,7 +47,6 @@ class ModelEvaluator:
             Result object with all measurements and comparisons
         """
         print(f'\nEvaluating: {query.label()}')
-        print('-' * 80)
 
         result = Result(query.label(), query.content)
 

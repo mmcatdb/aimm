@@ -1,4 +1,3 @@
-import sys
 import json
 import re
 from typing import Any
@@ -6,11 +5,17 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
 from common.drivers import Neo4jDriver, cypher
+from common.utils import print_info, print_warning
+from common.explainers.common import OperatorNameFormatter
+from latency_estimation.neo4j.feature_extractor import FeatureExtractor
+
+# See https://neo4j.com/docs/cypher-manual/current/planning-and-tuning/operators/ for details on Neo4j execution plans.
 
 class Neo4jExplainer:
-    def __init__(self, driver: Neo4jDriver) -> None:
+    def __init__(self, driver: Neo4jDriver, operators: OperatorNameFormatter | None) -> None:
         self._console = Console()
         self._driver = driver
+        self._operators = operators
 
     def fetch_plan(self, query: str, do_profile: bool) -> dict:
         """
@@ -25,7 +30,7 @@ class Neo4jExplainer:
 
     def print_tree(self, plan: dict) -> None:
         """Print the plan tree with rich formatting."""
-        tree_string = plan_tree_to_string(plan)
+        tree_string = plan_tree_to_string(self._operators, plan)
         self._console.print(Panel(tree_string, title='[bold]Query Plan Tree[/bold]', border_style='blue'))
 
     def print_json(self, plan: dict) -> None:
@@ -33,7 +38,7 @@ class Neo4jExplainer:
         # Remove internal summary for cleaner JSON output
         copy = {k: v for k, v in plan.items() if not k.startswith('_')}
 
-        json_string = json.dumps(copy, indent=2)
+        json_string = json.dumps(copy, indent=4)
         self._console.print(Panel(
             Syntax(json_string, 'json', theme='monokai', line_numbers=False, word_wrap=False),
             title='[bold]Raw JSON Plan[/bold]',
@@ -49,51 +54,48 @@ def fetch_plan(driver: Neo4jDriver, query: str, do_profile: bool) -> dict:
     is_dml = bool(DML_RE.search(query))
 
     if is_dml:
-        if not do_profile:
-            print('Note: DML query detected — using EXPLAIN without execution (estimated plan only, query will NOT be executed).\n', file=sys.stderr)
-        else:
-            print('Note: DML query detected — running inside a transaction that will be rolled back (no data will be modified).\n', file=sys.stderr)
+        print_info(
+            'DML query detected — running inside a transaction that will be rolled back (no data will be modified).'
+            if do_profile else
+            'DML query detected — using EXPLAIN without execution (estimated plan only, query will NOT be executed).'
+        )
 
-    try:
-        with driver.session() as session:
-            if do_profile:
-                if is_dml:
-                    # Use explicit transaction for DML so we can rollback
-                    tx = session.begin_transaction()
-                    try:
-                        result = tx.run(cypher(f'PROFILE {query}'))
-                        summary = result.consume()
-                        assert summary.profile is not None, 'Failed to retrieve query summary for DML.'
-                        plan_dict = normalize_profile(summary.profile)
-
-                        # Add summary statistics
-                        plan_dict['_summary'] = {
-                            'resultAvailableAfter': summary.result_available_after,
-                            'resultConsumedAfter': summary.result_consumed_after,
-                        }
-                    finally:
-                        tx.rollback()  # Always rollback to avoid actual writes
-                else:
-                    result = session.run(cypher(f'PROFILE {query}'))
+    with driver.session() as session:
+        if do_profile:
+            if is_dml:
+                # Use explicit transaction for DML so we can rollback
+                tx = session.begin_transaction()
+                try:
+                    result = tx.run(cypher(f'PROFILE {query}'))
                     summary = result.consume()
-                    assert summary.profile is not None, 'Failed to retrieve query summary.'
+                    assert summary.profile is not None, 'Failed to retrieve query summary for DML.'
                     plan_dict = normalize_profile(summary.profile)
 
+                    # Add summary statistics
                     plan_dict['_summary'] = {
                         'resultAvailableAfter': summary.result_available_after,
                         'resultConsumedAfter': summary.result_consumed_after,
                     }
+                finally:
+                    tx.rollback()  # Always rollback to avoid actual writes
             else:
-                # EXPLAIN does not execute the query
-                result = session.run(cypher(f'EXPLAIN {query}'))
+                result = session.run(cypher(f'PROFILE {query}'))
                 summary = result.consume()
-                assert summary.plan is not None, 'Failed to retrieve query plan.'
-                plan_dict = normalize_plan(summary.plan)
+                assert summary.profile is not None, 'Failed to retrieve query summary.'
+                plan_dict = normalize_profile(summary.profile)
 
-        return plan_dict
+                plan_dict['_summary'] = {
+                    'resultAvailableAfter': summary.result_available_after,
+                    'resultConsumedAfter': summary.result_consumed_after,
+                }
+        else:
+            # EXPLAIN does not execute the query
+            result = session.run(cypher(f'EXPLAIN {query}'))
+            summary = result.consume()
+            assert summary.plan is not None, 'Failed to retrieve query plan.'
+            plan_dict = normalize_plan(summary.plan)
 
-    finally:
-        driver.close()
+    return plan_dict
 
 def normalize_profile(profile: dict) -> dict[str, Any]:
     """
@@ -164,7 +166,7 @@ def normalize_plan(plan: dict) -> dict[str, Any]:
 #endregion
 #region Printing
 
-def plan_tree_to_string(plan: dict) -> str:
+def plan_tree_to_string(operators: OperatorNameFormatter | None, plan: dict) -> str:
     """Return the full visual tree as a single string."""
     header_parts = []
 
@@ -179,28 +181,32 @@ def plan_tree_to_string(plan: dict) -> str:
     if header_parts:
         header = '  ' + ' | '.join(header_parts) + '\n\n'
 
-    lines = _render_tree(plan)
+    lines = _render_tree(operators, plan)
     return header + '\n'.join(lines)
 
-def _render_tree(node: dict, prefix: str = '', is_last: bool = True) -> list[str]:
+def _render_tree(operators: OperatorNameFormatter | None, node: dict, prefix: str = '', is_last: bool = True) -> list[str]:
     """Recursively render the plan tree into a list of lines."""
     connector = "└─ " if is_last else "├─ "
-    lines = [prefix + connector + _node_label(node)]
+    lines = [prefix + connector + _node_label(operators, node)]
 
     child_prefix = prefix + ("   " if is_last else "│  ")
 
     children: list[dict] = node.get('children', [])
     for i, child in enumerate(children):
         last = i == len(children) - 1
-        lines.extend(_render_tree(child, child_prefix, last))
+        lines.extend(_render_tree(operators, child, child_prefix, last))
 
     return lines
 
-def _node_label(node: dict) -> str:
+def _node_label(operators: OperatorNameFormatter | None, node: dict) -> str:
     """Generate a descriptive label for a plan node."""
-    op_type = _clean_operator_type(node.get('operatorType', '?'))
-    icon = NODE_ICONS.get(op_type, _abbreviate_operator(op_type))
-    label = icon
+    op_type = FeatureExtractor.get_node_type(node)
+    num_children = len(node.get('children', []))
+    icon = NODE_ICONS.get(op_type)
+    if icon is None:
+        print_warning(f'Unknown operator type: {op_type}')
+        icon = op_type
+    label = operators.format(op_type, num_children, icon) if operators else icon
 
     extras: list[str] = []
     args = node.get('arguments', {})
@@ -365,23 +371,6 @@ NODE_ICONS: dict[str, str] = {
     'TriadicFilter': 'TRIFILT',
     'Input': 'INPUT',
 }
-
-def _clean_operator_type(op_type: str) -> str:
-    """Remove @neo4j suffix from operator type."""
-    # Remove common suffixes like @neo4j
-    if '@' in op_type:
-        op_type = op_type.split('@')[0]
-    return op_type
-
-def _abbreviate_operator(op_type: str) -> str:
-    """Create a short abbreviation for operator types not in NODE_ICONS."""
-    # Split CamelCase into words and take first letters
-    words = re.findall(r'[A-Z][a-z]*', op_type)
-    if words:
-        # Take first 2 chars of each word, join them
-        abbrev = ''.join(w[:2].upper() for w in words[:4])
-        return abbrev if len(abbrev) <= 10 else abbrev[:10]
-    return op_type[:10].upper()
 
 def _fmt_stats(node: dict) -> str:
     """Format execution statistics for a node."""
