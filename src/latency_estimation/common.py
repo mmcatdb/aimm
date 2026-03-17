@@ -1,7 +1,9 @@
 from argparse import Namespace
 from collections.abc import Callable
+import importlib
 import os
 import pickle
+import sys
 from typing import TypeVar
 import torch
 import numpy as np
@@ -71,9 +73,32 @@ def save_checkpoint_file(path: str, dict: dict, is_first_time: bool) -> None:
         # There is no point in continuing if we can't save the checkpoint.
         exit_with_error(f'Could not save checkpoint to {path}.', e)
 
+def _register_legacy_checkpoint_modules() -> None:
+    module_aliases = {
+        'feature_extractor': 'latency_estimation.postgres.feature_extractor',
+        'plan_structured_network': 'latency_estimation.postgres.plan_structured_network',
+        'plan_extractor': 'latency_estimation.postgres.plan_extractor',
+        'trainer': 'latency_estimation.postgres.trainer',
+        'context': 'latency_estimation.postgres.context',
+    }
+
+    for legacy_name, module_path in module_aliases.items():
+        if legacy_name in sys.modules:
+            continue
+        try:
+            sys.modules[legacy_name] = importlib.import_module(module_path)
+        except Exception:
+            continue
+
 def load_checkpoint_file(path: str, device: str) -> dict:
     try:
         return torch.load(path, map_location=device, weights_only=False)
+    except ModuleNotFoundError:
+        _register_legacy_checkpoint_modules()
+        try:
+            return torch.load(path, map_location=device, weights_only=False)
+        except Exception as e:
+            exit_with_error(f'Could not load checkpoint from {path}.', e)
     except FileNotFoundError:
         exit_with_error(f'Model checkpoint not found at {path}. Specify a valid --checkpoint path.')
     except Exception as e:
