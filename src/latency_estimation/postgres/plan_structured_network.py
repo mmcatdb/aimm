@@ -20,13 +20,28 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
     @staticmethod
     def from_checkpoint(checkpoint: dict, device: str) -> 'PlanStructuredNetwork':
         """Load model from checkpoint, including neural units."""
-        config: ModelConfig = checkpoint['config']
+        config_data = checkpoint['config']
+        config: ModelConfig = config_data if isinstance(config_data, ModelConfig) else ModelConfig(**config_data)
         feature_extractor: FeatureExtractor = checkpoint['feature_extractor']
 
         model = PlanStructuredNetwork(config, feature_extractor)
 
-        operators: dict[str, NnOperator] = checkpoint['operators']
-        model._define_operators(list(operators.values()))
+        if 'operators' in checkpoint:
+            operators: dict[str, NnOperator] = checkpoint['operators']
+            model._define_operators(list(operators.values()))
+        elif 'operator_info' in checkpoint:
+            operator_info: dict[str, dict] = checkpoint['operator_info']
+            operators = [
+                NnOperator(
+                    type=info['node_type'],
+                    num_children=info['num_children'],
+                    feature_dim=info['feature_dim'],
+                )
+                for info in operator_info.values()
+            ]
+            model._define_operators(operators)
+        else:
+            raise KeyError('Checkpoint is missing operator definitions: expected "operators" or "operator_info".')
 
         # Load trained weights
         model.load_state_dict(checkpoint['model_state_dict'])
