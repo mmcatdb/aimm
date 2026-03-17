@@ -20,13 +20,58 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
     @staticmethod
     def from_checkpoint(checkpoint: dict, device: str) -> 'PlanStructuredNetwork':
         """Load model from checkpoint, including neural units."""
-        config: ModelConfig = checkpoint['config']
-        feature_extractor: FeatureExtractor = checkpoint['feature_extractor']
+        config_data = checkpoint.get('config')
+        if isinstance(config_data, ModelConfig):
+            config = config_data
+        elif isinstance(config_data, dict):
+            config = ModelConfig(**config_data)
+        elif 'operator_info' in checkpoint:
+            info = checkpoint['operator_info']
+            config = ModelConfig(
+                hidden_dim=info['hidden_dim'],
+                num_layers=info['num_layers'],
+                data_vec_dim=info['data_vec_dim'],
+            )
+        else:
+            raise KeyError('Checkpoint is missing model config.')
+
+        feature_extractor: FeatureExtractor = checkpoint.get('feature_extractor') or FeatureExtractor()
 
         model = PlanStructuredNetwork(config, feature_extractor)
 
-        operators: dict[str, NnOperator] = checkpoint['operators']
-        model._define_operators(list(operators.values()))
+        if 'operators' in checkpoint:
+            operators: dict[str, NnOperator] = checkpoint['operators']
+            model._define_operators(list(operators.values()))
+        elif 'operator_info' in checkpoint:
+            operator_info = checkpoint['operator_info']
+            unit_keys: list[str] = operator_info['unit_keys']
+            state_dict: dict[str, torch.Tensor] = checkpoint['model_state_dict']
+
+            operators: list[NnOperator] = []
+            for unit_key in unit_keys:
+                parts = unit_key.rsplit('_', 1)
+                if len(parts) != 2:
+                    raise ValueError(f'Invalid unit key format: {unit_key}')
+
+                operator_type, num_children_text = parts
+                num_children = int(num_children_text)
+
+                weight_key = f'units.{unit_key}.hidden_layers.0.weight'
+                if weight_key not in state_dict:
+                    raise KeyError(f'Missing weight key in state_dict: {weight_key}')
+
+                total_input_dim = state_dict[weight_key].shape[1]
+                feature_dim = total_input_dim - (config.data_vec_dim * num_children)
+
+                operators.append(NnOperator(
+                    type=operator_type,
+                    num_children=num_children,
+                    feature_dim=feature_dim,
+                ))
+
+            model._define_operators(operators)
+        else:
+            raise KeyError('Checkpoint is missing operator definitions: expected "operators" or "operator_info".')
 
         # Load trained weights
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -103,10 +148,24 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
         node_features = self.feature_extractor.extract_features(node)
         node_features_tensor = torch.tensor(node_features, dtype=torch.float32)
 
+        operator_type = self.feature_extractor.get_node_type(node)
+        operator_key = f'{operator_type}_{len(child_outputs)}'
+
+        expected_feature_dim = len(node_features)
+        if operator_key in self.operators:
+            expected_feature_dim = self.operators[operator_key].feature_dim
+
+        current_feature_dim = node_features_tensor.shape[0]
+        if current_feature_dim < expected_feature_dim:
+            padding = torch.zeros(expected_feature_dim - current_feature_dim, dtype=node_features_tensor.dtype)
+            node_features_tensor = torch.cat([node_features_tensor, padding])
+        elif current_feature_dim > expected_feature_dim:
+            node_features_tensor = node_features_tensor[:expected_feature_dim]
+
         operator = NnOperator(
-            type=self.feature_extractor.get_node_type(node),
+            type=operator_type,
             num_children=len(child_outputs),
-            feature_dim=len(node_features),
+            feature_dim=expected_feature_dim,
         )
         unit = self._get_unit(operator)
 

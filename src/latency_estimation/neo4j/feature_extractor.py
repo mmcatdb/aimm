@@ -273,6 +273,9 @@ class FeatureExtractor(BaseFeatureExtractor):
         min_val = stats['min']
         max_val = stats['max']
 
+        if not np.isfinite(min_val) or not np.isfinite(max_val) or max_val < min_val:
+            return 0.0
+
         if max_val == min_val:
             return 0.5  # If all values are the same, return middle value
 
