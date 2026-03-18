@@ -17,7 +17,7 @@ def main(rawArgs: list[str] | None = None):
     if dataset == DatasetName.EDBT:
         generate_edbt(config, import_directory, args.scale)
     elif dataset == DatasetName.TPCH:
-        raise NotImplementedError('Data generation not implemented for TPCH dataset yet.')
+        generate_tpch(config, import_directory, args.scale)
     else:
         raise ValueError(f'Unsupported dataset: {dataset}')
 
@@ -25,6 +25,15 @@ def common_args(parser: argparse.ArgumentParser):
     parser.add_argument('dataset', nargs=1, choices=get_available_dataset_names(), help=f'Name of the dataset.')
     parser.add_argument('--import-dir', type=str, default=None, help='Path to the directory where the output files should be generated. If not specified, defaults to "{IMPORT_DIRECTORY}/<dataset>".')
     parser.add_argument('--scale', type=float, default=1, help='Scale factor for data generation. Default value (1.0) corresponds to ~100 MB so be responsible.')
+
+def generate_tpch(config: Config, import_directory: str, scale: float):
+    from datasets.tpch.data_generator import TpchDataGenerator
+
+    try:
+        generator = TpchDataGenerator(config)
+        generator.run(import_directory, scale)
+    except Exception as e:
+        exit_with_exception(e)
 
 def generate_edbt(config: Config, import_directory: str, scale: float):
     from datasets.edbt.data_generator import EdbtDataGenerator

@@ -68,7 +68,7 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     ctx.save_available_operators(model)
 
     if config.dry_run:
-        print('\nDry run complete. Exiting before training.')
+        print('\nDry run completed. Exiting before training.')
         return
 
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')

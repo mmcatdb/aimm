@@ -43,14 +43,23 @@ class DataGenerator(ABC):
         self._generate_data()
         print(f'Data generation completed. Data saved to: {self._import_directory}')
 
-    def _open_csv(self, kind: str, header: list[str]):
+    def _open_csv_output(self, kind: str, header: list[str]):
         print('Creating', kind)
         path = os.path.join(self._import_directory, kind + '.tbl')
-        f = open(path, 'w', newline='', encoding='utf-8')
-        w = csv.writer(f, delimiter = '|')
+        file = open(path, 'w', newline='', encoding='utf-8')
+        writer = csv.writer(file, delimiter = '|')
         # The header is skipped because loaders do not expect it.
-        # w.writerow(header)
-        return f, w
+        # writer.writerow(header)
+        return file, writer
+
+    def _open_csv_input(self, kind: str, header: list[str]):
+        print('Loading', kind)
+        path = os.path.join(self._import_directory, kind + '.tbl')
+        file = open(path, 'r', newline='', encoding='utf-8')
+        reader = csv.reader(file, delimiter = '|')
+        # The header is skipped because loaders do not expect it.
+        # next(reader, None)
+        return file, reader
 
     def _scaled(self, base: int, exp: float, min_v: int = 1) -> int:
         return max(min_v, int(round(base * (self._scale ** exp))))
@@ -94,6 +103,14 @@ class DataGenerator(ABC):
         """Uniform timestamp between the specified start (in years) now."""
         seconds = years * 365 * 24 * 60 * 60
         return self._now - timedelta(seconds = self._rng.randint(0, seconds))
+
+    def _rng_date(self, start_year: int, end_year: int) -> datetime:
+        """Generates a random date string between the specified years."""
+        # NICE_TO_HAVE Kinda duplicated logic with `Database._rng_date_string`.
+        years = end_year - start_year + 1
+        # Not the most accurate way to handle leap years, but good enough for random generation.
+        seconds = years * 365 * 24 * 60 * 60
+        return datetime(start_year, 1, 1) + timedelta(seconds = self._rng.randint(0, seconds))
 
     def _rng_country_code(self) -> str:
         """Generates a random country code."""

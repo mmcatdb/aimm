@@ -116,6 +116,17 @@ def get_postgres_tpch_schemas() -> dict[str, list[ColumnSchema]]:
         ColumnSchema('l_comment', 'VARCHAR(44)'),
     ]
 
+    # Custom tables (not part of the original TPC-H schema)
+
+    knows = [
+        ColumnSchema('k_custkey1', 'INTEGER', primary_key=True, references='customer(c_custkey)'),
+        ColumnSchema('k_custkey2', 'INTEGER', primary_key=True, references='customer(c_custkey)'),
+        ColumnSchema('k_startdate', 'DATE'),
+        ColumnSchema('k_source', 'VARCHAR(20)'), # e.g. 'organic', 'social_media', etc.
+        ColumnSchema('k_comment', 'VARCHAR(255)'), # optional free-form comment about the relationship
+        ColumnSchema('k_strength', 'DECIMAL(3,2)'), # Strength of the relationship (0.00 to 1.00)
+    ]
+
     return {
         'region': region,
         'nation': nation,
@@ -125,4 +136,5 @@ def get_postgres_tpch_schemas() -> dict[str, list[ColumnSchema]]:
         'supplier': supplier,
         'partsupp': partsupp,
         'lineitem': lineitem,
+        'knows': knows,
     }

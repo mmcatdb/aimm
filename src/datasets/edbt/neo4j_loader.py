@@ -163,23 +163,6 @@ class EdbtNeo4jLoader(Neo4jLoader):
 
         # Create relationships for simple foreign keys
 
-        print('Creating Customer -> Person relationships...')
-        self._driver.execute('''
-            MATCH (c:Customer), (p:Person {person_id: c.person_id})
-            CREATE (c)-[:SNAPSHOT_OF]->(p)
-        ''')
-        self._driver.execute('MATCH (c:Customer) REMOVE c.person_id')
-
-        print('Creating Seller -> Product relationships...')
-        self._driver.execute('''
-            MATCH (p:Product), (s:Seller {seller_id: p.seller_id})
-            CREATE (s)-[:OFFERS]->(p)
-        ''')
-        self._driver.execute('MATCH (p:Product) REMOVE p.seller_id')
-
-        print('Creating Customer -> Order relationships...')
-        self._driver.execute('''
-            MATCH (o:Order), (u:Customer {customer_id: o.customer_id})
-            CREATE (u)-[:PLACED]->(o)
-        ''')
-        self._driver.execute('MATCH (o:Order) REMOVE o.customer_id')
+        self._create_relationship('SNAPSHOT_OF', 'Customer', 'person_id',   'Person',  'person_id')
+        self._create_relationship('OFFERS',      'Seller',   'seller_id',   'Product', 'seller_id')
+        self._create_relationship('PLACED',      'Customer', 'customer_id', 'Order',   'customer_id')

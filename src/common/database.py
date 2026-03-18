@@ -36,7 +36,8 @@ class Database(ABC, Generic[TQuery]):
             self.train_queries = []
             self.num_train_queries = num_queries
             self._generate_train_queries(num_queries)
-            self.train_queries = self.train_queries[:num_queries]
+            # FIXME
+            # self.train_queries = self.train_queries[:num_queries]
 
         return self.train_queries
 
@@ -72,14 +73,14 @@ class Database(ABC, Generic[TQuery]):
     def _generate_test_queries(self):
         pass
 
-    def _random_date(self, start_year=1992, end_year=1998) -> datetime.datetime:
+    def _rng_date(self, start_year=1992, end_year=1998) -> datetime.datetime:
         year = random.randint(start_year, end_year)
         month = random.randint(1, 12)
         day = random.randint(1, self.__days_in_month(month, year))
         return datetime.datetime(year, month, day)
 
-    def _random_date_string(self, start_year=1992, end_year=1998) -> str:
-        return self._random_date(start_year, end_year).strftime('%Y-%m-%d')
+    def _rng_date_string(self, start_year=1992, end_year=1998) -> str:
+        return self._rng_date(start_year, end_year).strftime('%Y-%m-%d')
 
     def __days_in_month(self, month: int, year: int) -> int:
         if month == 2:

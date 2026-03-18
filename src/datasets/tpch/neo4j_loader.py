@@ -8,7 +8,7 @@ class TpchNeo4jLoader(Neo4jLoader):
 
     @override
     def _get_kinds(self):
-        return ['region', 'nation', 'part', 'supplier', 'customer', 'orders', 'partsupp', 'lineitem']
+        return ['region', 'nation', 'part', 'supplier', 'customer', 'orders', 'partsupp', 'lineitem', 'knows']
 
     @override
     def _define_constraints(self):
@@ -21,6 +21,9 @@ class TpchNeo4jLoader(Neo4jLoader):
             'CREATE CONSTRAINT IF NOT EXISTS FOR (s:Supplier) REQUIRE s.s_suppkey IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (ps:PartSupp) REQUIRE (ps.ps_partkey, ps.ps_suppkey) IS UNIQUE',
             'CREATE CONSTRAINT IF NOT EXISTS FOR (li:LineItem) REQUIRE (li.l_orderkey, li.l_linenumber) IS UNIQUE',
+            # An unique constraint on the KNOWS relationship is probably not legal. At this point, we should stop caring so much ...
+            'CREATE INDEX IF NOT EXISTS FOR (o:Orders) ON (o.o_orderdate)',
+            'CREATE INDEX IF NOT EXISTS FOR (li:LineItem) ON (li.l_shipdate)',
         ]
 
     @override
@@ -115,7 +118,6 @@ class TpchNeo4jLoader(Neo4jLoader):
             MATCH (o:Orders {o_orderkey: toInteger(row[0])})
             MATCH (p:Part {p_partkey: toInteger(row[1])})
             MATCH (s:Supplier {s_suppkey: toInteger(row[2])})
-            MATCH (p)<-[:FOR_PART]-(ps:PartSupp)-[:SUPPLIED_BY]->(s)
             CREATE (o)-[:HAS_ITEM]->(li:LineItem {
                 l_orderkey: toInteger(row[0]),
                 l_partkey: toInteger(row[1]),
@@ -133,36 +135,26 @@ class TpchNeo4jLoader(Neo4jLoader):
                 l_shipinstruct: row[13],
                 l_shipmode: row[14],
                 l_comment: row[15]
-            })-[:IS_PRODUCT_SUPPLY]->(ps)
-        ''', 'creating relationships to Orders and PartSupp')
+            })-[:OF_PART]->(p)
+            CREATE (li)-[:SUPPLIED_BY]->(s)
+        ''', 'creating relationships to Orders, Part and Supplier')
 
         # Create relationships for simple foreign keys
 
-        print('Creating Nation -> Region relationships...')
-        self._driver.execute('''
-            MATCH (n:Nation), (r:Region {r_regionkey: n.n_regionkey})
-            CREATE (n)-[:IN_REGION]->(r)
-        ''')
-        # Remove redundant foreign key property
-        self._driver.execute('MATCH (n:Nation) REMOVE n.n_regionkey')
+        self._create_relationship('IN_REGION', 'Nation',   'n_regionkey', 'Region', 'r_regionkey')
+        self._create_relationship('IN_NATION', 'Customer', 'c_nationkey', 'Nation', 'n_nationkey')
+        self._create_relationship('IN_NATION', 'Supplier', 's_nationkey', 'Nation', 'n_nationkey')
+        self._create_relationship('PLACED',    'Customer', 'c_custkey',   'Orders', 'o_custkey')
 
-        print('Creating Customer -> Nation relationships...')
-        self._driver.execute('''
-            MATCH (c:Customer), (n:Nation {n_nationkey: c.c_nationkey})
-            CREATE (c)-[:IN_NATION]->(n)
-        ''')
-        self._driver.execute('MATCH (c:Customer) REMOVE c.c_nationkey')
+        # Custom tables (not part of the original TPC-H schema)
 
-        print('Creating Supplier -> Nation relationships...')
-        self._driver.execute('''
-            MATCH (s:Supplier), (n:Nation {n_nationkey: s.s_nationkey})
-            CREATE (s)-[:IN_NATION]->(n)
+        self._load_csv('knows', '''
+            MATCH (c1:Customer {c_custkey: toInteger(row[0])})
+            MATCH (c2:Customer {c_custkey: toInteger(row[1])})
+            CREATE (c1)-[:KNOWS {
+                k_startdate: date(row[2]),
+                k_source: row[3],
+                k_comment: row[4],
+                k_strength: toFloat(row[5])
+            }]->(c2)
         ''')
-        self._driver.execute('MATCH (s:Supplier) REMOVE s.s_nationkey')
-
-        print('Creating Customer -> Orders relationships...')
-        self._driver.execute('''
-            MATCH (c:Customer), (o:Orders {o_custkey: c.c_custkey})
-            CREATE (c)-[:PLACED]->(o)
-        ''')
-        self._driver.execute('MATCH (o:Orders) REMOVE o.o_custkey')
