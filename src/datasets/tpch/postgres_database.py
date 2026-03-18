@@ -38,7 +38,7 @@ class TpchPostgresDatabase(Database[str]):
         # TPC-H Query 3 variations
         for _ in range(queries_per_type):
             segment = random.choice(['BUILDING', 'AUTOMOBILE', 'MACHINERY', 'HOUSEHOLD', 'FURNITURE'])
-            date = self._random_date_string()
+            date = self._rng_date_string()
             self._train_query(f'''
                 SELECT
                     l_orderkey,
@@ -58,7 +58,7 @@ class TpchPostgresDatabase(Database[str]):
 
         # TPC-H Query 5 variations
         for _ in range(queries_per_type):
-            date = self._random_date_string()
+            date = self._rng_date_string()
             self._train_query(f'''
                 SELECT
                     SUM(l_extendedprice * (1 - l_discount)) as revenue
@@ -75,7 +75,7 @@ class TpchPostgresDatabase(Database[str]):
 
         # TPC-H Query 6 variations
         for _ in range(queries_per_type):
-            date = self._random_date_string()
+            date = self._rng_date_string()
             discount = random.uniform(0.02, 0.09)
             quantity = random.randint(20, 30)
             self._train_query(f'''
@@ -90,7 +90,7 @@ class TpchPostgresDatabase(Database[str]):
 
         # TPC-H Query 10 variations
         for _ in range(queries_per_type):
-            date = self._random_date_string()
+            date = self._rng_date_string()
             self._train_query(f'''
                 SELECT
                     c_custkey,
@@ -113,7 +113,7 @@ class TpchPostgresDatabase(Database[str]):
 
         # TPC-H Query 12 variations
         for _ in range(queries_per_type):
-            date = self._random_date_string()
+            date = self._rng_date_string()
             mode1 = random.choice(['MAIL', 'SHIP', 'AIR', 'TRUCK'])
             mode2 = random.choice(['RAIL', 'FOB', 'REG AIR'])
             self._train_query(f'''

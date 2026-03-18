@@ -158,7 +158,7 @@ def try_print_missing_operators(missing: set[str], available: list[NnOperator]):
     print('Missing neural units for the following operators:')
     for operator in missing:
         print(f'  - {operator}')
-    print('Available operators:')
+    print('\nAvailable operators:')
     for operator in available:
         print(f'  - {operator.key()}')
 

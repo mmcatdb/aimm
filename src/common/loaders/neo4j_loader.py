@@ -122,6 +122,16 @@ class Neo4jLoader(ABC):
             CALL (row) {{ {content} }} IN TRANSACTIONS OF 500 ROWS
         ''')
 
+    def _create_relationship(self, label: str, from_entity: str, from_key: str, to_entity: str, to_key: str):
+        print(f'Creating {from_entity} -> {to_entity} relationships...')
+
+        self._driver.execute(f'''
+            MATCH (from:{from_entity}), (to:{to_entity} {{{to_key}: from.{from_key}}})
+            CALL (from, to) {{
+                CREATE (from)-[:{label}]->(to)
+            }} IN TRANSACTIONS OF 1000 ROWS
+        ''')
+
     def __execute_to_scalar(self, query: str, parameters=None, key=None):
         """
         Executes a Cypher query expected to return a single record.

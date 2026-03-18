@@ -21,8 +21,6 @@ class EdbtDataGenerator(DataGenerator):
     @override
     def _generate_data(self):
         c = self._generate_counts()
-
-        c = self._generate_counts()
         print('Counts:', c)
 
         # Base kinds
@@ -73,7 +71,7 @@ class EdbtDataGenerator(DataGenerator):
         """
         Returns arrays so customer snapshots can copy person data without rereading CSV.
         """
-        f, w = self._open_csv('person', ['person_id', 'name', 'email', 'created_at', 'country_code', 'is_active', 'profile'])
+        f, w = self._open_csv_output('person', ['person_id', 'name', 'email', 'created_at', 'country_code', 'is_active', 'profile'])
 
         persons: list[list] = []
 
@@ -105,7 +103,7 @@ class EdbtDataGenerator(DataGenerator):
         return persons
 
     def _generate_sellers(self, n_sellers: int) -> None:
-        f, w = self._open_csv('seller', ['seller_id', 'display_name', 'created_at', 'country_code', 'is_active'])
+        f, w = self._open_csv_output('seller', ['seller_id', 'display_name', 'created_at', 'country_code', 'is_active'])
 
         for seller_id in range(1, n_sellers + 1):
             name = self._rng_full_name()
@@ -121,7 +119,7 @@ class EdbtDataGenerator(DataGenerator):
         Builds a simple tree.
         We store path as a slash path, like: /root12/sub3/sub1
         """
-        f, w = self._open_csv('category', ['category_id', 'name', 'path'])
+        f, w = self._open_csv_output('category', ['category_id', 'name', 'path'])
 
         # Create roots first
         n_roots = clamp_int(int(round(math.sqrt(n_categories))), 10, 200)
@@ -171,7 +169,7 @@ class EdbtDataGenerator(DataGenerator):
         - price_cents_by_product
         - is_active_by_product
         """
-        f, w = self._open_csv('product', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency', 'stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes'])
+        f, w = self._open_csv_output('product', ['product_id', 'seller_id', 'sku', 'title', 'description', 'price_cents', 'currency', 'stock_qty', 'is_active', 'created_at', 'updated_at', 'attributes'])
 
         products = []
 
@@ -222,7 +220,7 @@ class EdbtDataGenerator(DataGenerator):
         return products
 
     def _generate_has_category(self, n_products: int, n_categories: int) -> None:
-        f, w = self._open_csv('has_category', ['product_id', 'category_id', 'assigned_at'])
+        f, w = self._open_csv_output('has_category', ['product_id', 'category_id', 'assigned_at'])
 
         for product_id in range(1, n_products + 1):
             # 1 to 3 categories per product
@@ -236,7 +234,7 @@ class EdbtDataGenerator(DataGenerator):
         f.close()
 
     def _generate_has_interest(self, n_persons: int, n_categories: int) -> None:
-        f, w = self._open_csv('has_interest', ['person_id', 'category_id', 'strength', 'created_at'])
+        f, w = self._open_csv_output('has_interest', ['person_id', 'category_id', 'strength', 'created_at'])
 
         for person_id in range(1, n_persons + 1):
             # 1 to 6 interests
@@ -255,7 +253,7 @@ class EdbtDataGenerator(DataGenerator):
         Directed edges. No self follows.
         We keep duplicates low by making edges per person with a local set.
         """
-        f, w = self._open_csv('follows', ['from_id', 'to_id', 'created_at'])
+        f, w = self._open_csv_output('follows', ['from_id', 'to_id', 'created_at'])
 
         # Spread edges across persons
         edges_written = 0
@@ -288,9 +286,9 @@ class EdbtDataGenerator(DataGenerator):
         That avoids huge memory for totals.
         Returns list of (customer_created_at, [product_ids]) for reviews later.
         """
-        fc, wc = self._open_csv('customer', ['customer_id', 'person_id', 'snapshot_at', 'name', 'email', 'country_code', 'is_active', 'profile'])
-        fo, wo = self._open_csv('order', ['order_id', 'customer_id', 'ordered_at', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
-        fi, wi = self._open_csv('order_item', ['order_item_id', 'order_id', 'product_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot'])
+        fc, wc = self._open_csv_output('customer', ['customer_id', 'person_id', 'snapshot_at', 'name', 'email', 'country_code', 'is_active', 'profile'])
+        fo, wo = self._open_csv_output('order', ['order_id', 'customer_id', 'ordered_at', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
+        fi, wi = self._open_csv_output('order_item', ['order_item_id', 'order_id', 'product_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot'])
 
         statuses = ['paid', 'shipped', 'canceled', 'refunded']
         status_w = [0.70, 0.20, 0.07, 0.03]
@@ -400,7 +398,7 @@ class EdbtDataGenerator(DataGenerator):
         Reviews are big.
         We randomly select a customer and then one of his products. This should keep the distribution of reviews same as sold products.
         """
-        f, w = self._open_csv('review', ['review_id', 'product_id', 'customer_id', 'rating', 'title', 'body', 'created_at', 'helpful_votes'])
+        f, w = self._open_csv_output('review', ['review_id', 'product_id', 'customer_id', 'rating', 'title', 'body', 'created_at', 'helpful_votes'])
 
         used_combinations = set[tuple[int, int]]()
         review_id = 1

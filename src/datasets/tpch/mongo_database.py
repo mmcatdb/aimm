@@ -29,7 +29,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
         n = target // 10
         for _ in range(n):
             # lineitem date range with various operators and limits
-            date = self._random_date()
+            date = self._rng_date()
             op = random.choice(['$gte', '$lte', '$gt', '$lt'])
             self._train_query(MongoFindQuery('lineitem',
                 filter={'l_shipdate': {op: date}},
@@ -90,7 +90,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         for _ in range(n):
             self._train_query(MongoFindQuery('orders',
-                filter={'o_orderdate': {'$gte': self._random_date()}},
+                filter={'o_orderdate': {'$gte': self._rng_date()}},
                 sort={'o_totalprice': random.choice([-1, 1])},
                 limit=random.choice([10, 20, 50, 100]),
             ))
@@ -98,7 +98,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         for _ in range(n):
             self._train_query(MongoFindQuery('lineitem',
-                filter={'l_shipdate': {'$gte': self._random_date()}},
+                filter={'l_shipdate': {'$gte': self._rng_date()}},
                 sort={'l_extendedprice': -1},
                 limit=random.choice([10, 50, 100, 200]),
             ))
@@ -109,7 +109,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         for _ in range(n):
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$gte': self._random_date()}}},
+                {'$match': {'l_shipdate': {'$gte': self._rng_date()}}},
                 {'$group': {
                     '_id': '$l_returnflag',
                     'count': {'$sum': 1},
@@ -121,7 +121,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         for _ in range(n):
             self._train_query(MongoAggregateQuery('orders', [
-                {'$match': {'o_orderdate': {'$gte': self._random_date()}}},
+                {'$match': {'o_orderdate': {'$gte': self._rng_date()}}},
                 {'$group': {
                     '_id': '$o_orderpriority',
                     'count': {'$sum': 1},
@@ -237,7 +237,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
 
         for _ in range(n // 2):
             self._train_query(MongoFindQuery('lineitem',
-                filter={'l_shipdate': {'$gte': self._random_date()}},
+                filter={'l_shipdate': {'$gte': self._rng_date()}},
                 skip=random.randint(10, 1000),
                 limit=random.choice([10, 50, 100]),
             ))
@@ -259,7 +259,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
         # TPC-H Q1 variants with varying date ranges (from narrow to full-table scan)
         for _ in range(n):
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$gte': self._random_date()}}},
+                {'$match': {'l_shipdate': {'$gte': self._rng_date()}}},
                 {'$group': {
                     '_id': {'flag': '$l_returnflag', 'status': '$l_linestatus'},
                     'sum_qty': {'$sum': '$l_quantity'},
@@ -274,7 +274,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
         # TPC-H Q1 with $lte (matching evaluation style)
         for _ in range(n):
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$lte': self._random_date()}}},
+                {'$match': {'l_shipdate': {'$lte': self._rng_date()}}},
                 {'$group': {
                     '_id': {'rf': '$l_returnflag', 'ls': '$l_linestatus'},
                     'sum_qty': {'$sum': '$l_quantity'},
@@ -289,7 +289,7 @@ class TpchMongoDatabase(Database[MongoQuery]):
         # Simple lineitem aggregation (count + sum only, less accumulators)
         for _ in range(n // 2):
             self._train_query(MongoAggregateQuery('lineitem', [
-                {'$match': {'l_shipdate': {'$gte': self._random_date()}}},
+                {'$match': {'l_shipdate': {'$gte': self._rng_date()}}},
                 {'$group': {
                     '_id': '$l_returnflag',
                     'count': {'$sum': 1},

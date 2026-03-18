@@ -7,7 +7,11 @@ class NnOperator:
 
     def key(self) -> str:
         """Get a unique key for this operator."""
-        return f'{self.type}_{self.num_children}'
+        return self.compute_key(self.type, self.num_children)
+
+    @staticmethod
+    def compute_key(type: str, num_children: int) -> str:
+        return f'{type}_{num_children}'
 
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dictionary."""
