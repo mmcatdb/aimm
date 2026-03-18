@@ -26,7 +26,6 @@ class MCTS:
         isa_specializations=None,
         allowed_isa_strategies=None,
         embedding_morphism_exists=None,
-        custom_validators=None,
         exploration_weight=None,
         verbose=False,
     ):
@@ -56,7 +55,6 @@ class MCTS:
         self.isa_specializations = isa_specializations or {}
         self.allowed_isa_strategies = allowed_isa_strategies or {}
         self.embedding_morphism_exists = embedding_morphism_exists
-        self.custom_validators = list(custom_validators or [])
 
         self.exploration_weight = math.sqrt(2.0) if exploration_weight is None else exploration_weight
         self.verbose = verbose
@@ -298,10 +296,6 @@ class MCTS:
         if not self.validate_isa_rules(state):
             return False
 
-        # Additional project-specific rules.
-        for validator in self.custom_validators:
-            if not validator(state, self):
-                return False
 
         return True
 
