@@ -26,7 +26,6 @@ class MCTS:
         isa_specializations=None,
         allowed_isa_strategies=None,
         embedding_morphism_exists=None,
-        custom_validators=None,
         exploration_weight=None,
         verbose=False,
     ):
@@ -56,7 +55,6 @@ class MCTS:
         self.isa_specializations = isa_specializations or {}
         self.allowed_isa_strategies = allowed_isa_strategies or {}
         self.embedding_morphism_exists = embedding_morphism_exists
-        self.custom_validators = list(custom_validators or [])
 
         self.exploration_weight = math.sqrt(2.0) if exploration_weight is None else exploration_weight
         self.verbose = verbose
@@ -199,6 +197,22 @@ class MCTS:
             rows[db_index][kind_index] = True
 
         return tuple(tuple(row) for row in rows)
+    
+    def state_to_mapping_vector(self, state):
+        mapping_vector = []
+        for kind_index in range(len(self.kinds)):
+            assigned_db = None
+            for db_index in range(len(self.databases)):
+                cell = state[db_index][kind_index]
+                if cell is not False:
+                    assigned_db = self.databases[db_index]
+                    break
+
+            if assigned_db is None:
+                raise ValueError("Invalid state: kind has no assigned database")
+            mapping_vector.append(assigned_db)
+
+        return tuple(mapping_vector)
 
     def normalize_cell(self, cell, row_index, column_index):
         if cell is False or cell is True:
@@ -235,15 +249,8 @@ class MCTS:
         3) query_engine.measure_queries(mapping)
         """
 
-        execution_time = None
 
-        if hasattr(self.query_engine, "estimate_latency"):
-            execution_time = self.query_engine.estimate_latency(state)
-        elif hasattr(self.query_engine, "measure_state"):
-            execution_time = self.query_engine.measure_state(state)
-        else:
-            mapping = self.state_to_mapping(state)
-            execution_time = self.query_engine.measure_queries(mapping, verbose=False)
+        execution_time = self.query_engine.estimate_latency(state, self)
 
         reward = 100.0 / (execution_time + 0.001)
         return reward, execution_time
@@ -289,10 +296,6 @@ class MCTS:
         if not self.validate_isa_rules(state):
             return False
 
-        # Additional project-specific rules.
-        for validator in self.custom_validators:
-            if not validator(state, self):
-                return False
 
         return True
 
@@ -540,6 +543,7 @@ class MCTSNode:
                         target_cell_in_mongo = self.state[mongodb_index][target_kind_index]
                         if target_cell_in_mongo is False:
                             continue
+                        
 
                         actions.append(("embed", kind_index, db_index, target_kind))
 
