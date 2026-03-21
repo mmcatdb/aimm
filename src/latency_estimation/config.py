@@ -15,7 +15,7 @@ class TrainConfig:
     """Parameters for training and data collection."""
     def __init__(self,
         num_queries: int,
-        num_runs: int = 1,
+        num_runs: int = 3,
         train_split: float = 0.8,
         batch_size: int = 32,
         num_epochs: int = 100,
