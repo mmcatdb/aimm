@@ -136,7 +136,7 @@ class PlanStructuredTrainer:
 
         return avg_loss
 
-    def __train_batch(self, batch: list[dict]) -> float:
+    def __train_batch(self, batch: list[MongoItem]) -> float:
         self.__model.train()
         self.__optimizer.zero_grad()
         loss = self.__compute_loss(batch)
@@ -147,7 +147,7 @@ class PlanStructuredTrainer:
 
         return loss.item()
 
-    def __compute_loss(self, batch: list[dict]) -> torch.Tensor:
+    def __compute_loss(self, batch: list[MongoItem]) -> torch.Tensor:
         """
         Compute log-latency MSE loss over a batch.
         Only uses root-level latency prediction vs actual execution time.
@@ -155,10 +155,10 @@ class PlanStructuredTrainer:
         losses = []
 
         for item in batch:
-            query: MongoQuery = item['query']
+            query: MongoQuery = item.query
             collection_name = query.collection
-            plan = item['plan']
-            actual_ms = item['execution_time']
+            plan = item.plan
+            actual_ms = item.execution_time
 
             try:
                 predicted_ms = self.__model(plan, collection_name)

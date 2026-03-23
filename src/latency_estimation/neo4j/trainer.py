@@ -131,7 +131,7 @@ class PlanStructuredTrainer:
 
         return avg_loss
 
-    def __train_batch(self, batch: list[dict]) -> float:
+    def __train_batch(self, batch: list[Neo4jItem]) -> float:
         """
         Args:
             batch: List of batch items
@@ -155,7 +155,7 @@ class PlanStructuredTrainer:
 
         return loss.item()
 
-    def __compute_loss(self, batch: list[dict]) -> torch.Tensor:
+    def __compute_loss(self, batch: list[Neo4jItem]) -> torch.Tensor:
         """
         Compute MSLE loss for a batch of query plans.
         Loss = (log(estimated + 1) - log(actual + 1))²
@@ -170,18 +170,15 @@ class PlanStructuredTrainer:
             # Process plans with same structure together
             for index in indexes:
                 item = batch[index]
-                plan = item['plan']
-                execution_time = item['execution_time']
-
                 try:
                     # TODO tensors vs floats? Why no .item()?
-                    predicted_ms = self.__model(plan)
+                    predicted_ms = self.__model(item.plan)
                 except Exception as e:
-                    print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
+                    print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
                     continue
 
                 estimations.append(predicted_ms)
-                targets.append(torch.tensor([[execution_time]], dtype=torch.float32))
+                targets.append(torch.tensor([[item.execution_time]], dtype=torch.float32))
                 # TODO not sure about this ... is the device needed?
                 # targets.append(torch.tensor([[execution_time]], dtype=torch.float32, device=self.device))
 
@@ -196,7 +193,7 @@ class PlanStructuredTrainer:
         # Compute MSE on log values -> MSLE
         return self.criterion(log_preds, log_targets)
 
-def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
+def group_plans_by_structure(batch: list[Neo4jItem]) -> dict[str, list[int]]:
     """
     Group plans in a batch by their structure.
     Plans with identical structure can share computation.
@@ -208,8 +205,7 @@ def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
     groups = defaultdict(list)
 
     for index, item in enumerate(batch):
-        plan = item['plan']
-        structure = compute_plan_structure_hash(plan)
+        structure = compute_plan_structure_hash(item.plan)
         groups[structure].append(index)
 
     return groups

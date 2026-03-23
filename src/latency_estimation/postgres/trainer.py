@@ -120,7 +120,7 @@ class PlanStructuredTrainer:
 
         return avg_loss
 
-    def __train_batch(self, batch: list[dict]) -> float:
+    def __train_batch(self, batch: list[PostgresItem]) -> float:
         """
         Train on a single batch using plan-based batching.
         Args:
@@ -165,7 +165,7 @@ class PlanStructuredTrainer:
         avg_loss = total_loss / total_weight if total_weight > 0 else 0.0
         return avg_loss
 
-    def __compute_loss(self, batch: list[dict]) -> torch.Tensor:
+    def __compute_loss(self, batch: list[PostgresItem]) -> torch.Tensor:
         """
         Compute L2 loss over all operators in all plans (Equation 7).
         Args:
@@ -177,22 +177,20 @@ class PlanStructuredTrainer:
         total_nodes = 0
 
         for item in batch:
-            plan = item['plan']
-            node_latencies = item['node_latencies'] # {node_id: actual_latency}
-
             try:
-                all_outputs = self.__model.estimate_plan_latency_all_nodes(plan)
+                all_outputs = self.__model.estimate_plan_latency_all_nodes(item.plan)
             except Exception as e:
-                print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
+                print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
                 continue
 
             # Compute squared errors for all nodes
             for node_id, output_tensor in all_outputs.items():
                 predicted_latency = output_tensor[0, 0] # Get latency (first element)
 
-                if node_id in node_latencies:
-                    actual_latency = node_latencies[node_id]
+                # {node_id: actual_latency}
+                actual_latency = item.node_latencies.get(node_id)
 
+                if actual_latency is not None:
                     # TODO is the device needed?
                     actual_latency_tensor = torch.tensor(actual_latency, dtype=predicted_latency.dtype, device=predicted_latency.device)
 
@@ -209,7 +207,7 @@ class PlanStructuredTrainer:
             # Return a 0.0 tensor that still requires gradients
             return torch.tensor(0.0, requires_grad=True)
 
-def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
+def group_plans_by_structure(batch: list[PostgresItem]) -> dict[str, list[int]]:
     """
     Group plans in a batch by their structure.
     Returns mapping from structure hash to indexes in batch.
@@ -217,8 +215,7 @@ def group_plans_by_structure(batch: list[dict]) -> dict[str, list[int]]:
     groups = defaultdict(list)
 
     for index, item in enumerate(batch):
-        plan = item['plan']
-        struct_hash = compute_plan_structure_hash(plan)
+        struct_hash = compute_plan_structure_hash(item.plan)
         groups[struct_hash].append(index)
 
     return groups
