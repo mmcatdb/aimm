@@ -1,10 +1,11 @@
 import torch
+import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from common.utils import EPSILON, print_warning
+from latency_estimation.mongo.plan_extractor import MongoItem
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
-from latency_estimation.abstract import BaseDataset
 from common.database import MongoQuery
 
 class PlanStructuredTrainer:
@@ -45,7 +46,7 @@ class PlanStructuredTrainer:
             'warmup_epochs': self.__warmup_epochs,
         }
 
-    def evaluate(self, dataset: 'MongoDataset') -> dict[str, float]:
+    def evaluate(self, dataset: Dataset[MongoItem]) -> dict[str, float]:
         """Evaluate model on a dataset, returning standard QPP metrics."""
         self.__model.eval()
 
@@ -54,11 +55,11 @@ class PlanStructuredTrainer:
 
         with torch.no_grad():
             for item in dataset:
-                query: MongoQuery = item['query']
+                query: MongoQuery = item.query
 
-                collection_name = item['query'].collection
-                plan = item['plan']
-                actual_ms = item['execution_time']
+                collection_name = item.query.collection
+                plan = item.plan
+                actual_ms = item.execution_time
 
                 try:
                     predicted_ms = self.__model(plan, collection_name).item()
@@ -111,7 +112,7 @@ class PlanStructuredTrainer:
         print(f'  R<=5.0: {metrics["r_within_5.0"] * 100:.1f}%')
         print('')
 
-    def train_epoch(self, dataset: 'MongoDataset', batch_size: int | None = None, shuffle: bool = True) -> float:
+    def train_epoch(self, dataset: Dataset[MongoItem], batch_size: int | None = None, shuffle: bool = True) -> float:
         batch_size = batch_size if batch_size is not None else self.__batch_size
         # Identity collate_fn - return list of items as-is
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=lambda x: x)
@@ -141,7 +142,7 @@ class PlanStructuredTrainer:
         loss = self.__compute_loss(batch)
         loss.backward()
         # Gradient clipping for stability
-        torch.nn.utils.clip_grad_norm_(self.__model.parameters(), max_norm=5.0)
+        nn.utils.clip_grad_norm_(self.__model.parameters(), max_norm=5.0)
         self.__optimizer.step()
 
         return loss.item()
@@ -174,5 +175,3 @@ class PlanStructuredTrainer:
             return torch.stack(losses).mean()
 
         return torch.tensor(0.0, requires_grad=True)
-
-MongoDataset = BaseDataset[MongoQuery]

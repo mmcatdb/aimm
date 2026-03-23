@@ -4,7 +4,7 @@ import numpy as np
 from tabulate import tabulate
 from dataclasses import dataclass
 from common.utils import print_warning
-from common.database import TestQuery
+from common.query_registry import QueryDef
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
 
@@ -14,7 +14,7 @@ class ModelEvaluator:
         self.extractor = extractor
         self.model = model
 
-    def evaluate_multiple_queries(self, queries: list[TestQuery[str]], num_runs: int) -> list['Result']:
+    def evaluate_multiple_queries(self, queries: list[QueryDef[str]], num_runs: int) -> list['Result']:
         results: list['Result'] = []
 
         print(f'\nEvaluating {len(queries)} queries...')
@@ -30,14 +30,16 @@ class ModelEvaluator:
 
         return results
 
-    def evaluate_query(self, query: TestQuery[str], num_runs: int) -> 'Result':
+    def evaluate_query(self, query: QueryDef[str], num_runs: int) -> 'Result':
         print(f'\nEvaluating: {query.label()}')
 
-        plan = self.extractor.explain_plan(query.content)
-        result = Result(query.label(), query.content, plan)
+        content = query.generate()
+        plan = self.extractor.explain_plan(content)
+        result = Result(query.label(), content, plan)
 
         estimated_latency = self.__estimate_latency(result.plan)
-        actual_latency, result.std_latency, _ = self.extractor.measure_query(query.content, num_runs)
+        actual_latency, times, _ = self.extractor.measure_query(content, num_runs)
+        result.std_latency = np.std(times).item()
 
         result.estimated_latency = estimated_latency
         result.actual_latency = actual_latency
@@ -47,9 +49,9 @@ class ModelEvaluator:
         result.r_value = max(estimated_latency / actual_latency, actual_latency / estimated_latency) \
             if estimated_latency > 0 and actual_latency > 0 else float('inf')
 
-        print(f'  Estimated: {estimated_latency * 1000:.2f}ms')
-        print(f'  Actual: {actual_latency * 1000:.2f}ms (±{result.std_latency * 1000:.2f}ms)')
-        print(f'  Absolute Error: {result.absolute_error * 1000:.2f}ms')
+        print(f'  Estimated: {estimated_latency:.2f}ms')
+        print(f'  Actual: {actual_latency:.2f}ms (±{result.std_latency:.2f}ms)')
+        print(f'  Absolute Error: {result.absolute_error:.2f}ms')
         print(f'  R-value: {result.r_value:.4f}')
 
         return result
@@ -75,10 +77,10 @@ class ModelEvaluator:
         # Compute statistics
         print(f'\nNumber of queries: {len(results)}')
         print(f'\nAbsolute Error:')
-        print(f'  Mean: {np.mean(absolute_errors) * 1000:.2f}ms')
-        print(f'  Median: {np.median(absolute_errors) * 1000:.2f}ms')
-        print(f'  Std: {np.std(absolute_errors) * 1000:.2f}ms')
-        print(f'  Min/Max: {np.min(absolute_errors) * 1000:.2f}ms / {np.max(absolute_errors) * 1000:.2f}ms')
+        print(f'  Mean: {np.mean(absolute_errors):.2f}ms')
+        print(f'  Median: {np.median(absolute_errors):.2f}ms')
+        print(f'  Std: {np.std(absolute_errors):.2f}ms')
+        print(f'  Min/Max: {np.min(absolute_errors):.2f}ms / {np.max(absolute_errors):.2f}ms')
 
 
         if r_values:
@@ -94,9 +96,9 @@ class ModelEvaluator:
         for r in results:
             table_data.append([
                 r.name[:30] if r.name else 'N/A',
-                f'{r.estimated_latency * 1000:.2f}',
-                f'{r.actual_latency * 1000:.2f}',
-                f'{r.absolute_error * 1000:.2f}',
+                f'{r.estimated_latency:.2f}',
+                f'{r.actual_latency:.2f}',
+                f'{r.absolute_error:.2f}',
                 f'{r.r_value:.4f}' if r.r_value != float('inf') else 'inf'
             ])
 

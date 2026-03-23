@@ -19,7 +19,7 @@ class LatencyEstimator:
         Args:
             queries: List of SQL query strings
         Returns:
-            List of tuples (query, estimated_latency_seconds, plan)
+            List of tuples (query, estimated_latency_ms, plan)
         """
         results = []
         for query in queries:
@@ -37,9 +37,9 @@ class LatencyEstimator:
         Args:
             query: SQL query string
         Returns:
-            Tuple of (estimated_latency_seconds, query_plan)
+            Tuple of (estimated_latency_ms, query_plan)
         """
-        plan = self.extractor.explain_plan(query)
+        plan, _ = self.extractor.explain_plan(query)
 
         # Estimate latency using the trained model
         with torch.no_grad():

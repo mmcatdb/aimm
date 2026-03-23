@@ -1,106 +1,110 @@
-from abc import ABC, abstractmethod
-import datetime
+from datetime import datetime, timedelta
+from enum import Enum
 import json
-import random
-from typing import Generic, TypeVar
+from typing import Any, TypeVar
 from common.config import DatasetName
 from common.drivers import DriverType
 from common.utils import print_warning
+from common.query_registry import QueryRegistry, TQuery
 
-TQuery = TypeVar('TQuery')
+class DatabaseInfo:
+    """Identifies a specific database."""
 
-class Database(ABC, Generic[TQuery]):
-    """
-    Contains all dataset-specific logic for a single database in a dataset.
-    """
     def __init__(self, dataset: DatasetName, type: DriverType):
         self.dataset = dataset
         self.type = type
-        self.num_train_queries: int | None = None
-        self.train_queries: list[TQuery] | None = None
-        self.test_queries: dict[str, TestQuery[TQuery]] | None = None
 
     def id(self) -> str:
         """Get unique identifier for this database. Useful for caching."""
         return f'{self.dataset.value}_{self.type.value}'
 
-    def get_train_queries(self, num_queries: int) -> list[TQuery]:
-        """
-        Generate queries with parameter variations.
-        Args:
-            num_queries: Number of queries to generate
-        Returns:
-            List of SQL query strings
-        """
-        if self.train_queries is None or self.num_train_queries != num_queries:
-            self.train_queries = []
-            self.num_train_queries = num_queries
-            self._generate_train_queries(num_queries)
-            # FIXME
-            # self.train_queries = self.train_queries[:num_queries]
+class ValueType(Enum):
+    STRING = 'string'
+    NUMBER = 'number'
+    DATE = 'date'
 
-        return self.train_queries
+TListItem = TypeVar('TListItem')
 
-    def _train_query(self, query: TQuery):
-        assert self.train_queries is not None
-        self.train_queries.append(query)
+class Database(QueryRegistry[TQuery], DatabaseInfo):
+    """Contains all dataset-specific logic for a single database in a dataset."""
 
-    @abstractmethod
-    def _generate_train_queries(self, num_queries: int):
-        pass
+    def __init__(self, dataset: DatasetName, type: DriverType):
+        DatabaseInfo.__init__(self, dataset, type)
+        QueryRegistry.__init__(self)
 
-    def get_test_queries(self) -> list['TestQuery[TQuery]']:
-        """Generate a diverse set of test queries for evaluation. These should be different from training queries."""
-        if self.test_queries is None:
-            self.test_queries = {}
-            self._generate_test_queries()
+    def _convert_scalar(self, value: Any, type: ValueType) -> Any:
+        """Converts a scalar value to a representation suitable for queries."""
+        if type == ValueType.STRING:
+            return self._convert_string(value)
+        elif type == ValueType.NUMBER:
+            return str(value)
+        elif type == ValueType.DATE:
+            return self._convert_date(value)
 
-        return list(self.test_queries.values())
+    def _convert_string(self, value: str) -> Any:
+        if self.type == DriverType.POSTGRES or self.type == DriverType.NEO4J:
+            return f"'{value}'"
 
-    def try_get_test_query(self, id: str) -> 'TestQuery[TQuery] | None':
-        """Returns a single test query by its ID (or None if not found). Useful for debugging specific queries."""
-        if self.test_queries is None:
-            self.test_queries = {}
-            self._generate_test_queries()
+        # MongoDB doesn't need any conversion.
+        return value
 
-        return self.test_queries.get(id)
+    def _convert_date(self, date: datetime) -> Any:
+        """Converts a date to a representation suitable for queries."""
+        if self.type == DriverType.POSTGRES or self.type == DriverType.NEO4J:
+            return date.strftime('%Y-%m-%d')
 
-    def _test_query(self, id: str, name: str | None, content: TQuery):
-        assert self.test_queries is not None
-        self.test_queries[id] = TestQuery(id, name, content)
+        # MongoDB doesn't need any conversion.
+        return date
 
-    @abstractmethod
-    def _generate_test_queries(self):
-        pass
+    def _convert_array(self, array: list[Any], type: ValueType) -> Any:
+        """Converts an array of values to a representation suitable for queries."""
+        if self.type == DriverType.POSTGRES or self.type == DriverType.NEO4J:
+            # The queries are supposed to put the correct brackets around.
+            return ', '.join(map(lambda v: self._convert_scalar(v, type), array))
 
-    def _rng_date(self, start_year=1992, end_year=1998) -> datetime.datetime:
-        year = random.randint(start_year, end_year)
-        month = random.randint(1, 12)
-        day = random.randint(1, self.__days_in_month(month, year))
-        return datetime.datetime(year, month, day)
+        # MongoDB doesn't need any conversion.
+        return array
 
-    def _rng_date_string(self, start_year=1992, end_year=1998) -> str:
-        return self._rng_date(start_year, end_year).strftime('%Y-%m-%d')
+    def _rng_date(self, start_year=1992, end_year=1998) -> datetime:
+        years = end_year - start_year + 1
+        # Not the most accurate way to handle leap years, but good enough for random generation.
+        seconds = years * 365 * 24 * 60 * 60
+        return datetime(start_year, 1, 1) + timedelta(seconds = self._rng.randint(0, seconds))
 
-    def __days_in_month(self, month: int, year: int) -> int:
-        if month == 2:
-            return 29 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 28
-        elif month in [4, 6, 9, 11]:
-            return 30
-        else:
-            return 31
+    # Common utility methods for generating random parameters. Could be overridden by specific databases if needed.
 
-class TestQuery(Generic[TQuery]):
-    def __init__(self, id: str, name: str | None, content: TQuery):
-        self.id = id
-        self.name = name
-        self.content = content
+    def _param_month(self):
+        return self._param_int('month', 1, 12)
 
-    def label(self) -> str:
-        name = self.name if self.name else '(no name)'
-        return f'{self.id}: {name}'
+    def _rng_int(self, min_value: int, max_value: int):
+        return self._rng.randint(min_value, max_value)
 
-    # TODO Add some method to get content as string for printing
+    def _param_int(self, name: str, min_value: int, max_value: int):
+        return self._param(name, lambda: self._rng_int(min_value, max_value))
+
+    def _param_float(self, name: str, min_value: float, max_value: float):
+        return self._param(name, lambda: self._rng.uniform(min_value, max_value))
+
+    def _param_choice(self, name: str, choices: list[TListItem]):
+        return self._param(name, lambda: self._rng.choice(choices))
+
+    def _param_limit(self, min_value: int = 10, max_order: int = 5):
+        """Returns a random choice from [min_value * 2^n] for n in [0, ..., max_order]."""
+        choices: list[int] = [min_value * (2 ** n) for n in range(max_order + 1)]
+        return self._param_choice('limit', choices)
+
+    def _param_skip(self, min_value: int = 10, max_value: int = 1000):
+        return self._param_int('skip', min_value, max_value)
+
+    def _param_int_array(self, name: str, max_value: int, min_count: int, max_count: int | None):
+        """Useful for ids with the IN operator."""
+        if max_count is None:
+            max_count = min_count
+
+        return self._param(name, lambda: self._convert_array([
+            self._rng_int(1, max_value) for _ in range(self._rng_int(min_count, max_count))
+        ], ValueType.NUMBER))
+
 
 class MongoFindQuery:
     def __init__(self,
@@ -108,15 +112,18 @@ class MongoFindQuery:
         filter: dict | None = None,
         projection: dict | None = None,
         sort: dict | None = None,
-        limit: int | None = None,
-        skip: int | None = None,
+        limit: int | str | None = None,
+        skip: int | str | None = None,
     ):
         self.collection = collection
         self.filter = filter
         self.projection = projection
         self.sort = sort
-        self.limit = limit
-        self.skip = skip
+        # We allow placeholder values but keep them separate.
+        self._limit = limit
+        self.limit = limit if isinstance(limit, int) else None
+        self._skip = skip
+        self.skip = skip if isinstance(skip, int) else None
 
     def __str__(self) -> str:
         return json.dumps({
@@ -124,8 +131,8 @@ class MongoFindQuery:
             'filter': self.filter,
             'projection': self.projection,
             'sort': self.sort,
-            'limit': self.limit,
-            'skip': self.skip
+            'limit': self._limit,
+            'skip': self._skip
         }, indent=4)
 
 class MongoAggregateQuery:

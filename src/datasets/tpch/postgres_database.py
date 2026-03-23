@@ -1,144 +1,135 @@
-from typing_extensions import override
-from common.config import DatasetName
-from common.database import Database
+from common.query_registry import query
 from common.drivers import DriverType
-import random
+from datasets.tpch.tpch_database import TpchDatabase
 
-class TpchPostgresDatabase(Database[str]):
-    NUM_QUERY_TYPES = 6 # Total number of different query types implemented
+class TpchPostgresDatabase(TpchDatabase[str]):
 
     def __init__(self):
-        super().__init__(DatasetName.TPCH, DriverType.POSTGRES)
+        super().__init__(DriverType.POSTGRES)
 
-    @override
-    def _generate_train_queries(self, num_queries: int):
-        queries_per_type = num_queries // TpchPostgresDatabase.NUM_QUERY_TYPES
+    @query('basic', 1.0, 'TPC-H Query 1 variations')
+    def _pricing_report(self):
+        return f'''
+            SELECT
+                l_returnflag,
+                l_linestatus,
+                SUM(l_quantity) as sum_qty,
+                SUM(l_extendedprice) as sum_base_price,
+                SUM(l_extendedprice * (1 - l_discount)) as sum_disc_price,
+                SUM(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
+                AVG(l_quantity) as avg_qty,
+                AVG(l_extendedprice) as avg_price,
+                AVG(l_discount) as avg_disc,
+                COUNT(*) as count_order
+            FROM lineitem
+            WHERE l_shipdate <= date '1998-12-01' - interval '{self._param_int('delta', 60, 120)} days'
+            GROUP BY l_returnflag, l_linestatus
+            ORDER BY l_returnflag, l_linestatus
+        '''
 
-        # TPC-H Query 1 variations
-        for _ in range(queries_per_type):
-            delta = random.randint(60, 120)
-            self._train_query(f'''
-                SELECT
-                    l_returnflag,
-                    l_linestatus,
-                    SUM(l_quantity) as sum_qty,
-                    SUM(l_extendedprice) as sum_base_price,
-                    SUM(l_extendedprice * (1 - l_discount)) as sum_disc_price,
-                    SUM(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
-                    AVG(l_quantity) as avg_qty,
-                    AVG(l_extendedprice) as avg_price,
-                    AVG(l_discount) as avg_disc,
-                    COUNT(*) as count_order
-                FROM lineitem
-                WHERE l_shipdate <= date '1998-12-01' - interval '{delta} days'
-                GROUP BY l_returnflag, l_linestatus
-                ORDER BY l_returnflag, l_linestatus
-            ''')
+    @query('basic', 1.0, 'TPC-H Query 3 variations')
+    def _orders(self):
+        date = self._param_date()
 
-        # TPC-H Query 3 variations
-        for _ in range(queries_per_type):
-            segment = random.choice(['BUILDING', 'AUTOMOBILE', 'MACHINERY', 'HOUSEHOLD', 'FURNITURE'])
-            date = self._rng_date_string()
-            self._train_query(f'''
-                SELECT
-                    l_orderkey,
-                    SUM(l_extendedprice * (1 - l_discount)) as revenue,
-                    o_orderdate,
-                    o_shippriority
-                FROM customer, orders, lineitem
-                WHERE c_mktsegment = '{segment}'
-                    AND c_custkey = o_custkey
-                    AND l_orderkey = o_orderkey
-                    AND o_orderdate < date '{date}'
-                    AND l_shipdate > date '{date}'
-                GROUP BY l_orderkey, o_orderdate, o_shippriority
-                ORDER BY revenue DESC, o_orderdate
-                LIMIT 10
-            ''')
+        return f'''
+            SELECT
+                l_orderkey,
+                SUM(l_extendedprice * (1 - l_discount)) as revenue,
+                o_orderdate,
+                o_shippriority
+            FROM customer, orders, lineitem
+            WHERE c_mktsegment = '{self._param_segment()}'
+                AND c_custkey = o_custkey
+                AND l_orderkey = o_orderkey
+                AND o_orderdate < date '{date}'
+                AND l_shipdate > date '{date}'
+            GROUP BY l_orderkey, o_orderdate, o_shippriority
+            ORDER BY revenue DESC, o_orderdate
+            LIMIT 10
+        '''
 
-        # TPC-H Query 5 variations
-        for _ in range(queries_per_type):
-            date = self._rng_date_string()
-            self._train_query(f'''
-                SELECT
-                    SUM(l_extendedprice * (1 - l_discount)) as revenue
-                FROM customer, orders, lineitem, supplier
-                WHERE c_custkey = o_custkey
-                    AND l_orderkey = o_orderkey
-                    AND l_suppkey = s_suppkey
-                    AND c_nationkey = s_nationkey
-                    AND o_orderdate >= date '{date}'
-                    AND o_orderdate < date '{date}' + interval '1 year'
-                GROUP BY c_nationkey
-                ORDER BY revenue DESC
-            ''')
+    @query('basic', 1.0, 'TPC-H Query 5 variations')
+    def _supplier_volume(self):
+        date = self._param_date()
 
-        # TPC-H Query 6 variations
-        for _ in range(queries_per_type):
-            date = self._rng_date_string()
-            discount = random.uniform(0.02, 0.09)
-            quantity = random.randint(20, 30)
-            self._train_query(f'''
-                SELECT
-                    SUM(l_extendedprice * l_discount) as revenue
-                FROM lineitem
-                WHERE l_shipdate >= date '{date}'
-                    AND l_shipdate < date '{date}' + interval '1 year'
-                    AND l_discount BETWEEN {discount} - 0.01 AND {discount} + 0.01
-                    AND l_quantity < {quantity}
-            ''')
+        return f'''
+            SELECT
+                SUM(l_extendedprice * (1 - l_discount)) as revenue
+            FROM customer, orders, lineitem, supplier
+            WHERE c_custkey = o_custkey
+                AND l_orderkey = o_orderkey
+                AND l_suppkey = s_suppkey
+                AND c_nationkey = s_nationkey
+                AND o_orderdate >= date '{date}'
+                AND o_orderdate < date '{date}' + interval '1 year'
+            GROUP BY c_nationkey
+            ORDER BY revenue DESC
+        '''
 
-        # TPC-H Query 10 variations
-        for _ in range(queries_per_type):
-            date = self._rng_date_string()
-            self._train_query(f'''
-                SELECT
-                    c_custkey,
-                    c_name,
-                    SUM(l_extendedprice * (1 - l_discount)) as revenue,
-                    c_acctbal,
-                    c_address,
-                    c_phone,
-                    c_comment
-                FROM customer, orders, lineitem
-                WHERE c_custkey = o_custkey
-                    AND l_orderkey = o_orderkey
-                    AND o_orderdate >= date '{date}'
-                    AND o_orderdate < date '{date}' + interval '3 months'
-                    AND l_returnflag = 'R'
-                GROUP BY c_custkey, c_name, c_acctbal, c_phone, c_address, c_comment
-                ORDER BY revenue DESC
-                LIMIT 20
-            ''')
+    @query('basic', 1.0, 'TPC-H Query 6 variations')
+    def _forecast_revenue(self):
+        date = self._param_date()
+        discount = self._param_float('discount', 0.02, 0.09)
 
-        # TPC-H Query 12 variations
-        for _ in range(queries_per_type):
-            date = self._rng_date_string()
-            mode1 = random.choice(['MAIL', 'SHIP', 'AIR', 'TRUCK'])
-            mode2 = random.choice(['RAIL', 'FOB', 'REG AIR'])
-            self._train_query(f'''
-                SELECT
-                    l_shipmode,
-                    SUM(CASE WHEN o_orderpriority = '1-URGENT' OR o_orderpriority = '2-HIGH'
-                        THEN 1 ELSE 0 END) as high_line_count,
-                    SUM(CASE WHEN o_orderpriority <> '1-URGENT' AND o_orderpriority <> '2-HIGH'
-                        THEN 1 ELSE 0 END) as low_line_count
-                FROM orders, lineitem
-                WHERE o_orderkey = l_orderkey
-                    AND l_shipmode IN ('{mode1}', '{mode2}')
-                    AND l_commitdate < l_receiptdate
-                    AND l_shipdate < l_commitdate
-                    AND l_receiptdate >= date '{date}'
-                    AND l_receiptdate < date '{date}' + interval '1 year'
-                GROUP BY l_shipmode
-                ORDER BY l_shipmode
-            ''')
+        return f'''
+            SELECT
+                SUM(l_extendedprice * l_discount) as revenue
+            FROM lineitem
+            WHERE l_shipdate >= date '{date}'
+                AND l_shipdate < date '{date}' + interval '1 year'
+                AND l_discount BETWEEN {discount} - 0.01 AND {discount} + 0.01
+                AND l_quantity < {self._param_int('quantity', 20, 30)}
+        '''
 
-    @override
-    def _generate_test_queries(self):
-        #region Simple Aggregation
+    @query('basic', 1.0, 'TPC-H Query 10 variations')
+    def _customer_revenue(self):
+        date = self._param_date()
 
-        self._test_query('agg-1', 'Lineitem Summary', '''
+        return f'''
+            SELECT
+                c_custkey,
+                c_name,
+                SUM(l_extendedprice * (1 - l_discount)) as revenue,
+                c_acctbal,
+                c_address,
+                c_phone,
+                c_comment
+            FROM customer, orders, lineitem
+            WHERE c_custkey = o_custkey
+                AND l_orderkey = o_orderkey
+                AND o_orderdate >= date '{date}'
+                AND o_orderdate < date '{date}' + interval '3 months'
+                AND l_returnflag = 'R'
+            GROUP BY c_custkey, c_name, c_acctbal, c_phone, c_address, c_comment
+            ORDER BY revenue DESC
+            LIMIT 20
+        '''
+
+    @query('basic', 1.0, 'TPC-H Query 12 variations')
+    def _ship_mode_analysis(self):
+        date = self._param_date()
+
+        return f'''
+            SELECT
+                l_shipmode,
+                SUM(CASE WHEN o_orderpriority = '1-URGENT' OR o_orderpriority = '2-HIGH' THEN 1 ELSE 0 END) as high_line_count,
+                SUM(CASE WHEN o_orderpriority <> '1-URGENT' AND o_orderpriority <> '2-HIGH' THEN 1 ELSE 0 END) as low_line_count
+            FROM orders, lineitem
+            WHERE o_orderkey = l_orderkey
+                AND l_shipmode IN ({self._param_shipmodes()})
+                AND l_commitdate < l_receiptdate
+                AND l_shipdate < l_commitdate
+                AND l_receiptdate >= date '{date}'
+                AND l_receiptdate < date '{date}' + interval '1 year'
+            GROUP BY l_shipmode
+            ORDER BY l_shipmode
+        '''
+
+    #region Simple Aggregation
+
+    @query('agg', 1.0, 'Lineitem Summary')
+    def lineitem_summary(self):
+        return '''
             SELECT
                 l_returnflag,
                 COUNT(*) as count,
@@ -147,9 +138,11 @@ class TpchPostgresDatabase(Database[str]):
             FROM lineitem
             WHERE l_shipdate <= date '1998-08-01'
             GROUP BY l_returnflag
-        ''')
+        '''
 
-        self._test_query('agg-2', 'Order Statistics', '''
+    @query('agg', 1.0, 'Order Stats')
+    def order_statistics(self):
+        return '''
             SELECT
                 o_orderpriority,
                 COUNT(*) as order_count,
@@ -159,9 +152,11 @@ class TpchPostgresDatabase(Database[str]):
             FROM orders
             WHERE o_orderdate >= date '1996-01-01'
             GROUP BY o_orderpriority
-        ''')
+        '''
 
-        self._test_query('agg-3', 'Customer Segments', '''
+    @query('agg', 1.0, 'Customer Segments')
+    def customer_segments(self):
+        return '''
             SELECT
                 c_mktsegment,
                 COUNT(*) as customer_count,
@@ -171,9 +166,11 @@ class TpchPostgresDatabase(Database[str]):
             WHERE c_acctbal > 0
             GROUP BY c_mktsegment
             ORDER BY customer_count DESC
-        ''')
+        '''
 
-        self._test_query('agg-4', 'Part Analysis', '''
+    @query('agg', 1.0, 'Part Analysis')
+    def part_analysis(self):
+        return '''
             SELECT
                 p_brand,
                 p_type,
@@ -183,9 +180,11 @@ class TpchPostgresDatabase(Database[str]):
             WHERE p_size BETWEEN 10 AND 30
             GROUP BY p_brand, p_type
             HAVING COUNT(*) > 5
-        ''')
+        '''
 
-        self._test_query('agg-5', 'Supplier Stats', '''
+    @query('agg', 1.0, 'Supplier Stats')
+    def supplier_stats(self):
+        return '''
             SELECT
                 r.r_name AS region_name,
                 n.n_name AS nation_name,
@@ -198,9 +197,11 @@ class TpchPostgresDatabase(Database[str]):
             WHERE s.s_acctbal > 1000
             GROUP BY r.r_name, n.n_name
             ORDER BY supplier_count DESC
-        ''')
+        '''
 
-        self._test_query('agg-6', 'Discount Analysis', '''
+    @query('agg', 1.0, 'Discount Analysis')
+    def discount_analysis(self):
+        return '''
             SELECT
                 l_linestatus,
                 AVG(l_discount) as avg_discount,
@@ -210,12 +211,14 @@ class TpchPostgresDatabase(Database[str]):
             WHERE l_shipdate >= date '1997-01-01'
                 AND l_shipdate < date '1998-01-01'
             GROUP BY l_linestatus
-        ''')
+        '''
 
-        #endregion
-        #region Simple Join
+    #endregion
+    #region Simple Join
 
-        self._test_query('join-1', 'Customer Orders', '''
+    @query('join', 1.0, 'Customer Orders')
+    def customer_orders(self):
+        return '''
             SELECT
                 c_name,
                 c_mktsegment,
@@ -227,9 +230,11 @@ class TpchPostgresDatabase(Database[str]):
             GROUP BY c_custkey, c_name, c_mktsegment
             ORDER BY total_spent DESC
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('join-2', 'Parts and Suppliers', '''
+    @query('join', 1.0, 'Parts and Suppliers')
+    def parts_and_suppliers(self):
+        return '''
             SELECT
                 p_partkey,
                 p_name,
@@ -241,9 +246,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND ps_supplycost < 100
             ORDER BY ps_supplycost
             LIMIT 200
-        ''')
+        '''
 
-        self._test_query('join-3', 'Order Details', '''
+    @query('join', 1.0, 'Order Details')
+    def order_details(self):
+        return '''
             SELECT
                 o_orderkey,
                 o_orderdate,
@@ -256,9 +263,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND l_quantity > 30
             ORDER BY o_orderdate, o_orderkey
             LIMIT 500
-        ''')
+        '''
 
-        self._test_query('join-4', 'Supplier Orders', '''
+    @query('join', 1.0, 'Supplier Orders')
+    def supplier_orders(self):
+        return '''
             SELECT
                 s_name,
                 s_address,
@@ -271,9 +280,11 @@ class TpchPostgresDatabase(Database[str]):
             GROUP BY s_suppkey, s_name, s_address
             ORDER BY revenue DESC
             LIMIT 50
-        ''')
+        '''
 
-        self._test_query('join-5', 'Customer Nation Analysis', '''
+    @query('join', 1.0, 'Customer Nation Analysis')
+    def customer_nation_analysis(self):
+        return '''
             SELECT
                 r.r_name AS region_name,
                 n.n_name AS nation_name,
@@ -287,9 +298,11 @@ class TpchPostgresDatabase(Database[str]):
             WHERE o.o_orderdate >= date '1997-01-01'
             GROUP BY r.r_name, n.n_name
             ORDER BY total_orders DESC
-        ''')
+        '''
 
-        self._test_query('join-6', 'Part Lineitem Summary', '''
+    @query('join', 1.0, 'Part Lineitem Summary')
+    def part_lineitem_summary(self):
+        return '''
             SELECT
                 p_brand,
                 p_container,
@@ -302,12 +315,14 @@ class TpchPostgresDatabase(Database[str]):
                 AND p_size < 15
             GROUP BY p_brand, p_container
             HAVING COUNT(*) > 10
-        ''')
+        '''
 
-        #endregion
-        #region Multi-table Join
+    #endregion
+    #region Multi-table Join
 
-        self._test_query('complex-join-1', 'Customer Segment Revenue', '''
+    @query('complex-join', 1.0, 'Customer Segment Revenue')
+    def customer_segment_revenue(self):
+        return '''
             SELECT
                 c_mktsegment,
                 AVG(l_extendedprice * (1 - l_discount)) as avg_revenue,
@@ -320,9 +335,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND l_shipdate < date '1995-09-01'
                 AND c_mktsegment = 'BUILDING'
             GROUP BY c_mktsegment
-        ''')
+        '''
 
-        self._test_query('complex-join-2', 'Supplier Revenue Analysis', '''
+    @query('complex-join', 1.0, 'Supplier Revenue Analysis')
+    def supplier_revenue_analysis(self):
+        return '''
             SELECT
                 r.r_name AS region_name,
                 sn.n_name AS supplier_nation,
@@ -340,9 +357,11 @@ class TpchPostgresDatabase(Database[str]):
             GROUP BY r.r_name, sn.n_name
             ORDER BY revenue DESC
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('complex-join-3', 'Part Supplier Customer Chain', '''
+    @query('complex-join', 1.0, 'Part Supplier Customer Chain')
+    def part_supplier_customer_chain(self):
+        return '''
             SELECT
                 p_brand,
                 c_mktsegment,
@@ -358,9 +377,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND o_orderdate < date '1997-01-01'
             GROUP BY p_brand, c_mktsegment
             ORDER BY order_count DESC
-        ''')
+        '''
 
-        self._test_query('complex-join-4', 'Multi-way with Partsupp', '''
+    @query('complex-join', 1.0, 'Multi-way with Partsupp')
+    def multi_way_with_partsupp(self):
+        return '''
             SELECT
                 p_partkey,
                 s_name,
@@ -376,9 +397,11 @@ class TpchPostgresDatabase(Database[str]):
             GROUP BY p_partkey, s_suppkey, s_name, ps_supplycost
             HAVING SUM(l_quantity) > 50
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('complex-join-5', 'Full Chain Analysis', '''
+    @query('complex-join', 1.0, 'Full Chain Analysis')
+    def full_chain_analysis(self):
+        return '''
             SELECT
                 c_mktsegment,
                 p_brand,
@@ -393,9 +416,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND l_discount > 0.05
             GROUP BY c_mktsegment, p_brand
             HAVING COUNT(*) > 5
-        ''')
+        '''
 
-        self._test_query('complex-join-6', 'Regional Supply Chain', '''
+    @query('complex-join', 1.0, 'Regional Supply Chain')
+    def regional_supply_chain(self):
+        return '''
             SELECT
                 sn.n_name AS supplier_nation,
                 cn.n_name AS customer_nation,
@@ -416,12 +441,14 @@ class TpchPostgresDatabase(Database[str]):
             HAVING COUNT(DISTINCT o.o_orderkey) > 10
             ORDER BY revenue DESC
             LIMIT 50
-        ''')
+        '''
 
-        #endregion
-        #region Selective Scan + Filter
+    #endregion
+    #region Selective Scan + Filter
 
-        self._test_query('selective-1', 'Discount Range', '''
+    @query('selective', 1.0, 'Discount Range')
+    def discount_range(self):
+        return '''
             SELECT
                 l_orderkey,
                 l_linenumber,
@@ -435,9 +462,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND l_shipdate >= date '1994-01-01'
             ORDER BY discount_revenue DESC
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('selective-2', 'High Value Orders', '''
+    @query('selective', 1.0, 'High Value Orders')
+    def high_value_orders(self):
+        return '''
             SELECT
                 o_orderkey,
                 o_custkey,
@@ -449,9 +478,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND o_orderdate < date '1997-01-01'
             ORDER BY o_totalprice DESC
             LIMIT 50
-        ''')
+        '''
 
-        self._test_query('selective-3', 'Premium Customers', '''
+    @query('selective', 1.0, 'Premium Customers')
+    def premium_customers(self):
+        return '''
             SELECT
                 c_custkey,
                 c_name,
@@ -462,9 +493,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND c_mktsegment IN ('AUTOMOBILE', 'MACHINERY')
             ORDER BY c_acctbal DESC
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('selective-4', 'Specific Part Types', '''
+    @query('selective', 1.0, 'Specific Part Types')
+    def specific_part_types(self):
+        return '''
             SELECT
                 p_partkey,
                 p_name,
@@ -475,9 +508,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND p_container IN ('SM BOX', 'SM PACK')
                 AND p_size BETWEEN 5 AND 15
             ORDER BY p_retailprice DESC
-        ''')
+        '''
 
-        self._test_query('selective-5', 'Late Shipments', '''
+    @query('selective', 1.0, 'Late Shipments')
+    def late_shipments(self):
+        return '''
             SELECT
                 l_orderkey,
                 l_linenumber,
@@ -490,9 +525,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND l_receiptdate < date '1996-06-01'
             ORDER BY l_shipdate
             LIMIT 200
-        ''')
+        '''
 
-        self._test_query('selective-6', 'Low Supply Cost', '''
+    @query('selective', 1.0, 'Low Supply Cost')
+    def low_supply_cost(self):
+        return '''
             SELECT
                 ps_partkey,
                 ps_suppkey,
@@ -503,12 +540,14 @@ class TpchPostgresDatabase(Database[str]):
                 AND ps_availqty > 5000
             ORDER BY ps_supplycost, ps_availqty DESC
             LIMIT 150
-        ''')
+        '''
 
-        #endregion
-        #region Subquery Pattern
+    #endregion
+    #region Subquery Pattern
 
-        self._test_query('subquery-1', 'High Value Customers', '''
+    @query('subquery', 1.0, 'High Value Customers')
+    def high_value_customers(self):
+        return '''
             SELECT
                 c_custkey,
                 c_name,
@@ -523,9 +562,11 @@ class TpchPostgresDatabase(Database[str]):
             )
             ORDER BY c_acctbal DESC
             LIMIT 50
-        ''')
+        '''
 
-        self._test_query('subquery-2', 'Frequent Buyers', '''
+    @query('subquery', 1.0, 'Frequent Buyers')
+    def frequent_buyers(self):
+        return '''
             SELECT
                 c_custkey,
                 c_name,
@@ -540,9 +581,11 @@ class TpchPostgresDatabase(Database[str]):
             )
             ORDER BY c_name
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('subquery-3', 'Popular Parts', '''
+    @query('subquery', 1.0, 'Popular Parts')
+    def popular_parts(self):
+        return '''
             SELECT
                 p_partkey,
                 p_name,
@@ -558,9 +601,11 @@ class TpchPostgresDatabase(Database[str]):
                 HAVING SUM(l_quantity) > 500
             )
             ORDER BY p_retailprice DESC
-        ''')
+        '''
 
-        self._test_query('subquery-4', 'Top Suppliers by Volume', '''
+    @query('subquery', 1.0, 'Top Suppliers by Volume')
+    def top_suppliers_by_volume(self):
+        return '''
             SELECT
                 s_suppkey,
                 s_name,
@@ -575,9 +620,11 @@ class TpchPostgresDatabase(Database[str]):
                 HAVING SUM(l_quantity) > 10000
             )
             ORDER BY s_name
-        ''')
+        '''
 
-        self._test_query('subquery-5', 'Orders Above Average', '''
+    @query('subquery', 1.0, 'Orders Above Average')
+    def orders_above_average(self):
+        return '''
             SELECT
                 o_orderkey,
                 o_custkey,
@@ -592,9 +639,11 @@ class TpchPostgresDatabase(Database[str]):
             AND o_orderdate >= date '1997-01-01'
             ORDER BY o_totalprice DESC
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('subquery-6', 'Customers with Recent Large Orders', '''
+    @query('subquery', 1.0, 'Customers with Recent Large Orders')
+    def customers_large_orders(self):
+        return '''
             SELECT
                 c_custkey,
                 c_name,
@@ -609,12 +658,14 @@ class TpchPostgresDatabase(Database[str]):
             )
             ORDER BY c_name
             LIMIT 50
-        ''')
+        '''
 
-        #endregion
-        #region Large Scan + Sorting
+    #endregion
+    #region Large Scan + Sorting
 
-        self._test_query('large-scan-1', 'Sorted Lineitem by Price', '''
+    @query('large-scan', 1.0, 'Lineitems by Price')
+    def lineitem_by_price(self):
+        return '''
             SELECT
                 l_orderkey,
                 l_partkey,
@@ -626,9 +677,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND l_shipdate < date '1997-04-01'
             ORDER BY l_extendedprice DESC
             LIMIT 200
-        ''')
+        '''
 
-        self._test_query('large-scan-2', 'Orders by Date', '''
+    @query('large-scan', 1.0, 'Orders by Date')
+    def orders_by_date(self):
+        return '''
             SELECT
                 o_orderkey,
                 o_custkey,
@@ -640,9 +693,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND o_orderdate < date '1997-01-01'
             ORDER BY o_orderdate DESC, o_totalprice DESC
             LIMIT 500
-        ''')
+        '''
 
-        self._test_query('large-scan-3', 'Parts by Price', '''
+    @query('large-scan', 1.0, 'Parts by Price')
+    def parts_by_price(self):
+        return '''
             SELECT
                 p_partkey,
                 p_name,
@@ -653,9 +708,11 @@ class TpchPostgresDatabase(Database[str]):
             WHERE p_retailprice > 1000
             ORDER BY p_retailprice DESC, p_partkey
             LIMIT 300
-        ''')
+        '''
 
-        self._test_query('large-scan-4', 'Customer Balance Ranking', '''
+    @query('large-scan', 1.0, 'Customer Balance Ranking')
+    def customer_balance_ranking(self):
+        return '''
             SELECT
                 c.c_custkey,
                 c.c_name,
@@ -669,9 +726,11 @@ class TpchPostgresDatabase(Database[str]):
             WHERE c.c_acctbal > 0
             ORDER BY c.c_acctbal DESC, c.c_name
             LIMIT 400
-        ''')
+        '''
 
-        self._test_query('large-scan-5', 'Lineitem Quantity Sort', '''
+    @query('large-scan', 1.0, 'Lineitem Quantity Sort')
+    def lineitem_quantity_sort(self):
+        return '''
             SELECT
                 l_orderkey,
                 l_partkey,
@@ -684,9 +743,11 @@ class TpchPostgresDatabase(Database[str]):
                 AND l_quantity > 40
             ORDER BY l_quantity DESC, l_extendedprice DESC
             LIMIT 250
-        ''')
+        '''
 
-        self._test_query('large-scan-6', 'Recent Shipments', '''
+    @query('large-scan', 1.0, 'Recent Shipments')
+    def recent_shipments(self):
+        return '''
             SELECT
                 l_orderkey,
                 l_linenumber,
@@ -697,12 +758,14 @@ class TpchPostgresDatabase(Database[str]):
             WHERE l_shipdate >= date '1998-06-01'
             ORDER BY l_shipdate DESC, net_price DESC
             LIMIT 300
-        ''')
+        '''
 
-        #endregion
-        #region Aggregation + HAVING
+    #endregion
+    #region Aggregation + HAVING
 
-        self._test_query('having-1', 'Large Order Aggregates', '''
+    @query('having', 1.0, 'Large Order Aggregates')
+    def large_order_aggregates(self):
+        return '''
             SELECT
                 l_orderkey,
                 SUM(l_quantity) as total_qty,
@@ -713,9 +776,11 @@ class TpchPostgresDatabase(Database[str]):
             HAVING SUM(l_quantity) > 300
             ORDER BY total_price DESC
             LIMIT 100
-        ''')
+        '''
 
-        self._test_query('having-2', 'High Volume Customers', '''
+    @query('having', 1.0, 'High Volume Customers')
+    def high_volume_customers(self):
+        return '''
             SELECT
                 o_custkey,
                 COUNT(*) as order_count,
@@ -727,9 +792,11 @@ class TpchPostgresDatabase(Database[str]):
             HAVING COUNT(*) > 15
             ORDER BY total_spent DESC
             LIMIT 50
-        ''')
+        '''
 
-        self._test_query('having-3', 'Popular Parts by Brand', '''
+    @query('having', 1.0, 'Popular Parts by Brand')
+    def popular_parts_by_brand(self):
+        return '''
             SELECT
                 p_brand,
                 COUNT(*) as part_count,
@@ -740,9 +807,11 @@ class TpchPostgresDatabase(Database[str]):
             GROUP BY p_brand
             HAVING COUNT(*) > 50
             ORDER BY avg_price DESC
-        ''')
+        '''
 
-        self._test_query('having-4', 'High Revenue Suppliers', '''
+    @query('having', 1.0, 'High Revenue Suppliers')
+    def high_revenue_suppliers(self):
+        return '''
             SELECT
                 l_suppkey,
                 COUNT(DISTINCT l_orderkey) as order_count,
@@ -754,9 +823,11 @@ class TpchPostgresDatabase(Database[str]):
             HAVING SUM(l_extendedprice * (1 - l_discount)) > 500000
             ORDER BY total_revenue DESC
             LIMIT 75
-        ''')
+        '''
 
-        self._test_query('having-5', 'Part Categories with High Sales', '''
+    @query('having', 1.0, 'Part Categories with High Sales')
+    def part_categories_high_sales(self):
+        return '''
             SELECT
                 p_type,
                 COUNT(DISTINCT l_orderkey) as order_count,
@@ -770,9 +841,11 @@ class TpchPostgresDatabase(Database[str]):
             HAVING SUM(l_quantity) > 1000
             ORDER BY total_quantity DESC
             LIMIT 25
-        ''')
+        '''
 
-        self._test_query('having-6', 'Customer Segments with Volume', '''
+    @query('having', 1.0, 'Customer Segments with Volume')
+    def customer_segments_volume(self):
+        return '''
             SELECT
                 c_mktsegment,
                 COUNT(DISTINCT c_custkey) as customer_count,
@@ -784,6 +857,6 @@ class TpchPostgresDatabase(Database[str]):
             GROUP BY c_mktsegment
             HAVING COUNT(o_orderkey) > 1000
             ORDER BY total_orders DESC
-        ''')
+        '''
 
-        #endregion
+    #endregion

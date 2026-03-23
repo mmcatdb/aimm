@@ -1,9 +1,20 @@
 from common.config import DatasetName
-from common.database import Database
+from common.database import DatabaseInfo, Database
 from common.drivers import DriverType
 
 # FIXME Use some unified database provider
-def find_database(dataset: DatasetName, type: DriverType) -> Database:
+
+DB_CACHE: dict[str, Database] = {}
+
+def find_database(info: DatabaseInfo) -> Database:
+    database = DB_CACHE.get(info.id())
+    if not database:
+        database = find_database_uncached(info.dataset, info.type)
+        DB_CACHE[info.id()] = database
+
+    return database
+
+def find_database_uncached(dataset: DatasetName, type: DriverType) -> Database:
     if dataset == DatasetName.EDBT:
         if type == DriverType.POSTGRES:
             from datasets.edbt.postgres_database import EdbtPostgresDatabase

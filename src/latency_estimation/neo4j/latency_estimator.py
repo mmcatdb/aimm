@@ -19,7 +19,7 @@ class LatencyEstimator:
         Args:
             queries: List of Cypher query strings
         Returns:
-            List of tuples (query, estimated_latency_seconds, plan)
+            List of tuples (query, estimated_latency_ms, plan)
         """
         results = []
         for query in queries:
@@ -37,7 +37,7 @@ class LatencyEstimator:
         Args:
             query: Cypher query string
         Returns:
-            Tuple of (estimated_latency_seconds, query_plan)
+            Tuple of (estimated_latency_ms, query_plan)
         """
         plan = self.extractor.explain_plan(query)
 
@@ -45,4 +45,4 @@ class LatencyEstimator:
         with torch.no_grad():
             estimated_latency = self.model(plan)
 
-        return estimated_latency.item()*1000, plan
+        return estimated_latency.item(), plan

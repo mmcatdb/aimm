@@ -1,16 +1,15 @@
 import os
-import numpy as np
 import argparse
 import json
-import time
 from common.utils import JsonEncoder, auto_close, exit_with_error
-from latency_estimation.common import format_latency, load_queries, parse_queries, print_dataset_summary, truncate_query
+from common.query_registry import QueryDef
+from latency_estimation.common import format_latency, load_queries, parse_queries, truncate_query
 from latency_estimation.config import TrainConfig, TestConfig
 from latency_estimation.neo4j.context import Neo4jContext
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.neo4j.trainer import PlanStructuredTrainer
 from latency_estimation.neo4j.latency_estimator import LatencyEstimator
-from latency_estimation.neo4j.model_evaluator import ModelEvaluator, TestQuery
+from latency_estimation.neo4j.model_evaluator import ModelEvaluator
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
 def main(rawArgs: list[str] | None = None):
@@ -37,37 +36,24 @@ def train_args(parser: argparse.ArgumentParser):
     TrainConfig.neo4j().add_arguments(parser)
 
 def train_run(args: argparse.Namespace, ctx: Neo4jContext):
-    config = TrainConfig.from_arguments(args)
+    config = TrainConfig.from_arguments(ctx.config, args)
 
     print(f'\n[1/7] Configuration:')
     print(config)
 
     print(f'\n[2/7] Collecting {config.num_queries} query plans...')
-    dataset = ctx.load_or_create_dataset(config.num_queries, config.num_runs)
-
-    print(f'\nDataset Statistics:')
-    print_dataset_summary(dataset)
+    bundle = ctx.load_or_create_dataset(config)
+    combined = bundle.train + bundle.val
 
     print('\n[3/7] Building feature vocabularies...')
     feature_extractor = FeatureExtractor()
-    feature_extractor.build_vocabularies(dataset.plans)
+    feature_extractor.build_vocabularies([item.plan for item in combined])
 
-    sample_features = feature_extractor.extract_features(dataset.plans[0])
-    feature_dim = len(sample_features)
-    print(f'\nFeature vector dimension: {feature_dim}')
-
-    print('\n[4/7] Splitting dataset...')
-    split_index = int(len(dataset) * config.train_split)
-    indexes = np.random.permutation(len(dataset))
-
-    train_dataset = dataset.subset(indexes[:split_index])
-    test_dataset = dataset.subset(indexes[split_index:])
-
-    print(f'Training set: {len(train_dataset)} queries')
-    print(f'Test set: {len(test_dataset)} queries')
+    print(f'Training set: {len(bundle.train)} queries')
+    print(f'Validation set: {len(bundle.val)} queries')
 
     print('\n[5/7] Creating plan-structured neural network...')
-    model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, train_dataset.plans)
+    model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, [item.plan for item in bundle.train])
     model.print_summary()
     ctx.save_available_operators(model)
 
@@ -78,62 +64,57 @@ def train_run(args: argparse.Namespace, ctx: Neo4jContext):
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size)
 
-    start_time = time.time()
-    best_test_loss = float('inf')
+    best_val_loss = float('inf')
 
     for epoch in range(config.num_epochs):
         print(f'\nEpoch {epoch + 1}/{config.num_epochs}')
         print('-' * 50)
 
         # Train
-        train_loss = trainer.train_epoch(train_dataset)
+        train_loss = trainer.train_epoch(bundle.train)
         print(f'Training Loss: {train_loss:.6f}')
 
-        # Test
-        test_metrics = trainer.evaluate(test_dataset)
-        test_loss = test_metrics['mse']
+        # Validation
+        val_metrics = trainer.evaluate(bundle.val)
+        val_loss = val_metrics['mse']
 
-        print(f'Test Loss: {test_loss:.6f}')
-        print(f'Test RMSE: {test_metrics["rmse"]:.6f}')
-        print(f'Test MAE: {test_metrics["mae"]:.6f}')
-        print(f'Test R-value (mean): {test_metrics["mean_q_error"]:.3f}')
-        print(f'Test R-value (median): {test_metrics["median_q_error"]:.3f}')
+        print(f'Validation Loss: {val_loss:.6f}')
+        print(f'Validation RMSE: {val_metrics["rmse"]:.6f}')
+        print(f'Validation MAE: {val_metrics["mae"]:.6f}')
+        print(f'Validation R-value (mean): {val_metrics["mean_q_error"]:.3f}')
+        print(f'Validation R-value (median): {val_metrics["median_q_error"]:.3f}')
 
         # Save best model
-        if test_loss < best_test_loss:
-            best_test_loss = test_loss
-            ctx.save_checkpoint('best', model, trainer, test_metrics)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            ctx.save_checkpoint('best', model, trainer, val_metrics)
             print(f'  ✓ New best model!')
 
         if (epoch + 1) % 10 == 0:
-            metrics = test_metrics if test_metrics else {'train_loss': train_loss}
+            metrics = val_metrics if val_metrics else {'train_loss': train_loss}
             ctx.save_checkpoint(f'e{epoch + 1}', model, trainer, metrics)
 
     # Save final model
-    final_metrics = trainer.evaluate(test_dataset)
+    final_metrics = trainer.evaluate(bundle.val)
     ctx.save_checkpoint('final', model, trainer, final_metrics)
     print('\n' + '=' * 50)
     print('Training completed!')
     print('=' * 50)
-    training_time = time.time() - start_time
-
-    print(f'\nTraining completed in {training_time:.2f} seconds')
 
     print('\n' + '=' * 70)
-    print('Evalutation')
+    print('Evaluation')
 
     print('\nTraining set performance:')
-    train_metrics = trainer.evaluate(train_dataset)
+    train_metrics = trainer.evaluate(bundle.train)
     for metric_name, value in train_metrics.items():
         print(f'  {metric_name}: {value:.6f}')
 
-    print('\nTest set performance:')
-    test_metrics = trainer.evaluate(test_dataset)
-    for metric_name, value in test_metrics.items():
+    print('\nValidation set performance:')
+    val_metrics = trainer.evaluate(bundle.val)
+    for metric_name, value in val_metrics.items():
         print(f'  {metric_name}: {value:.6f}')
 
     print('=' * 70)
-    print(f'Total time: {training_time:.2f} seconds')
 
 def test_args(parser: argparse.ArgumentParser):
     TestConfig.neo4j().add_arguments(parser)
@@ -142,14 +123,14 @@ def test_run(args: argparse.Namespace, ctx: Neo4jContext):
     config = TestConfig.from_arguments(args)
 
     if config.queries:
-        test_queries: list[TestQuery[str]] = []
+        test_queries: list[QueryDef[str]] = []
         for i, content in enumerate(config.queries, 1):
-            test_queries.append(TestQuery(f'custom-{i}', f'Custom Query {i}', content))
+            test_queries.append(QueryDef.create_from_content('custom', i, 1.0, 'Custom Query', content))
 
         print(f'\nAdded {len(test_queries)} custom query/queries')
     else:
         print('\nGenerating test queries...')
-        test_queries = ctx.database.get_test_queries()
+        test_queries = ctx.database().get_query_defs()
 
     if not test_queries:
         exit_with_error('No queries to test. Provide queries with --query or use the built-in test queries.')
@@ -194,7 +175,7 @@ def estimate_run(args: argparse.Namespace, ctx: Neo4jContext):
         for query, latency, plan in results:
             item: dict = {
                 'query': query,
-                'estimated_latency_seconds': latency,
+                'estimated_latency_ms': latency,
                 'estimated_latency_formatted': format_latency(latency) if latency else None
             }
             if args.verbose:

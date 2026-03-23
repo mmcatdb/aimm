@@ -1,28 +1,58 @@
 from argparse import Namespace
 from collections.abc import Callable
-import importlib
 import os
 import pickle
-import sys
-from typing import TypeVar
+from typing import Generic, TypeVar
 import torch
-import numpy as np
-from latency_estimation.abstract import BaseDataset
-from common.utils import exit_with_error, print_warning, print_info
+from common.utils import exit_with_error, print_warning, print_info, time_quantity
+from torch.utils.data import Dataset
 
-TDataset = TypeVar('TDataset', bound=BaseDataset)
+TDatasetItem = TypeVar('TDatasetItem')
 
-def load_or_create_dataset(path: str | None, fallback: Callable[[], TDataset]) -> TDataset:
+class ArrayDataset(Dataset[TDatasetItem]):
+    """
+    Dataset of query plans with execution times. Implementation of PyTorch Dataset (there is no other implementation of this?).
+
+    The items should contain something like:
+    - query: The Cypher query string
+    - plan: The query execution plan (from EXPLAIN)
+    - execution_time: Actual measured execution time in ms
+    """
+    def __init__(self, items: list[TDatasetItem]):
+        self.items = items
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, index):
+        return self.items[index]
+
+TDataset = TypeVar('TDataset', bound=Dataset)
+
+class DatasetBundle(Generic[TDatasetItem]):
+    """Container for all datasets related to latency estimation."""
+    def __init__(self, train: ArrayDataset[TDatasetItem], val: ArrayDataset[TDatasetItem]):
+        self.train = train
+        self.val = val
+        # self.test = test
+
+    def length(self):
+        # The length is missing on the base Dataset class, but it's present on all our implementations as well as ConcatDataset and others.
+        # So we can safely cast to Sized to get the length.
+        # Ok, we are not casting it here because we use the ArrayDataset ... but if we ever switch to the base Dataset, we could use this ...
+        return len(self.train) + len(self.val) # + len(self.test)
+
+def load_or_create_dataset(path: str | None, fallback: Callable[[], DatasetBundle[TDatasetItem]]) -> DatasetBundle[TDatasetItem]:
     if path is None:
         dataset = fallback()
-        print(f'Collected {len(dataset)} query plans')
+        print(f'Collected {dataset.length()} query plans')
         return dataset
 
     # Try load cached dataset first.
     try:
         with open(path, 'rb') as file:
             dataset = pickle.load(file)
-            print(f'Loaded {len(dataset)} cached query plans')
+            print(f'Loaded {dataset.length()} cached query plans')
 
             # No need to cache again
             return dataset
@@ -38,7 +68,7 @@ def load_or_create_dataset(path: str | None, fallback: Callable[[], TDataset]) -
     try:
         with open(path, 'wb') as file:
             pickle.dump(dataset, file)
-            print(f'Collected and cached {len(dataset)} query plans')
+            print(f'Collected and cached {dataset.length()} query plans')
     except Exception as e:
         print_warning(f'Could not cache dataset to {path}.', e)
 
@@ -73,32 +103,9 @@ def save_checkpoint_file(path: str, dict: dict, is_first_time: bool) -> None:
         # There is no point in continuing if we can't save the checkpoint.
         exit_with_error(f'Could not save checkpoint to {path}.', e)
 
-def _register_legacy_checkpoint_modules() -> None:
-    module_aliases = {
-        'feature_extractor': 'latency_estimation.postgres.feature_extractor',
-        'plan_structured_network': 'latency_estimation.postgres.plan_structured_network',
-        'plan_extractor': 'latency_estimation.postgres.plan_extractor',
-        'trainer': 'latency_estimation.postgres.trainer',
-        'context': 'latency_estimation.postgres.context',
-    }
-
-    for legacy_name, module_path in module_aliases.items():
-        if legacy_name in sys.modules:
-            continue
-        try:
-            sys.modules[legacy_name] = importlib.import_module(module_path)
-        except Exception:
-            continue
-
 def load_checkpoint_file(path: str, device: str) -> dict:
     try:
         return torch.load(path, map_location=device, weights_only=False)
-    except ModuleNotFoundError:
-        _register_legacy_checkpoint_modules()
-        try:
-            return torch.load(path, map_location=device, weights_only=False)
-        except Exception as e:
-            exit_with_error(f'Could not load checkpoint from {path}.', e)
     except FileNotFoundError:
         exit_with_error(f'Model checkpoint not found at {path}. Specify a valid --checkpoint path.')
     except Exception as e:
@@ -134,14 +141,9 @@ def parse_queries(content: str) -> list[str]:
 
     return queries
 
-def format_latency(latency_seconds: float) -> str:
+def format_latency(latency_ms: float) -> str:
     """Format latency for human-readable output."""
-    if latency_seconds < 0.001:
-        return f'{latency_seconds * 1000000:.2f} µs'
-    elif latency_seconds < 1:
-        return f'{latency_seconds * 1000:.2f} ms'
-    else:
-        return f'{latency_seconds:.3f} s'
+    return time_quantity.pretty_print(latency_ms)
 
 def truncate_query(query: str, max_length: int = 60) -> str:
     """Truncate query for display."""
@@ -149,10 +151,3 @@ def truncate_query(query: str, max_length: int = 60) -> str:
     if len(query) > max_length:
         return query[:max_length - 3] + '...'
     return query
-
-def print_dataset_summary(dataset: BaseDataset):
-    print(f'  Total queries: {len(dataset)}')
-    print(f'  Average execution time: {np.mean(dataset.execution_times):.2f} ms')
-    print(f'  Min execution time: {np.min(dataset.execution_times):.2f} ms')
-    print(f'  Max execution time: {np.max(dataset.execution_times):.2f} ms')
-    print(f'  Median execution time: {np.median(dataset.execution_times):.2f} ms')

@@ -122,7 +122,7 @@ class Quantity(Generic[TUnit]):
         base_value = value
         for i in range(len(self.units)):
             if from_unit == self.units[i]:
-                break
+                return base_value
             base_value *= self.thresholds[i]
         raise ValueError('Impossibruh')
 
@@ -191,7 +191,7 @@ class ProgressTracker:
         return ProgressTracker(start_interval, 1, show_percents_from_total)
 
     def start(self, prefix: str):
-        """Starts the trcker and sets the prefix. Also prints the first message so make sure to call this before anything that might cause an exception."""
+        """Starts the tracker and sets the prefix. Also prints the first message so make sure to call this before anything that might cause an exception."""
         self.prefix = prefix
         self.count = 0
         self.next_report = self.start_interval
@@ -228,4 +228,3 @@ class ProgressTracker:
         message = f'{self.prefix}{self.count:,} ({rate:,.0f}/s{percents})'
         sys.stdout.write('\r' + message)
         sys.stdout.flush()
-

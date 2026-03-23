@@ -1,11 +1,20 @@
+from dataclasses import dataclass
 import time
-from typing import Any
 import numpy as np
-from common.database import Database
+from typing import Any
 from common.drivers import Neo4jDriver, cypher
-from latency_estimation.abstract import BaseDataset
-from common.utils import ProgressTracker, print_warning
+from common.utils import ProgressTracker, print_warning, time_quantity
+from common.query_registry import QueryDefMap
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
+from latency_estimation.common import ArrayDataset
+
+@dataclass
+class Neo4jItem:
+    def __init__(self, query: str, plan: dict, execution_time: float):
+        self.query = query
+        self.plan = plan
+        self.execution_time = execution_time
+
 
 class PlanExtractor:
     """
@@ -15,58 +24,42 @@ class PlanExtractor:
     - Parsing the plan structure
     - Recording ground truth latencies
     """
-    def __init__(self, driver: Neo4jDriver, database: Database[str]):
+    def __init__(self, driver: Neo4jDriver):
         self.driver = driver
-        self.database = database
 
-    def collect_training_dataset(self, num_queries: int, num_runs: int, show_details: bool = False) -> BaseDataset[str]:
+    def create_dataset(self, queries: list[str], num_runs: int, def_map: QueryDefMap[str] | None = None) -> ArrayDataset[Neo4jItem]:
         """
         Collect a workload of query plans and execution times.
         Args:
-            num_queries: Total number of queries to generate
+            queries: List of Cypher queries to collect plans for
             num_runs: Number of executions per query for averaging
         """
-        queries = self.database.get_train_queries(num_queries)
-
         progress = ProgressTracker.limited(len(queries))
         progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
 
-        plans = []
-        execution_times = []
+        items: list[Neo4jItem] = []
 
         for i, query in enumerate(queries):
             try:
                 # Get plan and execution time
-                plan, execution_time = self.__explain_plan_and_measure(query, num_runs, show_details=show_details)
-
-                plans.append(plan)
-                execution_times.append(execution_time)
+                plan = self.explain_plan(query)
+                execution_time, _, _ = self.measure_query(query, num_runs)
+                items.append(Neo4jItem(query, plan, execution_time))
                 progress.track()
 
             except Exception as e:
-                print_warning(f'Could not execute query on index {i}.', e)
-                continue
+                query_def = def_map.get(id(query)) if def_map else None
+                if query_def:
+                    print_warning(f'\nCould not execute query {query_def.label()}.', e)
+                else:
+                    print_warning(f'\nCould not execute query on index {i}.', e)
+                print()
 
+        dataset = ArrayDataset(items)
         progress.finish()
-
-        dataset = BaseDataset(queries, plans, execution_times)
 
         print(f'\nCollected {len(dataset)} query plans.')
         return dataset
-
-    def __explain_plan_and_measure(self, query: str, num_runs: int, show_details: bool = False) -> tuple[dict, float]:
-        """
-        Get query plan with EXPLAIN and measure actual execution time.
-        Args:
-            query: Cypher query string
-            num_runs: Number of times to execute for averaging
-        Returns:
-            Tuple of (plan, average_execution_time_seconds)
-        """
-        plan = self.explain_plan(query)
-        execution_time = self.measure_query(query, num_runs, show_details=show_details)[0]
-
-        return plan, execution_time
 
     def explain_plan(self, query: str) -> dict:
         """
@@ -83,36 +76,28 @@ class PlanExtractor:
 
             return plan
 
-    def measure_query(self, query: str, num_runs: int, show_details: bool = False) -> tuple[float, float, int]:
+    def measure_query(self, query: str, num_runs: int) -> tuple[float, list[float], int]:
         """
         Execute a query multiple times and return average execution time.
         Args:
             query: Cypher query string
             num_runs: Number of executions for averaging
         Returns:
-            Tuple of (mean_time_ms, std_time_ms, num_results)
+            Tuple of (mean_time_ms, times_ms, num_results)
         """
         times_ms = []
         num_results = -1
 
         with self.driver.session() as session:
             for _ in range(num_runs):
-                start_time = time.time()
+                start = time.perf_counter()
                 result = session.run(cypher(query))
                 num_results = len(result.data())
-
-                if show_details:
-                    print(query)
-                    print()
-                    # print('Result sample:')
-                    print(result.data())
-                    print('-' * 40)
-
                 result.consume()  # Ensure full execution
-                end_time = time.time()
-                times_ms.append(end_time - start_time)
+                elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
+                times_ms.append(elapsed_ms)
 
-        return np.mean(times_ms).item(), np.std(times_ms).item(), num_results
+        return np.mean(times_ms).item(), times_ms, num_results
 
     def get_plan_statistics(self, plans: list[dict]) -> dict[str, Any]:
         """

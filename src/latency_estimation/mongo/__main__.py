@@ -4,9 +4,9 @@ import numpy as np
 import argparse
 import json
 from common.utils import JsonEncoder, auto_close, exit_with_error
-from common.database import TestQuery, MongoQuery, try_parse_mongo_query
+from common.query_registry import QueryDef
+from common.database import MongoQuery, try_parse_mongo_query
 from common.drivers import MongoDriver
-from latency_estimation.common import print_dataset_summary
 from latency_estimation.config import TrainConfig, TestConfig
 from latency_estimation.mongo.context import MongoContext
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
@@ -40,34 +40,25 @@ def train_args(parser: argparse.ArgumentParser):
     TrainConfig.mongo().add_arguments(parser)
 
 def train_run(args: argparse.Namespace, ctx: MongoContext):
-    config = TrainConfig.from_arguments(args)
+    config = TrainConfig.from_arguments(ctx.config, args)
 
     print(f'\n[1/7] Configuration:')
     print(config)
 
     print(f'\n[2/7] Collecting {config.num_queries} query plans...')
-    dataset = ctx.load_or_create_dataset(config.num_queries, config.num_runs)
-
-    print(f'\nDataset Statistics:')
-    print_dataset_summary(dataset)
+    bundle = ctx.load_or_create_dataset(config)
+    combined = bundle.train + bundle.val
 
     print('\n[3/7] Building feature vocabularies...')
     feature_extractor = FeatureExtractor()
     feature_extractor.build_collection_stats(ctx.driver)
-    feature_extractor.build_vocabularies(dataset.plans)
+    feature_extractor.build_vocabularies([item.plan for item in combined])
 
-    print('\n[4/7] Splitting dataset...')
-    split_index = int(len(dataset) * config.train_split)
-    indexes = np.random.permutation(len(dataset))
-
-    train_dataset = dataset.subset(indexes[:split_index])
-    test_dataset = dataset.subset(indexes[split_index:])
-
-    print(f'Training set: {len(train_dataset)} queries')
-    print(f'Test set: {len(test_dataset)} queries')
+    print(f'Training set: {len(bundle.train)} queries')
+    print(f'Validation set: {len(bundle.val)} queries')
 
     print('\n[5/7] Creating plan-structured neural network...')
-    model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, train_dataset.plans)
+    model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, [item.plan for item in bundle.train])
     model.print_summary()
     ctx.save_available_operators(model)
 
@@ -78,18 +69,18 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size, config.num_epochs, args.warmup_epochs)
 
-    best_test_geo_qerror = float('inf')
-    best_test_mae = float('inf')
+    best_val_geo_qerror = float('inf')
+    best_val_mae = float('inf')
 
     for epoch in range(config.num_epochs):
-        loss = trainer.train_epoch(train_dataset)
+        loss = trainer.train_epoch(bundle.train)
 
         if (epoch + 1) % 10 == 0:
             print(f'\nEpoch {epoch + 1}/{config.num_epochs}')
             print(f'  Training Loss: {loss:.4f}')
 
-            # Evaluate on test set
-            metrics = trainer.evaluate(test_dataset)
+            # Evaluate on validation set
+            metrics = trainer.evaluate(bundle.val)
             print(f'  MAE={metrics["mae"]:.2f}ms')
             print(f'  MedR={metrics["median_r"]:.2f}')
             print(f'  R<=2={metrics["r_within_2.0"] * 100:.0f}%')
@@ -97,11 +88,11 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
 
             # Track and save best model
             # Use geometric mean Q-error as primary criterion (more robust than MAE)
-            if metrics['geo_mean_r'] < best_test_geo_qerror:
-                best_test_geo_qerror = metrics['geo_mean_r']
-                best_test_mae = metrics['mae']
+            if metrics['geo_mean_r'] < best_val_geo_qerror:
+                best_val_geo_qerror = metrics['geo_mean_r']
+                best_val_mae = metrics['mae']
                 ctx.save_checkpoint('best', model, trainer, metrics)
-                print(f'    -> New best model (GeoQ={best_test_geo_qerror:.3f}, MAE={best_test_mae:.2f}ms)')
+                print(f'    -> New best model (GeoQ={best_val_geo_qerror:.3f}, MAE={best_val_mae:.2f}ms)')
 
     # Step 7: Final evaluation
     print('\n[7/7] Final Evaluation...')
@@ -110,28 +101,28 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     print('TRAINING SET PERFORMANCE')
     print('=' * 80)
 
-    train_metrics = trainer.evaluate(train_dataset)
+    train_metrics = trainer.evaluate(bundle.train)
     for k, v in train_metrics.items():
         print(f'  {k}: {v:.4f}' if isinstance(v, float) and v < 10 else f'  {k}: {v:.2f}')
 
     print('\n' + '=' * 80)
-    print('TEST SET PERFORMANCE')
+    print('VALIDATION SET PERFORMANCE')
     print('=' * 80)
-    test_metrics = trainer.evaluate(test_dataset)
-    for k, v in test_metrics.items():
+    val_metrics = trainer.evaluate(bundle.val)
+    for k, v in val_metrics.items():
         print(f'  {k}: {v:.4f}' if isinstance(v, float) and v < 10 else f'  {k}: {v:.2f}')
 
     print('\n' + '=' * 80)
     print('Saving model...')
     print('=' * 80)
 
-    ctx.save_checkpoint('final', model, trainer, test_metrics)
+    ctx.save_checkpoint('final', model, trainer, val_metrics)
 
     print('\n' + '=' * 80)
     print('Training complete!')
-    print(f'  Best Test MAE: {best_test_mae:.2f} ms')
-    print(f'  Test R <= 1.5: {test_metrics["r_within_1.5"]*100:.1f}%')
-    print(f'  Test R <= 2.0: {test_metrics["r_within_2.0"]*100:.1f}%')
+    print(f'  Best Validation MAE: {best_val_mae:.2f} ms')
+    print(f'  Validation R <= 1.5: {val_metrics["r_within_1.5"] * 100:.1f}%')
+    print(f'  Validation R <= 2.0: {val_metrics["r_within_2.0"] * 100:.1f}%')
     print('=' * 80)
 
 def get_all_collection_stats(driver: MongoDriver) -> dict[str, dict[str, Any]]:
@@ -163,16 +154,16 @@ def test_run(args: argparse.Namespace, ctx: MongoContext):
     config = TestConfig.from_arguments(args)
 
     if config.queries:
-        test_queries: list[TestQuery[MongoQuery]] = []
+        test_queries: list[QueryDef[MongoQuery]] = []
         for i, content in enumerate(config.queries, 1):
             mongo_query = try_parse_mongo_query(content)
             if mongo_query is not None:
-                test_queries.append(TestQuery(f'custom-{i}', f'Custom Query {i}', mongo_query))
+                test_queries.append(QueryDef.create_from_content('custom', i, 1.0, 'Custom Query', mongo_query))
 
         print(f'\nAdded {len(test_queries)} custom query/queries')
     else:
         print('\nGenerating test queries...')
-        test_queries = ctx.database.get_test_queries()
+        test_queries = ctx.database().get_query_defs()
 
     if not test_queries:
         exit_with_error('No queries to test. Provide queries with --query or use the built-in test queries.')

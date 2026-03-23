@@ -105,8 +105,8 @@ class DataGenerator(ABC):
         return self._now - timedelta(seconds = self._rng.randint(0, seconds))
 
     def _rng_date(self, start_year: int, end_year: int) -> datetime:
-        """Generates a random date string between the specified years."""
-        # NICE_TO_HAVE Kinda duplicated logic with `Database._rng_date_string`.
+        """Generates a random date string between the specified years (inclusive on both ends)."""
+        # NICE_TO_HAVE Kinda duplicated logic with `Database._rng_date`.
         years = end_year - start_year + 1
         # Not the most accurate way to handle leap years, but good enough for random generation.
         seconds = years * 365 * 24 * 60 * 60

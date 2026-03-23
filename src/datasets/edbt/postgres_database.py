@@ -1,32 +1,28 @@
-from typing_extensions import override
-from common.config import DatasetName
-from common.database import Database
+from common.query_registry import query
 from common.drivers import DriverType
+from datasets.edbt.edbt_database import EdbtDatabase
 
-class EdbtPostgresDatabase(Database[str]):
+class EdbtPostgresDatabase(EdbtDatabase[str]):
+
     def __init__(self):
-        super().__init__(DatasetName.EDBT, DriverType.POSTGRES)
+        super().__init__(DriverType.POSTGRES)
 
-    @override
-    def _generate_train_queries(self, num_queries: int):
-        raise NotImplementedError(f'Training query generation not implemented for {self.id()} database.')
+    # OLTP focused (mostly Postgres)
 
-    @override
-    def _generate_test_queries(self):
-        # OLTP focused (mostly Postgres)
-
-        person_id = 1
-        self._test_query('Q3', 'Order history for a person (join via customer)', f'''
+    @query('test', 1.0, 'Order history for a person (join via customer)')
+    def _order_history_for_person(self):
+        return f'''
             SELECT o.order_id, o.ordered_at, o.status, o.total_cents, o.currency
             FROM "order" o
             JOIN customer c ON c.customer_id = o.customer_id
-            WHERE c.person_id = '{person_id}'
+            WHERE c.person_id = '{self._param_person_id()}'
             ORDER BY o.ordered_at DESC
             LIMIT 20
-        ''')
+        '''
 
-        person_id = 1
-        self._test_query('Q4', 'Order details view (now checks person via customer)', f'''
+    @query('test', 1.0, 'Order details view (now checks person via customer)')
+    def _order_details(self):
+        return f'''
             SELECT
                 o.order_id,
                 o.ordered_at,
@@ -41,26 +37,27 @@ class EdbtPostgresDatabase(Database[str]):
             JOIN customer c ON c.customer_id = o.customer_id
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
-            WHERE c.person_id = '{person_id}'
+            WHERE c.person_id = '{self._param_person_id()}'
             ORDER BY oi.order_item_id
-        ''')
+        '''
 
-        person_id = 1
-        product_id = 1
-        self._test_query('Q6', 'How many times did this person buy this product? (via customer snapshots)', f'''
+    @query('test', 1.0, 'How many times did this person buy this product? (via customer snapshots)')
+    def _product_purchases_for_person(self):
+        return f'''
             SELECT COUNT(*)
             FROM customer c
             JOIN "order" o ON o.customer_id = c.customer_id
             JOIN order_item oi ON oi.order_id = o.order_id
-                WHERE c.person_id = '{person_id}'
-                  AND oi.product_id = '{product_id}'
+                WHERE c.person_id = '{self._param_person_id()}'
+                  AND oi.product_id = '{self._param_product_id()}'
                   AND o.status IN ('paid', 'shipped')
-        ''')
+        '''
 
-        # OLAP focused (Postgres)
+    # OLAP focused (Postgres)
 
-        seller_id = 1
-        self._test_query('Q7', 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)', f'''
+    @query('test', 1.0, 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)')
+    def _seller_daily_revenue(self):
+        return f'''
             SELECT
                 date_trunc('day', o.ordered_at) AS day,
                 SUM(oi.line_total_cents) AS revenue_cents,
@@ -68,15 +65,16 @@ class EdbtPostgresDatabase(Database[str]):
             FROM "order" o
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
-            WHERE p.seller_id = '{seller_id}'
+            WHERE p.seller_id = '{self._param_seller_id()}'
               AND o.ordered_at >= now() - INTERVAL '30 days'
               AND o.status IN ('paid', 'shipped')
             GROUP BY 1
             ORDER BY 1
-        ''')
+        '''
 
-        category_id = 1
-        self._test_query('Q8', 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)', f'''
+    @query('test', 1.0, 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)')
+    def _top_products_by_revenue(self):
+        return f'''
             SELECT
                 oi.product_id,
                 MAX(p.title) AS title,
@@ -86,15 +84,17 @@ class EdbtPostgresDatabase(Database[str]):
             JOIN product p ON p.product_id = hc.product_id
             JOIN order_item oi ON oi.product_id = hc.product_id
             JOIN "order" o ON o.order_id = oi.order_id
-            WHERE hc.category_id = '{category_id}'
+            WHERE hc.category_id = '{self._param_category_id()}'
               AND o.ordered_at >= now() - INTERVAL '7 days'
               AND o.status IN ('paid', 'shipped')
             GROUP BY oi.product_id
             ORDER BY revenue_cents DESC
             LIMIT 50
-        ''')
+        '''
 
-        self._test_query('Q9', 'Customer spend buckets (now per person)', f'''
+    @query('test', 1.0, 'Customer spend buckets (now per person)')
+    def _customer_spend_buckets(self):
+        return f'''
             WITH spend AS (
                 SELECT c.person_id, SUM(o.total_cents) AS spend_cents
                 FROM customer c
@@ -113,9 +113,11 @@ class EdbtPostgresDatabase(Database[str]):
             FROM spend
             GROUP BY 1
             ORDER BY 1
-        ''')
+        '''
 
-        self._test_query('Q10', 'Fraud-ish pattern (now per person)', f'''
+    @query('test', 1.0, 'Fraud-ish pattern (now per person)')
+    def _fraud_pattern(self):
+        return f'''
             SELECT
                 c.person_id,
                 COUNT(DISTINCT p.seller_id) AS distinct_sellers,
@@ -130,46 +132,50 @@ class EdbtPostgresDatabase(Database[str]):
             HAVING COUNT(DISTINCT p.seller_id) >= 10
             ORDER BY distinct_sellers DESC
             LIMIT 200
-        ''')
+        '''
 
-        # This is designed to be heavy if you do it wrong, but fast if you limit scope. Good for optimizer tests.
-        # Input: a temp table hot_products(product_id) with maybe top 1% products.
-        # Output: co-buy counts for pairs, last 7 days, only when at least one side is hot.
-        # self._test_query('Q11', 'Rebuild "also bought" pairs for hot products only (Postgres, OLAP, sale-specific)', '''
-        #     WITH recent AS (
-        #         SELECT oi.order_id, oi.product_id
-        #         FROM order_item oi
-        #         JOIN "order" o ON o.order_id = oi.order_id
-        #         WHERE o.ordered_at >= now() - INTERVAL '7 days'
-        #           AND o.status IN ('paid', 'shipped')
-        #     ),
-        #     pairs AS (
-        #         SELECT
-        #             LEAST(a.product_id, b.product_id) AS product_id_a,
-        #             GREATEST(a.product_id, b.product_id) AS product_id_b,
-        #             COUNT(*) AS co_buy_count
-        #         FROM recent a
-        #         JOIN recent b
-        #             ON a.order_id = b.order_id
-        #            AND a.product_id < b.product_id
-        #         LEFT JOIN hot_products hp_a ON hp_a.product_id = a.product_id
-        #         LEFT JOIN hot_products hp_b ON hp_b.product_id = b.product_id
-        #         WHERE hp_a.product_id IS NOT NULL
-        #         OR hp_b.product_id IS NOT NULL
-        #         GROUP BY 1, 2
-        #     )
-        #     SELECT product_id_a, product_id_b, co_buy_count
-        #     FROM pairs
-        #     WHERE co_buy_count >= 5
-        #     ORDER BY co_buy_count DESC
-        #     LIMIT 50000
-        # ''')
+    # This is designed to be heavy if you do it wrong, but fast if you limit scope. Good for optimizer tests.
+    # Input: a temp table hot_products(product_id) with maybe top 1% products.
+    # Output: co-buy counts for pairs, last 7 days, only when at least one side is hot.
+    # 'Q11',
+    # 'Rebuild "also bought" pairs for hot products only (Postgres, OLAP, sale-specific)', '''
+    #     WITH recent AS (
+    #         SELECT oi.order_id, oi.product_id
+    #         FROM order_item oi
+    #         JOIN "order" o ON o.order_id = oi.order_id
+    #         WHERE o.ordered_at >= now() - INTERVAL '7 days'
+    #           AND o.status IN ('paid', 'shipped')
+    #     ),
+    #     pairs AS (
+    #         SELECT
+    #             LEAST(a.product_id, b.product_id) AS product_id_a,
+    #             GREATEST(a.product_id, b.product_id) AS product_id_b,
+    #             COUNT(*) AS co_buy_count
+    #         FROM recent a
+    #         JOIN recent b
+    #             ON a.order_id = b.order_id
+    #            AND a.product_id < b.product_id
+    #         LEFT JOIN hot_products hp_a ON hp_a.product_id = a.product_id
+    #         LEFT JOIN hot_products hp_b ON hp_b.product_id = b.product_id
+    #         WHERE hp_a.product_id IS NOT NULL
+    #         OR hp_b.product_id IS NOT NULL
+    #         GROUP BY 1, 2
+    #     )
+    #     SELECT product_id_a, product_id_b, co_buy_count
+    #     FROM pairs
+    #     WHERE co_buy_count >= 5
+    #     ORDER BY co_buy_count DESC
+    #     LIMIT 50000
+    # '''
 
-        # Document focused (MongoDB)
-        # These are built to avoid joins at read time. Put "product page bundle" in one document.
+    # Document focused (MongoDB)
+    # These are built to avoid joins at read time. Put "product page bundle" in one document.
 
-        product_id = 1
-        self._test_query('Q12', 'Product page read (Mongo, OLTP read-heavy, very high weight in sale)', f'''
+    @query('test', 1.0, 'Product page read (Mongo, OLTP read-heavy, very high weight in sale)')
+    def _product_page_read(self):
+        product_id = self._param_product_id()
+
+        return f'''
             SELECT
                 p.product_id,
                 p.title,
@@ -221,11 +227,13 @@ class EdbtPostgresDatabase(Database[str]):
             ) tr ON tr.product_id = p.product_id
             WHERE p.product_id = '{product_id}'
               AND p.is_active = TRUE
-        ''')
+        '''
 
-        product_ids = [ 1, 2, 3 ]
-        product_ids_string = ', '.join([f"'{id}'" for id in product_ids])
-        self._test_query('Q13', 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)', f'''
+    @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
+    def _bulk_fetch_product_pages(self):
+        product_ids = self._param_product_ids(5, 20)
+
+        return f'''
             SELECT
                 p.product_id,
                 p.title,
@@ -247,18 +255,21 @@ class EdbtPostgresDatabase(Database[str]):
                     AVG(r.rating)::float8 AS avg_rating,
                     COUNT(*)::int AS review_count
                 FROM review r
-                WHERE r.product_id IN ({product_ids_string})
+                WHERE r.product_id IN ({product_ids})
                 GROUP BY r.product_id
             ) rs ON rs.product_id = p.product_id
-            WHERE p.product_id IN ({product_ids_string})
+            WHERE p.product_id IN ({product_ids})
               AND p.is_active = TRUE
             LIMIT 200
-        ''')
+        '''
 
-        # Graph focused (Neo4j)
+    # Graph focused (Neo4j)
 
-        person_id = 1
-        self._test_query('Q15', 'Who should I follow? (User -> Person)', f'''
+    @query('test', 1.0, 'Who should I follow? (User -> Person)')
+    def _who_to_follow(self):
+        person_id = self._param_person_id()
+
+        return f'''
             SELECT
                 f2.from_id AS person_id,
                 COUNT(*) AS paths
@@ -275,10 +286,13 @@ class EdbtPostgresDatabase(Database[str]):
             GROUP BY f2.from_id
             ORDER BY paths DESC
             LIMIT 50
-        ''')
+        '''
 
-        product_id = 1
-        self._test_query('Q16', 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders:', f'''
+    @query('test', 1.0, 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders:')
+    def _people_also_bought(self):
+        product_id = self._param_product_id()
+
+        return f'''
             SELECT
                 oi2.product_id,
                 COUNT(*) AS co_buy
@@ -291,38 +305,39 @@ class EdbtPostgresDatabase(Database[str]):
             GROUP BY oi2.product_id
             ORDER BY co_buy DESC
             LIMIT 20
-        ''')
+        '''
 
-        person_id = 1
-        self._test_query('Q17', 'Personalized feed candidates (User -> Person)', f'''
+    @query('test', 1.0, 'Personalized feed candidates (User -> Person)')
+    def _personalized_feed_candidates(self):
+        return f'''
             SELECT
                 hc.product_id,
                 SUM(hi.strength) AS interest_score
             FROM has_interest hi
             JOIN has_category hc ON hc.category_id = hi.category_id
             JOIN product p ON p.product_id = hc.product_id
-            WHERE hi.person_id = '{person_id}'
+            WHERE hi.person_id = '{self._param_person_id()}'
               AND p.is_active = TRUE
             GROUP BY hc.product_id
             ORDER BY interest_score DESC
             LIMIT 200
-        ''')
+        '''
 
-        # One "multi-db" query (on purpose)
+    # One "multi-db" query (on purpose)
 
-        # Q18) Feed ranking in Neo4j, then page fetch in Mongo (Cross DB, high weight in sale)
+    # Q18) Feed ranking in Neo4j, then page fetch in Mongo (Cross DB, high weight in sale)
 
-        # Part A (Neo4j): get 200 product ids
+    # Part A (Neo4j): get 200 product ids
 
-        # MATCH (p:Person {person_id: $personId})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
-        # WHERE pr.is_active = true
-        # RETURN pr.product_id AS product_id
-        # ORDER BY SUM(hi.strength) DESC
-        # LIMIT 200
+    # MATCH (p:Person {person_id: $personId})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
+    # WHERE pr.is_active = true
+    # RETURN pr.product_id AS product_id
+    # ORDER BY SUM(hi.strength) DESC
+    # LIMIT 200
 
-        # Part B (Mongo): fetch those 200 docs
+    # Part B (Mongo): fetch those 200 docs
 
-        # db.product_page.find(
-        # { _id: { $in: productIds.map(x => NumberLong(x)) }, is_active: true },
-        # { title: 1, price_cents: 1, currency: 1, seller: 1, rating_summary: 1, sale_score_1h: 1 }
-        # )
+    # db.product_page.find(
+    # { _id: { $in: productIds.map(x => NumberLong(x)) }, is_active: true },
+    # { title: 1, price_cents: 1, currency: 1, seller: 1, rating_summary: 1, sale_score_1h: 1 }
+    # )

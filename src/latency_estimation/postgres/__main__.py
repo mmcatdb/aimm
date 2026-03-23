@@ -1,10 +1,9 @@
 import os
-import numpy as np
 import argparse
 import json
 from common.utils import JsonEncoder, auto_close, exit_with_error, print_warning
-from common.database import TestQuery
-from latency_estimation.common import format_latency, load_queries, parse_queries, print_dataset_summary, truncate_query
+from common.query_registry import QueryDef
+from latency_estimation.common import format_latency, load_queries, parse_queries, truncate_query
 from latency_estimation.config import TrainConfig, TestConfig
 from latency_estimation.postgres.context import PostgresContext
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
@@ -37,33 +36,24 @@ def train_args(parser: argparse.ArgumentParser):
     TrainConfig.postgres().add_arguments(parser)
 
 def train_run(args: argparse.Namespace, ctx: PostgresContext):
-    config = TrainConfig.from_arguments(args)
+    config = TrainConfig.from_arguments(ctx.config, args)
 
     print(f'\n[1/7] Configuration:')
     print(config)
 
     print(f'\n[2/7] Collecting {config.num_queries} query plans...')
-    dataset = ctx.load_or_create_dataset(config.num_queries, config.num_runs)
-
-    print(f'\nDataset Statistics:')
-    print_dataset_summary(dataset)
+    bundle = ctx.load_or_create_dataset(config)
+    combined = bundle.train + bundle.val
 
     print('\n[3/7] Building feature vocabularies...')
     feature_extractor = FeatureExtractor()
-    feature_extractor.build_vocabularies(dataset.plans)
+    feature_extractor.build_vocabularies([item.plan for item in combined])
 
-    print('\n[4/7] Splitting dataset...')
-    split_index = int(len(dataset) * config.train_split)
-    indexes = np.random.permutation(len(dataset))
-
-    train_dataset = dataset.subset(indexes[:split_index])
-    test_dataset = dataset.subset(indexes[split_index:])
-
-    print(f'Training set: {len(train_dataset)} queries')
-    print(f'Test set: {len(test_dataset)} queries')
+    print(f'Training set: {len(bundle.train)} queries')
+    print(f'Validation set: {len(bundle.val)} queries')
 
     print('\n[5/7] Creating plan-structured neural network...')
-    model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, train_dataset.plans)
+    model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, [item.plan for item in bundle.train])
     model.print_summary()
     ctx.save_available_operators(model)
 
@@ -74,25 +64,25 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size)
 
-    best_test_mae = float('inf')
+    best_val_mae = float('inf')
 
     for epoch in range(config.num_epochs):
-        loss = trainer.train_epoch(train_dataset)
+        loss = trainer.train_epoch(bundle.train)
 
         if (epoch + 1) % 5 == 0:
             print(f'\nEpoch {epoch + 1}/{config.num_epochs}')
             print(f'  Training Loss: {loss:.4f}')
 
-            # Evaluate on test set
-            metrics = trainer.evaluate(test_dataset)
-            print(f'  Test MAE: {metrics["mae"]:.2f} ms')
-            print(f'  Test Relative Error: {metrics["mre"]:.4f}')
-            print(f'  Test R ≤ 1.5: {metrics["le1.5_q_error"] * 100:.1f}%')
-            print(f'  Test R ≤ 2.0: {metrics["le2.0_q_error"] * 100:.1f}%')
+            # Evaluate on validation set
+            metrics = trainer.evaluate(bundle.val)
+            print(f'  Validation MAE: {metrics["mae"]:.2f} ms')
+            print(f'  Validation Relative Error: {metrics["mre"]:.4f}')
+            print(f'  Validation R ≤ 1.5: {metrics["le1.5_q_error"] * 100:.1f}%')
+            print(f'  Validation R ≤ 2.0: {metrics["le2.0_q_error"] * 100:.1f}%')
 
             # Track and save best model
-            if metrics['mae'] < best_test_mae:
-                best_test_mae = metrics['mae']
+            if metrics['mae'] < best_val_mae:
+                best_val_mae = metrics['mae']
                 ctx.save_checkpoint('best', model, trainer, metrics)
                 print(f'  ✓ New best model!')
 
@@ -103,7 +93,7 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     print('TRAINING SET PERFORMANCE')
     print('=' * 80)
 
-    train_metrics = trainer.evaluate(train_dataset)
+    train_metrics = trainer.evaluate(bundle.train)
     for metric, value in train_metrics.items():
         if 'error' in metric or 'mae' in metric:
             print(f'  {metric}: {value:.2f}')
@@ -111,10 +101,10 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
             print(f'  {metric}: {value:.4f}')
 
     print('\n' + '=' * 80)
-    print('TEST SET PERFORMANCE')
+    print('VALIDATION SET PERFORMANCE')
     print('=' * 80)
-    test_metrics = trainer.evaluate(test_dataset)
-    for metric, value in test_metrics.items():
+    val_metrics = trainer.evaluate(bundle.val)
+    for metric, value in val_metrics.items():
         if 'error' in metric or 'mae' in metric:
             print(f'  {metric}: {value:.2f}')
         else:
@@ -124,14 +114,14 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     print('Saving model...')
     print('=' * 80)
 
-    ctx.save_checkpoint('final', model, trainer, test_metrics)
+    ctx.save_checkpoint('final', model, trainer, val_metrics)
 
     print('\n' + '=' * 80)
     print('Training complete!')
     print('=' * 80)
-    print(f'\nFinal Test MAE: {test_metrics["mae"]:.2f} ms')
-    print(f'Final Test Relative Error: {test_metrics["mre"]:.4f}')
-    print(f'Estimations within factor of 1.5: {test_metrics["le1.5_q_error"] * 100:.1f}%')
+    print(f'\nFinal Validation MAE: {val_metrics["mae"]:.2f} ms')
+    print(f'Final Validation Relative Error: {val_metrics["mre"]:.4f}')
+    print(f'Estimations within factor of 1.5: {val_metrics["le1.5_q_error"] * 100:.1f}%')
 
 def test_args(parser: argparse.ArgumentParser):
     TestConfig.postgres().add_arguments(parser)
@@ -143,14 +133,14 @@ def test_run(args: argparse.Namespace, ctx: PostgresContext):
     config = TestConfig.from_arguments(args)
 
     if config.queries:
-        test_queries: list[TestQuery[str]] = []
+        test_queries: list[QueryDef[str]] = []
         for i, content in enumerate(config.queries, 1):
-            test_queries.append(TestQuery(f'custom-{i}', f'Custom Query {i}', content))
+            test_queries.append(QueryDef.create_from_content('custom', i, 1.0, 'Custom Query', content))
 
         print(f'\nAdded {len(test_queries)} custom query/queries')
     else:
         print('\nGenerating test queries...')
-        test_queries = ctx.database.get_test_queries()
+        test_queries = ctx.database().get_query_defs()
 
     if not test_queries:
         exit_with_error('No queries to test. Provide queries with --query or use the built-in test queries.')
@@ -207,7 +197,7 @@ def estimate_run(args: argparse.Namespace, ctx: PostgresContext):
         for query, latency, plan in results:
             item: dict = {
                 'query': query,
-                'estimated_latency_seconds': latency,
+                'estimated_latency_ms': latency,
                 'estimated_latency_formatted': format_latency(latency) if latency else None
             }
             if args.verbose:
