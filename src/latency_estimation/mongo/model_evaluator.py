@@ -3,7 +3,8 @@ import torch
 import numpy as np
 from dataclasses import dataclass
 from common.utils import EPSILON, print_warning
-from common.database import TestQuery, MongoQuery, MongoFindQuery, MongoAggregateQuery
+from common.query_registry import QueryDef
+from common.database import MongoQuery, MongoFindQuery, MongoAggregateQuery
 from latency_estimation.mongo.plan_extractor import PlanExtractor
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
 
@@ -14,7 +15,7 @@ class ModelEvaluator:
         self.extractor = extractor
         self.model = model
 
-    def evaluate_multiple_queries(self, queries: list[TestQuery[MongoQuery]], num_runs: int) -> list['Result']:
+    def evaluate_multiple_queries(self, queries: list[QueryDef[MongoQuery]], num_runs: int) -> list['Result']:
         results: list['Result'] = []
 
         print('=' * 80)
@@ -30,10 +31,10 @@ class ModelEvaluator:
 
         return results
 
-    def evaluate_query(self, query: TestQuery[MongoQuery], num_runs: int) -> 'Result':
+    def evaluate_query(self, query: QueryDef[MongoQuery], num_runs: int) -> 'Result':
         print(f'\nEvaluating: {query.label()}')
 
-        content = query.content
+        content = query.generate()
         if isinstance(content, MongoFindQuery):
             result = self.__evaluate_find(content, num_runs=num_runs, label=query.label())
         else:

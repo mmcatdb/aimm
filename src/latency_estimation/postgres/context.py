@@ -1,9 +1,10 @@
 from common.config import Config, DatasetName
 from common.drivers import DriverType, PostgresDriver
-from common.database import Database
-from datasets.databases import find_database, TRAIN_DATASET
+from common.database import DatabaseInfo
+from datasets.databases import TRAIN_DATASET
 from latency_estimation.context import BaseContext
-from latency_estimation.common import load_checkpoint_file, load_or_create_dataset, save_checkpoint_file
+from latency_estimation.common import DatasetBundle, load_checkpoint_file, load_or_create_dataset, save_checkpoint_file
+from latency_estimation.config import TrainConfig
 from latency_estimation.postgres.plan_extractor import PlanExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.postgres.trainer import PlanStructuredTrainer
@@ -12,25 +13,31 @@ class PostgresContext(BaseContext):
     def __init__(self, config: Config, quiet: bool):
         super().__init__(config, quiet)
         self.driver: PostgresDriver
-        self.database: Database[str]
         self.extractor: PlanExtractor
 
     @staticmethod
     def create(quiet: bool = False, dataset: DatasetName = TRAIN_DATASET) -> 'PostgresContext':
         ctx = PostgresContext(Config.load(), quiet)
         ctx.driver = PostgresDriver(ctx.config.postgres, dataset.value)
-        ctx.database = find_database(dataset, DriverType.POSTGRES)
-        ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
+        ctx.info = DatabaseInfo(dataset, DriverType.POSTGRES)
+        ctx.extractor = PlanExtractor(ctx.driver)
         return ctx
 
     def close(self):
         self.driver.close()
 
-    def load_or_create_dataset(self, num_queries: int, num_runs: int):
+    def load_or_create_dataset(self, config: TrainConfig):
         return load_or_create_dataset(
-            self._dataset_path(num_queries, num_runs),
-            lambda: self.extractor.collect_training_dataset(num_queries, num_runs),
+            self._dataset_path(config.num_queries, config.num_runs),
+            lambda: self.__create_dataset(config),
         )
+
+    def __create_dataset(self, config: TrainConfig):
+        def_map, train_queries, val_queries = self.database().generate_queries(config.num_queries, config.train_split)
+        train = self.extractor.create_dataset(train_queries, config.num_runs, def_map=def_map)
+        val = self.extractor.create_dataset(val_queries, config.num_runs, def_map=def_map)
+
+        return DatasetBundle(train, val)
 
     # These methods don't change the internal state of the context for a good reason - the use case is much more complex than it seems.
     # The trainer has the model. Sometimes we need only the model, sometimes both. But the trainer should not depend on the model - we might want to create a different model.
@@ -46,14 +53,12 @@ class PostgresContext(BaseContext):
             path = self._checkpoint_path('best')
 
         checkpoint = load_checkpoint_file(path, self.config.device)
-        model_checkpoint = checkpoint['model'] if isinstance(checkpoint, dict) and 'model' in checkpoint else checkpoint
-        model = PlanStructuredNetwork.from_checkpoint(model_checkpoint, self.config.device)
+        model = PlanStructuredNetwork.from_checkpoint(checkpoint['model'], self.config.device)
 
         if not self.quiet:
             print('Model loaded successfully!\n')
             model.print_summary()
-            if isinstance(checkpoint, dict) and 'metrics' in checkpoint:
-                PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
+            PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
 
         return model
 

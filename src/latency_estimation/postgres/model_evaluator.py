@@ -5,7 +5,7 @@ from tabulate import tabulate
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from common.utils import EPSILON, print_warning
-from common.database import TestQuery
+from common.query_registry import QueryDef
 from latency_estimation.postgres.plan_extractor import PlanExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 
@@ -15,7 +15,7 @@ class ModelEvaluator:
         self.extractor = extractor
         self.model = model
 
-    def evaluate_multiple_queries(self, queries: list[TestQuery[str]], measure_actual: bool, num_runs: int) -> list['Result']:
+    def evaluate_multiple_queries(self, queries: list[QueryDef[str]], measure_actual: bool, num_runs: int) -> list['Result']:
         """
         Evaluate multiple queries.
         Args:
@@ -37,7 +37,7 @@ class ModelEvaluator:
 
         return results
 
-    def evaluate_query(self, query: TestQuery[str], measure_actual: bool, num_runs: int) -> 'Result':
+    def evaluate_query(self, query: QueryDef[str], measure_actual: bool, num_runs: int) -> 'Result':
         """
         Comprehensive evaluation of a single query.
         Args:
@@ -48,11 +48,12 @@ class ModelEvaluator:
         """
         print(f'\nEvaluating: {query.label()}')
 
-        result = Result(query.label(), query.content)
+        content = query.generate()
+        result = Result(query.label(), content)
 
         # 1. Get EXPLAIN ANALYZE time
         print('  [1/3] Running EXPLAIN ANALYZE...')
-        plan, explain_time = self.extractor.explain_plan_and_measure(query.content, False)
+        plan, explain_time = self.extractor.explain_plan(content, False)
         result.explain_analyze_time = explain_time
         print(f'        EXPLAIN ANALYZE: {explain_time:.2f} ms')
 
@@ -75,7 +76,10 @@ class ModelEvaluator:
             result.actual = actual
 
             print(f'  [3/3] Measuring actual execution ({num_runs} runs)...')
-            actual_mean, actual_min, actual_max, _ = self.extractor.measure_query(query.content, num_runs)
+            actual_mean, times, _ = self.extractor.measure_query(content, num_runs)
+            actual_min = np.min(times)
+            actual_max = np.max(times)
+
             actual.time_mean = actual_mean
             actual.time_min = actual_min
             actual.time_max = actual_max

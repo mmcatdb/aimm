@@ -1,13 +1,11 @@
 from typing import cast
-from torch.utils.data import DataLoader
-from typing_extensions import override
-from sklearn.externals.array_api_compat.numpy import ndarray
 import torch
 import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON, print_warning
-from latency_estimation.abstract import BaseDataset
+from latency_estimation.postgres.plan_extractor import PostgresItem
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 
@@ -39,7 +37,7 @@ class PlanStructuredTrainer:
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: 'PostgresDataset') -> dict[str, float]:
+    def evaluate(self, dataset: Dataset[PostgresItem]) -> dict[str, float]:
         """
         Evaluate model on a dataset.
         Returns:
@@ -53,13 +51,13 @@ class PlanStructuredTrainer:
         with torch.no_grad():
             for item in dataset:
                 try:
-                    predicted_ms = self.__model(item['plan']).item()
+                    predicted_ms = self.__model(item.plan).item()
                 except Exception as e:
-                    print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
+                    print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
                     continue
 
                 estimations.append(predicted_ms)
-                actuals.append(item['execution_time'])
+                actuals.append(item.execution_time)
 
         # Convert to numpy arrays
         estimations = np.array(estimations)
@@ -95,7 +93,7 @@ class PlanStructuredTrainer:
         print(f'  R ≤ 2.0: {metrics["le2.0_q_error"] * 100:.2f} %')
         print('')
 
-    def train_epoch(self, dataset: 'PostgresDataset', batch_size: int | None = None, shuffle: bool = True) -> float:
+    def train_epoch(self, dataset: Dataset[PostgresItem], batch_size: int | None = None, shuffle: bool = True) -> float:
         """
         Train for one epoch over the dataset.
         Args:
@@ -242,51 +240,3 @@ def compute_plan_structure_hash(plan: dict) -> str:
         return f'{op_type}_{num_children}_{"_".join(sorted(children_sig))}'
 
     return structure_sig(plan)
-
-class PostgresDataset(BaseDataset[str]):
-    """Extends BaseDataset with nodes_latencies for PostgreSQL plans."""
-    def __init__(self, queries: list[str], plans: list[dict], execution_times: list[float]):
-        super().__init__(queries, plans, execution_times)
-
-        # Extract actual latencies for all nodes in all plans
-        self.nodes_latencies = []
-        for plan in plans:
-            node_times = self._extract_node_latencies(plan)
-            self.nodes_latencies.append(node_times)
-
-    def _extract_node_latencies(self, node: dict) -> dict[int, float]:
-        """
-        Extract actual execution time for each node in the plan.
-        PostgreSQL provides this via EXPLAIN ANALYZE.
-        """
-        latencies = {}
-
-        def traverse(n):
-            # Actual time is in format [start, end]
-            if 'Actual Total Time' in n:
-                latencies[id(n)] = n['Actual Total Time']
-            else:
-                # Fallback: use a portion of total time
-                latencies[id(n)] = 0.0
-
-            if 'Plans' in n:
-                for child in n['Plans']:
-                    traverse(child)
-
-        traverse(node)
-        return latencies
-
-    @override
-    def __getitem__(self, index):
-        item = super().__getitem__(index)
-        item['node_latencies'] = self.nodes_latencies[index]
-        return item
-
-    @override
-    def subset(self, indexes: list[int] | ndarray) -> 'PostgresDataset':
-        """Create a subset of the dataset based on given indexes."""
-        return PostgresDataset(
-            queries = [self.queries[i] for i in indexes],
-            plans = [self.plans[i] for i in indexes],
-            execution_times = [self.execution_times[i] for i in indexes],
-        )

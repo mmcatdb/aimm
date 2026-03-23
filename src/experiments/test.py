@@ -2,7 +2,6 @@ from common.config import DatasetName
 from latency_estimation.postgres.context import PostgresContext
 from latency_estimation.neo4j.context import Neo4jContext
 from common.drivers import cypher
-import pprint
 from experiments.__main__ import main as experiments_main
 
 # FIXME this
@@ -13,9 +12,9 @@ def main():
     test_evaluation()
 
 def test_evaluation():
-    # experiments_main(split('evaluate -c data/checkpoints/tpch_neo4j_final.pt -d neo4j'))
+    experiments_main(split('evaluate -c data/checkpoints/tpch_neo4j_final.pt -d neo4j'))
 
-    experiments_main(split('evaluate -c data/checkpoints/tpch_postgres_final.pt -d postgres'))
+    # experiments_main(split('evaluate -c data/checkpoints/tpch_postgres_final.pt -d postgres'))
 
 def split(args: str) -> list[str]:
     """Unfortunately, python treats output of string.split as list[LiteralString], which is not compatible with list[str]."""

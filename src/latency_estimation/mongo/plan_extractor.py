@@ -1,32 +1,37 @@
+from dataclasses import dataclass
 import time
 import numpy as np
-from common.database import Database, MongoQuery, MongoFindQuery, MongoAggregateQuery
+from common.database import MongoQuery, MongoFindQuery, MongoAggregateQuery
 from common.drivers import MongoDriver
-from latency_estimation.mongo.trainer import MongoDataset
-from common.utils import ProgressTracker, print_warning
+from common.utils import ProgressTracker, print_warning, time_quantity
+from common.query_registry import QueryDefMap
+from latency_estimation.common import ArrayDataset
+
+@dataclass
+class MongoItem:
+    def __init__(self, query: MongoQuery, plan: dict, execution_time: float):
+        self.query = query
+        self.plan = plan
+        self.execution_time = execution_time
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from MongoDB."""
 
-    def __init__(self, driver: MongoDriver, database: Database[MongoQuery]):
+    def __init__(self, driver: MongoDriver):
         self.config = driver
         self.db = driver.database()
-        self.database = database
 
-    def collect_training_dataset(self, num_queries: int, num_runs: int) -> MongoDataset:
+    def create_dataset(self, queries: list[MongoQuery], num_runs: int, def_map: QueryDefMap[MongoQuery] | None = None) -> ArrayDataset[MongoItem]:
         """
         Collect training dataset: explain plans + actual execution times.
         For each query, we collect:
         - explain('executionStats') for the plan tree + per-stage stats
         - Wall-clock execution time averaged over num_runs
         """
-        queries = self.database.get_train_queries(num_queries)
-
         progress = ProgressTracker.limited(len(queries))
         progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
 
-        plans = []
-        execution_times = []
+        items: list[MongoItem] = []
 
         for i, query in enumerate(queries):
             try:
@@ -37,16 +42,19 @@ class PlanExtractor:
                     plan = self.explain_aggregate(query, verbosity='executionStats')
                     times = self.measure_aggregate(query, num_runs=num_runs)
 
-                plans.append(plan)
-                execution_times.append(np.mean(times))
+                items.append(MongoItem(query, plan, np.mean(times).item()))
                 progress.track()
 
             except Exception as e:
-                print_warning(f'Could not execute query on index {i}.', e)
+                query_def = def_map.get(id(query)) if def_map else None
+                if query_def:
+                    print_warning(f'\nCould not execute query {query_def.label()}.', e)
+                else:
+                    print_warning(f'\nCould not execute query on index {i}.', e)
+                print()
 
+        dataset = ArrayDataset(items)
         progress.finish()
-
-        dataset = MongoDataset(queries, plans, execution_times)
 
         print(f'\nCollected {len(dataset)} samples successfully')
         return dataset
@@ -59,9 +67,10 @@ class PlanExtractor:
         """Run explain on a find command."""
         cmd: dict = {
             'find': query.collection,
-            'filter': query.filter,
         }
 
+        if query.filter:
+            cmd['filter'] = query.filter
         if query.projection:
             cmd['projection'] = query.projection
         if query.sort:
@@ -97,7 +106,7 @@ class PlanExtractor:
 
             start = time.perf_counter()
             list(cursor)  # force materialization
-            elapsed_ms = (time.perf_counter() - start) * 1000
+            elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
             times.append(elapsed_ms)
 
         return times
@@ -121,7 +130,7 @@ class PlanExtractor:
         for _ in range(num_runs):
             start = time.perf_counter()
             list(collection.aggregate(query.pipeline))
-            elapsed_ms = (time.perf_counter() - start) * 1000
+            elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
             times.append(elapsed_ms)
 
         return times

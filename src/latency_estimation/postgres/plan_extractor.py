@@ -1,27 +1,34 @@
-import numpy as np
+from dataclasses import dataclass
 import time
-from common.database import Database
+import numpy as np
 from common.drivers import PostgresDriver
-from latency_estimation.postgres.trainer import PostgresDataset
-from common.utils import ProgressTracker, print_warning
+from common.utils import ProgressTracker, print_warning, time_quantity
+from common.query_registry import QueryDefMap
+from latency_estimation.common import ArrayDataset
+from latency_estimation.postgres.feature_extractor import FeatureExtractor
+
+@dataclass
+class PostgresItem:
+    def __init__(self, query: str, plan: dict, execution_time: float, node_latencies: dict[int, float]):
+        self.query = query
+        self.plan = plan
+        self.execution_time = execution_time
+        self.node_latencies = node_latencies
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from PostgreSQL."""
 
-    def __init__(self, driver: PostgresDriver, database: Database[str]):
+    def __init__(self, driver: PostgresDriver):
         self.driver = driver
-        self.database = database
 
-    def collect_training_dataset(self, num_queries: int, num_runs: int, clear_cache: bool = True) -> PostgresDataset:
+    def create_dataset(self, queries: list[str], num_runs: int, clear_cache: bool = True, def_map: QueryDefMap[str] | None = None) -> ArrayDataset[PostgresItem]:
         """
         Collect a dataset of query plans and execution times.
         Args:
-            num_queries: Number of queries to collect
+            queries: List of SQL queries to collect plans for
             num_runs: Number of executions per query for averaging
             clear_cache: Whether to clear cache before each query (slower but more realistic)
         """
-        queries = self.database.get_train_queries(num_queries)
-
         if not clear_cache:
             print('Note: Cache clearing is disabled for faster collection.')
             print('      Set clear_cache=True for cold-cache measurements.\n')
@@ -29,35 +36,35 @@ class PlanExtractor:
         progress = ProgressTracker.limited(len(queries))
         progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
 
-        final_queries = []
-        plans = []
-        execution_times = []
+        items: list[PostgresItem] = []
 
         for i, query in enumerate(queries):
             try:
-                plan, execution_time = self.explain_plan_and_measure(query, clear_cache=clear_cache)
-                final_queries.append(query)
-                plans.append(plan)
-                execution_times.append(execution_time)
+                plan, _ = self.explain_plan(query, clear_cache=clear_cache)
+                execution_time, _, _ = self.measure_query(query, num_runs)
+                node_latencies = FeatureExtractor.extract_node_latencies(plan)
+                items.append(PostgresItem(query, plan, execution_time, node_latencies))
                 progress.track()
 
             except Exception as e:
-                print_warning(f'Could not execute query on index {i}.', e)
+                query_def = def_map.get(id(query)) if def_map else None
+                if query_def:
+                    print_warning(f'\nCould not execute query {query_def.label()}.', e)
+                else:
+                    print_warning(f'\nCould not execute query on index {i}.', e)
+                print()
 
+        dataset = ArrayDataset(items)
         progress.finish()
-
-        dataset = PostgresDataset(final_queries, plans, execution_times)
 
         print(f'\nCollected {len(dataset)} query plans.')
         return dataset
 
-    def explain_plan_and_measure(self, query: str, clear_cache: bool = True) -> tuple[dict, float]:
+    def explain_plan(self, query: str, clear_cache: bool = True) -> tuple[dict, float]:
         """
-        Execute a query and return its plan and actual execution time in ms.
+        Get the query plan using EXPLAIN without executing the query.
         Args:
-            query: SQL query to execute
-            num_runs: Number of times to execute for averaging
-            clear_cache: Whether to clear PostgreSQL cache before execution
+            query: SQL query string
         Returns:
             Tuple of (plan_dict, execution_time_ms)
         """
@@ -76,7 +83,7 @@ class PlanExtractor:
                         print_warning(f'Could not clear cache.', e)
                         pass
 
-                # Get the plan with execution statistics
+                # Get the plan without execution (no ANALYZE)
                 cursor.execute(f'EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}')
                 result = cursor.fetchone()
                 assert result is not None, 'No plan returned from EXPLAIN.'
@@ -87,38 +94,14 @@ class PlanExtractor:
         finally:
             self.driver.put_connection(connection)
 
-    def explain_plan(self, query: str) -> dict:
-        """
-        Get the query plan using EXPLAIN without executing the query.
-        Args:
-            query: SQL query string
-        Returns:
-            Query plan dictionary
-        """
-        connection = self.driver.get_connection()
-        # Set autocommit to avoid transaction block issues
-        connection.autocommit = True
-
-        try:
-            with connection.cursor() as cursor:
-                # Get the plan without execution (no ANALYZE)
-                cursor.execute(f'EXPLAIN (FORMAT JSON, VERBOSE) {query}')
-                result = cursor.fetchone()
-                assert result is not None, 'No plan returned from EXPLAIN.'
-
-                # EXPLAIN returns list of plans
-                return result[0][0]['Plan']
-        finally:
-            self.driver.put_connection(connection)
-
-    def measure_query(self, query: str, num_runs: int) -> tuple[float, float, float, int]:
+    def measure_query(self, query: str, num_runs: int) -> tuple[float, list[float], int]:
         """
         Execute query and measure actual wall-clock time. Runs multiple times and returns statistics.
         Args:
             query: SQL query string
             num_runs: Number of times to execute the query
         Returns:
-            Tuple of (mean_time_ms, min_time_ms, max_time_ms, num_results)
+            Tuple of (mean_time_ms, times_ms, num_results)
         """
         times_ms = []
         num_results = -1
@@ -129,15 +112,14 @@ class PlanExtractor:
 
             try:
                 with connection.cursor() as cursor:
-                    start_s = time.time()
+                    start = time.perf_counter()
                     cursor.execute(query)
                     # Fetch all results to ensure query completes
                     results = cursor.fetchall()
-                    end_s = time.time()
-
-                    times_ms.append((end_s - start_s) * 1000)
+                    elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
+                    times_ms.append(elapsed_ms)
                     num_results = len(results)
             finally:
                 self.driver.put_connection(connection)
 
-        return np.mean(times_ms).item(), np.min(times_ms), np.max(times_ms), num_results
+        return np.mean(times_ms).item(), times_ms, num_results

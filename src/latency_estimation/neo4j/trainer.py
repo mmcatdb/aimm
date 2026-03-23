@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON, print_warning
-from latency_estimation.abstract import BaseDataset
+from latency_estimation.neo4j.plan_extractor import Neo4jItem
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 
@@ -40,7 +40,7 @@ class PlanStructuredTrainer:
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: BaseDataset[str]) -> dict[str, float]:
+    def evaluate(self, dataset: Dataset[Neo4jItem]) -> dict[str, float]:
         """
         Evaluate model on a dataset.
         Returns:
@@ -54,13 +54,13 @@ class PlanStructuredTrainer:
         with torch.no_grad():
             for item in dataset:
                 try:
-                    predicted_ms = self.__model(item['plan']).item()
+                    predicted_ms = self.__model(item.plan).item()
                 except Exception as e:
-                    print_warning(f'Could not compute model outputs for a query: \n{item["query"]}', e)
+                    print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
                     continue
 
                 estimations.append(predicted_ms)
-                actuals.append(item['execution_time'])
+                actuals.append(item.execution_time)
 
         # Convert to numpy arrays
         estimations = np.array(estimations)
@@ -104,7 +104,7 @@ class PlanStructuredTrainer:
         print(f'  P95 R: {metrics["p95_q_error"] * 100:.2f} %')
         print('')
 
-    def train_epoch(self, dataset: BaseDataset[str], batch_size: int | None = None, shuffle: bool = True) -> float:
+    def train_epoch(self, dataset: Dataset[Neo4jItem], batch_size: int | None = None, shuffle: bool = True) -> float:
         """
         Args:
             dataset: Training dataset

@@ -1,4 +1,5 @@
 from argparse import ArgumentParser, Namespace, BooleanOptionalAction
+from common.config import Config
 
 class ModelConfig:
     """Parameters that don't change during training or evaluation."""
@@ -67,10 +68,10 @@ class TrainConfig:
         parser.add_argument('--dry-run',       action=BooleanOptionalAction, default=self.dry_run, help='Only print statistics about the dataset.')
 
     @staticmethod
-    def from_arguments(args: Namespace) -> 'TrainConfig':
+    def from_arguments(config: Config, args: Namespace) -> 'TrainConfig':
         return TrainConfig(
-            num_queries=args.num_queries,
-            num_runs=args.num_runs,
+            num_queries=config.num_queries or args.num_queries,
+            num_runs=config.train_num_runs or args.num_runs,
             train_split=args.train_split,
             batch_size=args.batch_size,
             num_epochs=args.num_epochs,

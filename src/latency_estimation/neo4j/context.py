@@ -1,14 +1,10 @@
-import importlib
-import os
-import pickle
-import sys
 from common.config import Config, DatasetName
 from common.drivers import DriverType, Neo4jDriver
-from common.database import Database
-from common.utils import print_warning
-from datasets.databases import find_database, TRAIN_DATASET
+from common.database import DatabaseInfo
+from datasets.databases import TRAIN_DATASET
 from latency_estimation.context import BaseContext
-from latency_estimation.common import load_checkpoint_file, load_or_create_dataset, save_checkpoint_file
+from latency_estimation.common import DatasetBundle, load_checkpoint_file, load_or_create_dataset, save_checkpoint_file
+from latency_estimation.config import TrainConfig
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
@@ -18,57 +14,31 @@ class Neo4jContext(BaseContext):
     def __init__(self, config: Config, quiet: bool):
         super().__init__(config, quiet)
         self.driver: Neo4jDriver
-        self.database: Database[str]
         self.extractor: PlanExtractor
 
     @staticmethod
     def create(quiet: bool = False, dataset: DatasetName = TRAIN_DATASET) -> 'Neo4jContext':
         ctx = Neo4jContext(Config.load(), quiet)
         ctx.driver = Neo4jDriver(ctx.config.neo4j, dataset.value)
-        ctx.database = find_database(dataset, DriverType.NEO4J)
-        ctx.extractor = PlanExtractor(ctx.driver, ctx.database)
+        ctx.info = DatabaseInfo(dataset, DriverType.NEO4J)
+        ctx.extractor = PlanExtractor(ctx.driver)
         return ctx
 
     def close(self):
         self.driver.close()
 
-    def _load_feature_extractor_sidecar(self, checkpoint_path: str) -> FeatureExtractor | None:
-        candidates = list(dict.fromkeys([
-            os.path.join(os.path.dirname(checkpoint_path), 'neo4j_feature_extractor.pkl'),
-            checkpoint_path.replace('_model.pt', '_feature_extractor.pkl'),
-            checkpoint_path.replace('.pt', '_feature_extractor.pkl'),
-        ]))
-
-        for candidate in candidates:
-            if not os.path.isfile(candidate):
-                continue
-
-            previous_module = sys.modules.get('feature_extractor')
-            try:
-                sys.modules['feature_extractor'] = importlib.import_module('latency_estimation.neo4j.feature_extractor')
-
-                with open(candidate, 'rb') as file:
-                    extractor = pickle.load(file)
-
-                if isinstance(extractor, FeatureExtractor):
-                    if not self.quiet:
-                        print(f'Loaded feature extractor from {candidate}')
-                    return extractor
-            except Exception as e:
-                print_warning(f'Could not load Neo4j feature extractor from {candidate}.', e)
-            finally:
-                if previous_module is not None:
-                    sys.modules['feature_extractor'] = previous_module
-                else:
-                    sys.modules.pop('feature_extractor', None)
-
-        return None
-
-    def load_or_create_dataset(self, num_queries: int, num_runs: int):
+    def load_or_create_dataset(self, config: TrainConfig):
         return load_or_create_dataset(
-            self._dataset_path(num_queries, num_runs),
-            lambda: self.extractor.collect_training_dataset(num_queries, num_runs),
+            self._dataset_path(config.num_queries, config.num_runs),
+            lambda: self.__create_dataset(config),
         )
+
+    def __create_dataset(self, config: TrainConfig):
+        def_map, train_queries, val_queries = self.database().generate_queries(config.num_queries, config.train_split)
+        train = self.extractor.create_dataset(train_queries, config.num_runs, def_map=def_map)
+        val = self.extractor.create_dataset(val_queries, config.num_runs, def_map=def_map)
+
+        return DatasetBundle(train, val)
 
     # These methods don't change the internal state of the context for a good reason - the use case is much more complex than it seems.
     # The trainer has the model. Sometimes we need only the model, sometimes both. But the trainer should not depend on the model - we might want to create a different model.
@@ -84,19 +54,12 @@ class Neo4jContext(BaseContext):
             path = self._checkpoint_path('best')
 
         checkpoint = load_checkpoint_file(path, self.config.device)
-        model_checkpoint = checkpoint['model'] if isinstance(checkpoint, dict) and 'model' in checkpoint else checkpoint
-        model = PlanStructuredNetwork.from_checkpoint(model_checkpoint, self.config.device)
-
-        if not (isinstance(model_checkpoint, dict) and model_checkpoint.get('feature_extractor') is not None):
-            extractor = self._load_feature_extractor_sidecar(path)
-            if extractor is not None:
-                model.feature_extractor = extractor
+        model = PlanStructuredNetwork.from_checkpoint(checkpoint, self.config.device)
 
         if not self.quiet:
             print('Model loaded successfully!\n')
             model.print_summary()
-            if isinstance(checkpoint, dict) and 'metrics' in checkpoint:
-                PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
+            PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
 
         return model
 

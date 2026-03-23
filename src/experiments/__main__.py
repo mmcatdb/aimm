@@ -105,11 +105,12 @@ def test_postgres(checkpoint: str):
         model = ctx.load_model(checkpoint)
         estimator = LatencyEstimator(ctx.extractor, model)
 
-        for query in ctx.database.get_test_queries():
+        for query in ctx.database().get_query_defs():
             try:
                 print(f'Executing query {query.label()}...')
-                estimated, _ = estimator.estimate(query.content)
-                actual, _, _, num_results = ctx.extractor.measure_query(query.content, num_runs=NUM_RUNS)
+                content = query.generate()
+                estimated, _ = estimator.estimate(content)
+                actual, _, num_results = ctx.extractor.measure_query(content, num_runs=NUM_RUNS)
                 print_query_results(num_results, estimated, actual)
             except NeuralUnitNotFoundException as e:
                 missing_operators.add(e.operator.key())
@@ -132,11 +133,12 @@ def test_neo4j(checkpoint: str):
         model = ctx.load_model(checkpoint)
         estimator = LatencyEstimator(ctx.extractor, model)
 
-        for query in ctx.database.get_test_queries():
+        for query in ctx.database().get_query_defs():
             try:
                 print(f'Executing query {query.label()}...')
-                estimated, _ = estimator.estimate(query.content)
-                actual, _, num_results = ctx.extractor.measure_query(query.content, num_runs=NUM_RUNS)
+                content = query.generate()
+                estimated, _ = estimator.estimate(content)
+                actual, _, num_results = ctx.extractor.measure_query(content, num_runs=NUM_RUNS)
                 print_query_results(num_results, estimated, actual)
             except NeuralUnitNotFoundException as e:
                 missing_operators.add(e.operator.key())
@@ -149,7 +151,7 @@ def test_neo4j(checkpoint: str):
         try_print_missing_operators(missing_operators, model.get_units())
 
 def print_query_results(num_results: int, estimated: float, actual: float):
-    print(f'Returned {num_results} rows. Estimated: {estimated * 1000:.2f} ms, Actual: {actual * 1000:.2f} ms.')
+    print(f'Returned {num_results} rows. Estimated: {estimated:.2f} ms, Actual: {actual:.2f} ms.')
 
 def try_print_missing_operators(missing: set[str], available: list[NnOperator]):
     if not missing:
