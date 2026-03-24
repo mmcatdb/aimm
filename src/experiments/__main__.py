@@ -75,7 +75,7 @@ def check_run():
 
     print('Done.')
 
-AVAILABLE_DATABASES = [type.value for type in [DriverType.POSTGRES, DriverType.NEO4J]]
+AVAILABLE_DATABASES = [type.value for type in [DriverType.POSTGRES, DriverType.NEO4J, DriverType.MONGO]]
 
 def test_args(parser: argparse.ArgumentParser):
     parser.add_argument('database', nargs=1, choices=AVAILABLE_DATABASES, help='Type of database to test.')
@@ -91,8 +91,38 @@ def test_run(args: argparse.Namespace):
         test_postgres(args.checkpoint)
     elif type == DriverType.NEO4J:
         test_neo4j(args.checkpoint)
+    elif type == DriverType.MONGO:
+        test_mongo(args.checkpoint)
     else:
         print(f'Unsupported database type: {type.value}')
+
+def test_mongo(checkpoint: str):
+    from latency_estimation.mongo.context import MongoContext
+    from latency_estimation.mongo.latency_estimator import LatencyEstimator
+
+    missing_operators: set[str] = set()
+
+    ctx = MongoContext.create(dataset=TEST_DATASET)
+    with auto_close(ctx):
+        model = ctx.load_model(checkpoint)
+        estimator = LatencyEstimator(ctx.extractor, model)
+
+        for query in ctx.database().get_query_defs():
+            try:
+                print(f'Executing query {query.label()}...')
+                content = query.generate()
+                estimated, _ = estimator.estimate(content)
+                actual, _, num_results = ctx.extractor.measure_query(content, num_runs=NUM_RUNS)
+                print_query_results(num_results, estimated, actual)
+            except NeuralUnitNotFoundException as e:
+                missing_operators.add(e.operator.key())
+                print_warning(str(e))
+            except Exception as e:
+                print_warning('Could not execute query.', e)
+
+            print()
+
+        try_print_missing_operators(missing_operators, model.get_units())
 
 def test_postgres(checkpoint: str):
     from latency_estimation.postgres.context import PostgresContext
