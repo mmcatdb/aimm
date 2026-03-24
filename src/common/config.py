@@ -23,6 +23,7 @@ class Config:
         self.device: str = rest['device']
         self.train_num_runs: int | None = rest.get('train_num_runs')
         self.num_queries: int | None = rest.get('num_queries')
+        self.num_epochs: int | None = rest.get('num_epochs')
 
     # Load .env manually if needed (outside Docker).
     DEFAULT_CONFIG_PATH = Path.joinpath(Path.cwd(), '.env')
@@ -84,6 +85,7 @@ class Config:
             'device': _string('DEVICE'),
             'train_num_runs': _int_optional('TRAIN_NUM_RUNS'),
             'num_queries': _int_optional('NUM_QUERIES'),
+            'num_epochs': _int_optional('NUM_EPOCHS'),
         }
 
 def _string(key: str, default: str | None = None) -> str:

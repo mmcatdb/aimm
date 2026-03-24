@@ -333,24 +333,6 @@ class FeatureExtractor(BaseFeatureExtractor):
         return value
 
     @staticmethod
-    def extract_node_latencies(node: dict) -> dict[int, float]:
-        """
-        Extract actual execution time for each node in the plan.
-        PostgreSQL provides this via EXPLAIN ANALYZE.
-        """
-        latencies = {}
-
-        def traverse(n):
-            # Actual time is in format [start, end]
-            if 'Actual Total Time' in n:
-                latencies[id(n)] = n['Actual Total Time']
-            else:
-                # Fallback: use a portion of total time
-                latencies[id(n)] = 0.0
-
-            if 'Plans' in n:
-                for child in n['Plans']:
-                    traverse(child)
-
-        traverse(node)
-        return latencies
+    def extract_node_latency(node: dict) -> float:
+        """Extract actual execution time for node from EXPLAIN ANALYZE output."""
+        return node.get('Actual Total Time', 0.0)

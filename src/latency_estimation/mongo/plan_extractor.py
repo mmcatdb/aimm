@@ -1,18 +1,21 @@
-from dataclasses import dataclass
 import time
+from typing_extensions import override
 import numpy as np
 from common.database import MongoQuery, MongoFindQuery, MongoAggregateQuery
 from common.drivers import MongoDriver
 from common.utils import ProgressTracker, print_warning, time_quantity
 from common.query_registry import QueryDefMap
 from latency_estimation.common import ArrayDataset
+from latency_estimation.feature_extractor import BaseDatasetItem
 
-@dataclass
-class MongoItem:
+class MongoItem(BaseDatasetItem):
     def __init__(self, query: MongoQuery, plan: dict, execution_time: float):
+        super().__init__(plan, execution_time)
         self.query = query
-        self.plan = plan
-        self.execution_time = execution_time
+
+    @override
+    def query_string(self) -> str:
+        return str(self.query)
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from MongoDB."""

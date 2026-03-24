@@ -42,6 +42,7 @@ INFO_TEXT = '\033[94m'     # bright blue
 BOLD_TEXT = '\033[1m'
 RESET_BOLD_TEXT = '\033[22m'
 RESET_TEXT = '\033[0m'
+CLEAR_TEXT_LINE = '\033[K'
 
 def exit_with_error(message: str, exception: Exception | None = None) -> NoReturn:
     """Use this to exit whenever a terminal yet expected error is encountered. If the expected error is a result of an unexpected exception, provide it as well."""

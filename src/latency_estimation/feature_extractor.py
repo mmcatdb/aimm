@@ -1,5 +1,16 @@
 from abc import ABC, abstractmethod
 
+class BaseDatasetItem(ABC):
+
+    def __init__(self, plan: dict, execution_time: float):
+        self.plan = plan
+        self.execution_time = execution_time
+        """In milliseconds."""
+
+    @abstractmethod
+    def query_string(self) -> str:
+        pass
+
 class BaseFeatureExtractor(ABC):
 
     @staticmethod

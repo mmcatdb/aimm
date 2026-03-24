@@ -74,7 +74,7 @@ class TrainConfig:
             num_runs=config.train_num_runs or args.num_runs,
             train_split=args.train_split,
             batch_size=args.batch_size,
-            num_epochs=args.num_epochs,
+            num_epochs=config.num_epochs or args.num_epochs,
             learning_rate=args.learning_rate,
             dry_run=args.dry_run,
             model=ModelConfig(

@@ -1,19 +1,20 @@
-from dataclasses import dataclass
 import time
+from typing_extensions import override
 import numpy as np
 from common.drivers import PostgresDriver
 from common.utils import ProgressTracker, print_warning, time_quantity
 from common.query_registry import QueryDefMap
 from latency_estimation.common import ArrayDataset
-from latency_estimation.postgres.feature_extractor import FeatureExtractor
+from latency_estimation.feature_extractor import BaseDatasetItem
 
-@dataclass
-class PostgresItem:
-    def __init__(self, query: str, plan: dict, execution_time: float, node_latencies: dict[int, float]):
+class PostgresItem(BaseDatasetItem):
+    def __init__(self, query: str, plan: dict, execution_time: float):
+        super().__init__(plan, execution_time)
         self.query = query
-        self.plan = plan
-        self.execution_time = execution_time
-        self.node_latencies = node_latencies
+
+    @override
+    def query_string(self) -> str:
+        return self.query
 
 class PlanExtractor:
     """Extracts query plans and execution statistics from PostgreSQL."""
@@ -42,8 +43,7 @@ class PlanExtractor:
             try:
                 plan, _ = self.explain_plan(query, clear_cache=clear_cache)
                 execution_time, _, _ = self.measure_query(query, num_runs)
-                node_latencies = FeatureExtractor.extract_node_latencies(plan)
-                items.append(PostgresItem(query, plan, execution_time, node_latencies))
+                items.append(PostgresItem(query, plan, execution_time))
                 progress.track()
 
             except Exception as e:
