@@ -54,7 +54,7 @@ class Neo4jContext(BaseContext):
             path = self._checkpoint_path('best')
 
         checkpoint = load_checkpoint_file(path, self.config.device)
-        model = PlanStructuredNetwork.from_checkpoint(checkpoint, self.config.device)
+        model = PlanStructuredNetwork.from_checkpoint(checkpoint['model'], self.config.device)
 
         if not self.quiet:
             print('Model loaded successfully!\n')
