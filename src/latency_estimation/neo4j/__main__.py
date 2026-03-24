@@ -3,11 +3,11 @@ import argparse
 import json
 from common.utils import JsonEncoder, auto_close, exit_with_error
 from common.query_registry import QueryDef
-from latency_estimation.common import format_latency, load_queries, parse_queries, truncate_query
+from latency_estimation.common import format_latency, load_queries, parse_queries, truncate_query, prune_dataset
 from latency_estimation.config import TrainConfig, TestConfig
 from latency_estimation.neo4j.context import Neo4jContext
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
-from latency_estimation.neo4j.trainer import PlanStructuredTrainer
+from latency_estimation.neo4j.trainer import Trainer
 from latency_estimation.neo4j.latency_estimator import LatencyEstimator
 from latency_estimation.neo4j.model_evaluator import ModelEvaluator
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
@@ -50,71 +50,24 @@ def train_run(args: argparse.Namespace, ctx: Neo4jContext):
     feature_extractor.build_vocabularies([item.plan for item in combined])
 
     print(f'Training set: {len(bundle.train)} queries')
-    print(f'Validation set: {len(bundle.val)} queries')
+    print(f'Validation set (original): {len(bundle.val)} queries')
 
     print('\n[5/7] Creating plan-structured neural network...')
     model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, [item.plan for item in bundle.train])
     model.print_summary()
     ctx.save_available_operators(model)
 
+    val_dataset = prune_dataset(bundle.val, model)
+    print(f'Validation set (pruned): {len(val_dataset)} queries')
+
     if config.dry_run:
         print('\nDry run completed. Exiting before training.')
         return
 
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
-    trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size)
+    trainer = Trainer(model, config.learning_rate, config.batch_size)
 
-    best_val_loss = float('inf')
-
-    for epoch in range(config.num_epochs):
-        print(f'\nEpoch {epoch + 1}/{config.num_epochs}')
-        print('-' * 50)
-
-        # Train
-        train_loss = trainer.train_epoch(bundle.train)
-        print(f'Training Loss: {train_loss:.6f}')
-
-        # Validation
-        val_metrics = trainer.evaluate(bundle.val)
-        val_loss = val_metrics['mse']
-
-        print(f'Validation Loss: {val_loss:.6f}')
-        print(f'Validation RMSE: {val_metrics["rmse"]:.6f}')
-        print(f'Validation MAE: {val_metrics["mae"]:.6f}')
-        print(f'Validation R-value (mean): {val_metrics["mean_q_error"]:.3f}')
-        print(f'Validation R-value (median): {val_metrics["median_q_error"]:.3f}')
-
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            ctx.save_checkpoint('best', model, trainer, val_metrics)
-            print(f'  ✓ New best model!')
-
-        if (epoch + 1) % 10 == 0:
-            metrics = val_metrics if val_metrics else {'train_loss': train_loss}
-            ctx.save_checkpoint(f'e{epoch + 1}', model, trainer, metrics)
-
-    # Save final model
-    final_metrics = trainer.evaluate(bundle.val)
-    ctx.save_checkpoint('final', model, trainer, final_metrics)
-    print('\n' + '=' * 50)
-    print('Training completed!')
-    print('=' * 50)
-
-    print('\n' + '=' * 70)
-    print('Evaluation')
-
-    print('\nTraining set performance:')
-    train_metrics = trainer.evaluate(bundle.train)
-    for metric_name, value in train_metrics.items():
-        print(f'  {metric_name}: {value:.6f}')
-
-    print('\nValidation set performance:')
-    val_metrics = trainer.evaluate(bundle.val)
-    for metric_name, value in val_metrics.items():
-        print(f'  {metric_name}: {value:.6f}')
-
-    print('=' * 70)
+    trainer.train_epochs(bundle.train, val_dataset, config.num_epochs, lambda name, metrics: ctx.save_checkpoint(name, model, trainer, metrics))
 
 def test_args(parser: argparse.ArgumentParser):
     TestConfig.neo4j().add_arguments(parser)

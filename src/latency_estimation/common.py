@@ -1,3 +1,4 @@
+from abc import ABC
 from argparse import Namespace
 from collections.abc import Callable
 import os
@@ -6,8 +7,10 @@ from typing import Generic, TypeVar
 import torch
 from common.utils import exit_with_error, print_warning, print_info, time_quantity
 from torch.utils.data import Dataset
+from latency_estimation.feature_extractor import BaseDatasetItem
+from latency_estimation.plan_structured_network import BasePlanStructuredNetwork
 
-TDatasetItem = TypeVar('TDatasetItem')
+TDatasetItem = TypeVar('TDatasetItem', bound=BaseDatasetItem)
 
 class ArrayDataset(Dataset[TDatasetItem]):
     """
@@ -73,6 +76,23 @@ def load_or_create_dataset(path: str | None, fallback: Callable[[], DatasetBundl
         print_warning(f'Could not cache dataset to {path}.', e)
 
     return dataset
+
+def prune_dataset(dataset: Dataset[TDatasetItem], model: BasePlanStructuredNetwork) -> ArrayDataset[TDatasetItem]:
+    """Removes all query items that are not supported by the model (e.g., contain operators that are not in the model)."""
+    pruned = set[str]()
+    output = []
+
+    for item in dataset:
+        operators = model.find_missing_operators(item.plan)
+        if operators:
+            query_string = item.query_string()
+            if (query_string not in pruned):
+                pruned.add(query_string)
+                print_warning(f'Skipping query because it contains unsupported operators: {", ".join([op.key() for op in operators])}.\n{truncate_query(query_string)}\n')
+        else:
+            output.append(item)
+
+    return ArrayDataset(output)
 
 def load_queries(args: Namespace, parser: Callable[[str], list[str]]) -> list[str]:
     if args.query:

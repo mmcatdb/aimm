@@ -1,20 +1,22 @@
-from dataclasses import dataclass
 import time
+from typing_extensions import override
 import numpy as np
 from typing import Any
 from common.drivers import Neo4jDriver, cypher
 from common.utils import ProgressTracker, print_warning, time_quantity
 from common.query_registry import QueryDefMap
-from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.common import ArrayDataset
+from latency_estimation.feature_extractor import BaseDatasetItem
+from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
-@dataclass
-class Neo4jItem:
+class Neo4jItem(BaseDatasetItem):
     def __init__(self, query: str, plan: dict, execution_time: float):
+        super().__init__(plan, execution_time)
         self.query = query
-        self.plan = plan
-        self.execution_time = execution_time
 
+    @override
+    def query_string(self) -> str:
+        return self.query
 
 class PlanExtractor:
     """

@@ -1,16 +1,15 @@
 import os
-from typing import Any
-import numpy as np
 import argparse
 import json
 from common.utils import JsonEncoder, auto_close, exit_with_error
 from common.query_registry import QueryDef
 from common.database import MongoQuery, try_parse_mongo_query
 from common.drivers import MongoDriver
+from latency_estimation.common import prune_dataset
 from latency_estimation.config import TrainConfig, TestConfig
 from latency_estimation.mongo.context import MongoContext
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
-from latency_estimation.mongo.trainer import PlanStructuredTrainer
+from latency_estimation.mongo.trainer import Trainer
 from latency_estimation.mongo.model_evaluator import ModelEvaluator
 from latency_estimation.mongo.feature_extractor import FeatureExtractor
 
@@ -55,77 +54,26 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     feature_extractor.build_vocabularies([item.plan for item in combined])
 
     print(f'Training set: {len(bundle.train)} queries')
-    print(f'Validation set: {len(bundle.val)} queries')
+    print(f'Validation set (original): {len(bundle.val)} queries')
 
     print('\n[5/7] Creating plan-structured neural network...')
     model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, [item.plan for item in bundle.train])
     model.print_summary()
     ctx.save_available_operators(model)
 
+    val_dataset = prune_dataset(bundle.val, model)
+    print(f'Validation set (pruned): {len(val_dataset)} queries')
+
     if config.dry_run:
         print('\nDry run completed. Exiting before training.')
         return
 
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
-    trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size, config.num_epochs, args.warmup_epochs)
+    trainer = Trainer(model, config.learning_rate, config.batch_size, config.num_epochs, args.warmup_epochs)
 
-    best_val_geo_qerror = float('inf')
-    best_val_mae = float('inf')
+    trainer.train_epochs(bundle.train, val_dataset, config.num_epochs, lambda name, metrics: ctx.save_checkpoint(name, model, trainer, metrics))
 
-    for epoch in range(config.num_epochs):
-        loss = trainer.train_epoch(bundle.train)
-
-        if (epoch + 1) % 10 == 0:
-            print(f'\nEpoch {epoch + 1}/{config.num_epochs}')
-            print(f'  Training Loss: {loss:.4f}')
-
-            # Evaluate on validation set
-            metrics = trainer.evaluate(bundle.val)
-            print(f'  MAE={metrics["mae"]:.2f}ms')
-            print(f'  MedR={metrics["median_r"]:.2f}')
-            print(f'  R<=2={metrics["r_within_2.0"] * 100:.0f}%')
-            print(f'  GeoQ={metrics["geo_mean_r"]:.3f}')
-
-            # Track and save best model
-            # Use geometric mean Q-error as primary criterion (more robust than MAE)
-            if metrics['geo_mean_r'] < best_val_geo_qerror:
-                best_val_geo_qerror = metrics['geo_mean_r']
-                best_val_mae = metrics['mae']
-                ctx.save_checkpoint('best', model, trainer, metrics)
-                print(f'    -> New best model (GeoQ={best_val_geo_qerror:.3f}, MAE={best_val_mae:.2f}ms)')
-
-    # Step 7: Final evaluation
-    print('\n[7/7] Final Evaluation...')
-    print('\n' + '=' * 80)
-
-    print('TRAINING SET PERFORMANCE')
-    print('=' * 80)
-
-    train_metrics = trainer.evaluate(bundle.train)
-    for k, v in train_metrics.items():
-        print(f'  {k}: {v:.4f}' if isinstance(v, float) and v < 10 else f'  {k}: {v:.2f}')
-
-    print('\n' + '=' * 80)
-    print('VALIDATION SET PERFORMANCE')
-    print('=' * 80)
-    val_metrics = trainer.evaluate(bundle.val)
-    for k, v in val_metrics.items():
-        print(f'  {k}: {v:.4f}' if isinstance(v, float) and v < 10 else f'  {k}: {v:.2f}')
-
-    print('\n' + '=' * 80)
-    print('Saving model...')
-    print('=' * 80)
-
-    ctx.save_checkpoint('final', model, trainer, val_metrics)
-
-    print('\n' + '=' * 80)
-    print('Training complete!')
-    print(f'  Best Validation MAE: {best_val_mae:.2f} ms')
-    print(f'  Validation R <= 1.5: {val_metrics["r_within_1.5"] * 100:.1f}%')
-    print(f'  Validation R <= 2.0: {val_metrics["r_within_2.0"] * 100:.1f}%')
-    print('=' * 80)
-
-def get_all_collection_stats(driver: MongoDriver) -> dict[str, dict[str, Any]]:
+def get_all_collection_stats(driver: MongoDriver) -> dict[str, dict]:
     """Get statistics for all collections."""
     db = driver.database()
     stats = {}
@@ -134,7 +82,7 @@ def get_all_collection_stats(driver: MongoDriver) -> dict[str, dict[str, Any]]:
             stats[name] = _get_collection_stats(driver, name)
     return stats
 
-def _get_collection_stats(driver: MongoDriver, collection_name: str) -> dict[str, Any]:
+def _get_collection_stats(driver: MongoDriver, collection_name: str) -> dict:
     """Get collection statistics via collStats command."""
     db = driver.database()
     stats = db.command("collStats", collection_name)

@@ -1,43 +1,45 @@
 from typing import cast
 import torch
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON, print_warning
+from latency_estimation.trainer import BaseTrainer, TrainerMetrics
 from latency_estimation.postgres.plan_extractor import PostgresItem
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 
-class PlanStructuredTrainer:
-    """
-    Trainer for plan-structured neural networks.
-    Implements optimized training with batching and caching.
-    """
+class Trainer(BaseTrainer[PostgresItem]):
+
     def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int):
+        super().__init__(
+            epoch_period=5,
+            main_metric='mae',
+            train_metrics=['mae', 'mre', 'r_within_1.5', 'r_within_2.0'],
+            batch_size=batch_size,
+        )
         self.__model = model
         self.__optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
-        self.__loss_history: list[float] = []
-        self.__batch_size = batch_size
 
     @staticmethod
-    def load_from_checkpoint(model: PlanStructuredNetwork, checkpoint: dict, learning_rate: float, batch_size: int) -> 'PlanStructuredTrainer':
-        trainer = PlanStructuredTrainer(model, learning_rate, batch_size)
+    def load_from_checkpoint(model: PlanStructuredNetwork, checkpoint: dict, learning_rate: float, batch_size: int) -> 'Trainer':
+        trainer = Trainer(model, learning_rate, batch_size)
         trainer.__optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        trainer.__loss_history = checkpoint['loss_history']
+        trainer._loss_history = checkpoint['loss_history']
         return trainer
 
     def to_checkpoint(self) -> dict:
         """Serialization to a file-friendly dictionary."""
         return {
-            'epoch': len(self.__loss_history),
-            'loss_history': self.__loss_history,
+            'epoch': len(self._loss_history),
+            'loss_history': self._loss_history,
             # We don't save the learning rate as it can be changed between sessions.
             # Momentum should be saved automatically.
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: Dataset[PostgresItem]) -> dict[str, float]:
+    def evaluate(self, dataset: Dataset[PostgresItem]) -> TrainerMetrics:
         """
         Evaluate model on a dataset.
         Returns:
@@ -76,62 +78,17 @@ class PlanStructuredTrainer:
         return {
             'mae': mae,
             'mre': mre,
-            'mean_q_error': np.mean(r_values).item(),
-            'median_q_error': np.median(r_values).item(),
-            'le1.5_q_error': np.mean(r_values <= 1.5).item(),
-            'le2.0_q_error': np.mean(r_values <= 2.0).item(),
+            'mean_q': np.mean(r_values).item(),
+            'median_q': np.median(r_values).item(),
+            'r_within_1.5': np.mean(r_values <= 1.5).item(),
+            'r_within_2.0': np.mean(r_values <= 2.0).item(),
         }
 
-    @staticmethod
-    def print_metrics(metrics: dict[str, float]):
-        print('Evaluation Metrics:')
-        print(f'  MAE: {metrics["mae"]:.2f} ms')
-        print(f'  MRE: {metrics["mre"] * 100:.2f} %')
-        print(f'  Mean R: {metrics["mean_q_error"]:.3f}')
-        print(f'  Median R: {metrics["median_q_error"]:.3f}')
-        print(f'  R ≤ 1.5: {metrics["le1.5_q_error"] * 100:.2f} %')
-        print(f'  R ≤ 2.0: {metrics["le2.0_q_error"] * 100:.2f} %')
-        print('')
-
-    def train_epoch(self, dataset: Dataset[PostgresItem], batch_size: int | None = None, shuffle: bool = True) -> float:
-        """
-        Train for one epoch over the dataset.
-        Args:
-            dataset: Training dataset
-            batch_size: Batch size
-        Returns:
-            Average loss for the epoch
-        """
-        batch_size = batch_size if batch_size is not None else self.__batch_size
-        # Identity collate_fn - return list of items as-is
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=lambda x: x)
-
-        epoch_losses = []
-
-        for index, batch in enumerate(dataloader):
-            loss = self.__train_batch(batch)
-            epoch_losses.append(loss)
-
-            if (index + 1) % 10 == 0:
-                print(f'  Batch {index + 1}/{len(dataloader)}, Loss: {loss:.6f}')
-
-        avg_loss = np.mean(epoch_losses).item()
-        self.__loss_history.append(avg_loss)
-
-        return avg_loss
-
-    def __train_batch(self, batch: list[PostgresItem]) -> float:
-        """
-        Train on a single batch using plan-based batching.
-        Args:
-            batch: Batch of query plans
-        Returns:
-            Loss value for this batch
-        """
+    def _train_batch(self, batch: list[PostgresItem]) -> float:
+        """Returns the loss for the batch."""
         self.__model.train()
         self.__optimizer.zero_grad()
 
-        # Group plans by structure
         groups = group_plans_by_structure(batch)
 
         # Compute gradient for each group
@@ -162,8 +119,7 @@ class PlanStructuredTrainer:
         self.__optimizer.step()
 
         # Return average loss
-        avg_loss = total_loss / total_weight if total_weight > 0 else 0.0
-        return avg_loss
+        return total_loss / total_weight if total_weight > 0 else 0.0
 
     def __compute_loss(self, batch: list[PostgresItem]) -> torch.Tensor:
         """
@@ -187,16 +143,13 @@ class PlanStructuredTrainer:
             for node_id, output_tensor in all_outputs.items():
                 predicted_latency = output_tensor[0, 0] # Get latency (first element)
 
-                # {node_id: actual_latency}
-                actual_latency = item.node_latencies.get(node_id)
+                actual_latency = FeatureExtractor.extract_node_latency(item.plan)
+                # TODO is the device needed?
+                actual_latency_tensor = torch.tensor(actual_latency, dtype=predicted_latency.dtype, device=predicted_latency.device)
 
-                if actual_latency is not None:
-                    # TODO is the device needed?
-                    actual_latency_tensor = torch.tensor(actual_latency, dtype=predicted_latency.dtype, device=predicted_latency.device)
-
-                    squared_error = (predicted_latency - actual_latency_tensor) ** 2
-                    total_squared_error += squared_error
-                    total_nodes += 1
+                squared_error = (predicted_latency - actual_latency_tensor) ** 2
+                total_squared_error += squared_error
+                total_nodes += 1
 
         # Return RMSE
         if total_nodes > 0:

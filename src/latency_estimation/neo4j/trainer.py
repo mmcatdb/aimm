@@ -1,46 +1,48 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import numpy as np
 from collections import defaultdict
 from common.utils import EPSILON, print_warning
+from latency_estimation.trainer import BaseTrainer, TrainerMetrics
 from latency_estimation.neo4j.plan_extractor import Neo4jItem
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
 
-class PlanStructuredTrainer:
-    """
-    Trainer for plan-structured neural networks (Neo4j version).
-    Implements optimized training with batching and caching.
-    """
+class Trainer(BaseTrainer[Neo4jItem]):
+
     def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int):
+        super().__init__(
+            epoch_period=5,
+            main_metric='mse',
+            train_metrics=['mse', 'rmse', 'mae', 'mean_q', 'median_q'],
+            batch_size=batch_size,
+        )
         self.__model = model
         self.__optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-        self.__loss_history: list[float] = []
-        self.__batch_size = batch_size
 
         # Loss function: MSE for total query latency
         self.criterion = nn.MSELoss()
 
     @staticmethod
-    def load_from_checkpoint(model: PlanStructuredNetwork, checkpoint: dict, learning_rate: float, batch_size: int) -> 'PlanStructuredTrainer':
-        trainer = PlanStructuredTrainer(model, learning_rate, batch_size)
+    def load_from_checkpoint(model: PlanStructuredNetwork, checkpoint: dict, learning_rate: float, batch_size: int) -> 'Trainer':
+        trainer = Trainer(model, learning_rate, batch_size)
         trainer.__optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        trainer.__loss_history = checkpoint['loss_history']
+        trainer._loss_history = checkpoint['loss_history']
         return trainer
 
     def to_checkpoint(self) -> dict:
         """Serialization to a file-friendly dictionary."""
         return {
-            'epoch': len(self.__loss_history),
-            'loss_history': self.__loss_history,
+            'epoch': len(self._loss_history),
+            'loss_history': self._loss_history,
             # We don't save the learning rate as it can be changed between sessions.
             # Weight decay should be saved automatically.
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: Dataset[Neo4jItem]) -> dict[str, float]:
+    def evaluate(self, dataset: Dataset[Neo4jItem]) -> TrainerMetrics:
         """
         Evaluate model on a dataset.
         Returns:
@@ -79,77 +81,25 @@ class PlanStructuredTrainer:
         # Mean relative error
         mre = np.mean(np.abs(estimations - actuals) / (actuals + EPSILON)).item()
 
-        metrics = {
+        return {
             'mse': mse,
             'rmse': rmse,
             'mae': mae,
             'mre': mre,
-            'mean_q_error': np.mean(r_values).item(),
-            'median_q_error': np.median(r_values).item(),
+            'mean_q': np.mean(r_values).item(),
+            'median_q': np.median(r_values).item(),
             'p90_q_error': np.percentile(r_values, 90).item(),
             'p95_q_error': np.percentile(r_values, 95).item(),
         }
 
-        return metrics
-
-    @staticmethod
-    def print_metrics(metrics: dict[str, float]):
-        print('Evaluation Metrics:')
-        print(f'  MAE: {metrics["mae"]:.2f} ms')
-        print(f'  MRE: {metrics["mre"] * 100:.2f} %')
-        print(f'  RMSE: {metrics["rmse"]:.2f} ms')
-        print(f'  Mean R: {metrics["mean_q_error"]:.3f}')
-        print(f'  Median R: {metrics["median_q_error"]:.3f}')
-        print(f'  P90 R: {metrics["p90_q_error"] * 100:.2f} %')
-        print(f'  P95 R: {metrics["p95_q_error"] * 100:.2f} %')
-        print('')
-
-    def train_epoch(self, dataset: Dataset[Neo4jItem], batch_size: int | None = None, shuffle: bool = True) -> float:
-        """
-        Args:
-            dataset: Training dataset
-            batch_size: Batch size
-            shuffle: Whether to shuffle data
-        Returns:
-            Average loss for the epoch
-        """
-        batch_size = batch_size if batch_size is not None else self.__batch_size
-        # Identity collate_fn - return list of items as-is
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=lambda x: x)
-
-        epoch_losses = []
-
-        for index, batch in enumerate(dataloader):
-            loss = self.__train_batch(batch)
-            epoch_losses.append(loss)
-
-            if (index + 1) % 10 == 0:
-                print(f'  Batch {index + 1}/{len(dataloader)}, Loss: {loss:.6f}')
-
-        avg_loss = np.mean(epoch_losses).item()
-        self.__loss_history.append(avg_loss)
-
-        return avg_loss
-
-    def __train_batch(self, batch: list[Neo4jItem]) -> float:
-        """
-        Args:
-            batch: List of batch items
-        Returns:
-            Loss value for this batch
-        """
+    def _train_batch(self, batch: list[Neo4jItem]) -> float:
+        """Returns the loss for the batch."""
         self.__model.train()
         self.__optimizer.zero_grad()
-
-        # Compute loss
         loss = self.__compute_loss(batch)
-
-        # Backward pass
         loss.backward()
-
         # Gradient clipping to prevent exploding gradients
         torch.nn.utils.clip_grad_norm_(self.__model.parameters(), max_norm=1.0)
-
         # Update weights
         self.__optimizer.step()
 

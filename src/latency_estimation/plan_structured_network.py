@@ -68,6 +68,16 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
             self.units[op_key] = self._create_unit(operator)
             self.operators[op_key] = operator
 
+    def find_missing_operators(self, plan: dict) -> list[NnOperator]:
+        """Returns all operators that are in the plan but not in the model."""
+        plan_operators = OperatorCollector.run_quiet(self.feature_extractor, [plan])
+        missing_operators = []
+        for operator in plan_operators:
+            if operator.key() not in self.units:
+                missing_operators.append(operator)
+
+        return missing_operators
+
     @abstractmethod
     def _create_unit(self, operator: NnOperator) -> nn.Module:
         pass
@@ -85,6 +95,17 @@ class OperatorCollector():
     @staticmethod
     def run(feature_extractor: BaseFeatureExtractor, plans: list[dict]) -> list[NnOperator]:
         collector = OperatorCollector(feature_extractor)
+        output = collector.__collect_unique_operators(plans)
+
+        print(f'\nFound {len(output)} unique operator type/children combinations:')
+        for op in output:
+            print(f'  - {op.type} (children: {op.num_children}, feature_dim: {op.feature_dim})')
+
+        return output
+
+    @staticmethod
+    def run_quiet(feature_extractor: BaseFeatureExtractor, plans: list[dict]) -> list[NnOperator]:
+        collector = OperatorCollector(feature_extractor)
         return collector.__collect_unique_operators(plans)
 
     def __collect_unique_operators(self, plans: list[dict]) -> list[NnOperator]:
@@ -97,13 +118,11 @@ class OperatorCollector():
         # Sort pairs for consistent ordering.
         sorted_pairs = sorted(list(operator_pairs))
 
-        print(f'\nFound {len(sorted_pairs)} unique operator type/children combinations:')
         operators = list[NnOperator]()
 
         for op_type, num_children in sorted_pairs:
             feature_dim = self.feature_extractor.get_feature_dim(op_type)
             operators.append(NnOperator(op_type, num_children, feature_dim))
-            print(f'  - {op_type} (children: {num_children}, feature_dim: {feature_dim})')
 
         return operators
 

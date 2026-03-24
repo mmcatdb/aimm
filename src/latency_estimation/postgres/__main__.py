@@ -3,11 +3,11 @@ import argparse
 import json
 from common.utils import JsonEncoder, auto_close, exit_with_error, print_warning
 from common.query_registry import QueryDef
-from latency_estimation.common import format_latency, load_queries, parse_queries, truncate_query
+from latency_estimation.common import format_latency, load_queries, parse_queries, truncate_query, prune_dataset
 from latency_estimation.config import TrainConfig, TestConfig
 from latency_estimation.postgres.context import PostgresContext
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
-from latency_estimation.postgres.trainer import PlanStructuredTrainer
+from latency_estimation.postgres.trainer import Trainer
 from latency_estimation.postgres.latency_estimator import LatencyEstimator
 from latency_estimation.postgres.model_evaluator import ModelEvaluator
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
@@ -57,71 +57,17 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     model.print_summary()
     ctx.save_available_operators(model)
 
+    val_dataset = prune_dataset(bundle.val, model)
+    print(f'Validation set (pruned): {len(val_dataset)} queries')
+
     if config.dry_run:
         print('\nDry run completed. Exiting before training.')
         return
 
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
-    trainer = PlanStructuredTrainer(model, config.learning_rate, config.batch_size)
+    trainer = Trainer(model, config.learning_rate, config.batch_size)
 
-    best_val_mae = float('inf')
-
-    for epoch in range(config.num_epochs):
-        loss = trainer.train_epoch(bundle.train)
-
-        if (epoch + 1) % 5 == 0:
-            print(f'\nEpoch {epoch + 1}/{config.num_epochs}')
-            print(f'  Training Loss: {loss:.4f}')
-
-            # Evaluate on validation set
-            metrics = trainer.evaluate(bundle.val)
-            print(f'  Validation MAE: {metrics["mae"]:.2f} ms')
-            print(f'  Validation Relative Error: {metrics["mre"]:.4f}')
-            print(f'  Validation R ≤ 1.5: {metrics["le1.5_q_error"] * 100:.1f}%')
-            print(f'  Validation R ≤ 2.0: {metrics["le2.0_q_error"] * 100:.1f}%')
-
-            # Track and save best model
-            if metrics['mae'] < best_val_mae:
-                best_val_mae = metrics['mae']
-                ctx.save_checkpoint('best', model, trainer, metrics)
-                print(f'  ✓ New best model!')
-
-    # Step 7: Final evaluation
-    print('\n[7/7] Final Evaluation...')
-    print('\n' + '=' * 80)
-
-    print('TRAINING SET PERFORMANCE')
-    print('=' * 80)
-
-    train_metrics = trainer.evaluate(bundle.train)
-    for metric, value in train_metrics.items():
-        if 'error' in metric or 'mae' in metric:
-            print(f'  {metric}: {value:.2f}')
-        else:
-            print(f'  {metric}: {value:.4f}')
-
-    print('\n' + '=' * 80)
-    print('VALIDATION SET PERFORMANCE')
-    print('=' * 80)
-    val_metrics = trainer.evaluate(bundle.val)
-    for metric, value in val_metrics.items():
-        if 'error' in metric or 'mae' in metric:
-            print(f'  {metric}: {value:.2f}')
-        else:
-            print(f'  {metric}: {value:.4f}')
-
-    print('\n' + '=' * 80)
-    print('Saving model...')
-    print('=' * 80)
-
-    ctx.save_checkpoint('final', model, trainer, val_metrics)
-
-    print('\n' + '=' * 80)
-    print('Training complete!')
-    print('=' * 80)
-    print(f'\nFinal Validation MAE: {val_metrics["mae"]:.2f} ms')
-    print(f'Final Validation Relative Error: {val_metrics["mre"]:.4f}')
-    print(f'Estimations within factor of 1.5: {val_metrics["le1.5_q_error"] * 100:.1f}%')
+    trainer.train_epochs(bundle.train, val_dataset, config.num_epochs, lambda name, metrics: ctx.save_checkpoint(name, model, trainer, metrics))
 
 def test_args(parser: argparse.ArgumentParser):
     TestConfig.postgres().add_arguments(parser)

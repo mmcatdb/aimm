@@ -5,10 +5,10 @@ from datasets.databases import TRAIN_DATASET
 from latency_estimation.context import BaseContext
 from latency_estimation.common import DatasetBundle, load_checkpoint_file, load_or_create_dataset, save_checkpoint_file
 from latency_estimation.config import TrainConfig
+from latency_estimation.trainer import TrainerMetrics
 from latency_estimation.neo4j.plan_extractor import PlanExtractor
-from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
-from latency_estimation.neo4j.trainer import PlanStructuredTrainer
+from latency_estimation.neo4j.trainer import Trainer
 
 class Neo4jContext(BaseContext):
     def __init__(self, config: Config, quiet: bool):
@@ -59,11 +59,11 @@ class Neo4jContext(BaseContext):
         if not self.quiet:
             print('Model loaded successfully!\n')
             model.print_summary()
-            PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
+            Trainer.print_metrics(checkpoint['metrics'])
 
         return model
 
-    def save_checkpoint(self, suffix: str, model: PlanStructuredNetwork, trainer: PlanStructuredTrainer, metrics: dict[str, float]) -> None:
+    def save_checkpoint(self, suffix: str, model: PlanStructuredNetwork, trainer: Trainer, metrics: TrainerMetrics) -> None:
         path = self._checkpoint_path(suffix)
 
         save_checkpoint_file(path, {
@@ -78,17 +78,17 @@ class Neo4jContext(BaseContext):
         if not self.quiet:
             print(f'Model saved to {path}')
 
-    def load_checkpoint(self, path: str, learning_rate: float, batch_size: int) -> tuple[PlanStructuredNetwork, PlanStructuredTrainer]:
+    def load_checkpoint(self, path: str, learning_rate: float, batch_size: int) -> tuple[PlanStructuredNetwork, Trainer]:
         if not self.quiet:
             print('Loading trained model and trainer...')
 
         checkpoint = load_checkpoint_file(path, self.config.device)
         model = PlanStructuredNetwork.from_checkpoint(checkpoint['model'], self.config.device)
-        trainer = PlanStructuredTrainer.load_from_checkpoint(model, checkpoint['trainer'], learning_rate, batch_size)
+        trainer = Trainer.load_from_checkpoint(model, checkpoint['trainer'], learning_rate, batch_size)
 
         if not self.quiet:
             print('Model and trainer loaded successfully!\n')
             model.print_summary()
-            PlanStructuredTrainer.print_metrics(checkpoint['metrics'])
+            Trainer.print_metrics(checkpoint['metrics'])
 
         return model, trainer
