@@ -1,7 +1,6 @@
 from typing_extensions import override
 from common.loaders.mongo_loader import MongoLoader, MongoPostgresBuilder, IndexSchema
-from datasets.edbt.postgres_loader import EdbtPostgresLoader
-
+from datasets.edbt.postgres_loader import get_postgres_edbt_schemas
 
 class EdbtMongoLoader(MongoLoader):
     @override
@@ -15,7 +14,7 @@ class EdbtMongoLoader(MongoLoader):
 
     @override
     def _get_schemas(self):
-        b = MongoPostgresBuilder.create(EdbtPostgresLoader(None)._get_schemas())
+        b = MongoPostgresBuilder.create(get_postgres_edbt_schemas())
 
         person = b.document('person', {
             'person_id': 'person_id',

@@ -162,7 +162,7 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             WHERE pr.product_id IN [{self._param_product_ids(5, 20)}]
               AND pr.is_active = true
             MATCH (s:Seller)-[:OFFERS]->(pr)
-            OPTIONAL MATCH (:Person)-[r:REVIEWED]->(pr)
+            OPTIONAL MATCH (:Customer)-[r:REVIEWED]->(pr)
             WITH pr, s, avg(toFloat(r.rating)) AS avg_rating, count(r) AS review_count
             RETURN
                 pr.product_id AS product_id,
