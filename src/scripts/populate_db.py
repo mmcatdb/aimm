@@ -67,9 +67,8 @@ def populate_mongo(ctx: Context):
     driver = ctx.dbs.get(ctx.database_name, MongoDriver)
     with auto_close(driver):
         if ctx.dataset == DatasetName.EDBT:
-            raise NotImplementedError('MongoDB loading is not implemented yet for EDBT.')
-            # from datasets.edbt.mongo_loader import EdbtMongoLoader
-            # loader = EdbtMongoLoader(driver)
+            from datasets.edbt.mongo_loader import EdbtMongoLoader
+            loader = EdbtMongoLoader(driver)
         elif ctx.dataset == DatasetName.TPCH:
             from datasets.tpch.mongo_loader import TpchMongoLoader
             loader = TpchMongoLoader(driver)
