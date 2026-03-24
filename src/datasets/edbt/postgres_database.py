@@ -48,9 +48,9 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             FROM customer c
             JOIN "order" o ON o.customer_id = c.customer_id
             JOIN order_item oi ON oi.order_id = o.order_id
-                WHERE c.person_id = '{self._param_person_id()}'
-                  AND oi.product_id = '{self._param_product_id()}'
-                  AND o.status IN ('paid', 'shipped')
+            WHERE c.person_id = '{self._param_person_id()}'
+                AND oi.product_id = '{self._param_product_id()}'
+                AND o.status IN ('paid', 'shipped')
         '''
 
     # OLAP focused (Postgres)
@@ -66,8 +66,8 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
             WHERE p.seller_id = '{self._param_seller_id()}'
-              AND o.ordered_at >= now() - INTERVAL '30 days'
-              AND o.status IN ('paid', 'shipped')
+                AND o.ordered_at >= now() - INTERVAL '30 days'
+                AND o.status IN ('paid', 'shipped')
             GROUP BY 1
             ORDER BY 1
         '''
@@ -85,8 +85,8 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             JOIN order_item oi ON oi.product_id = hc.product_id
             JOIN "order" o ON o.order_id = oi.order_id
             WHERE hc.category_id = '{self._param_category_id()}'
-              AND o.ordered_at >= now() - INTERVAL '7 days'
-              AND o.status IN ('paid', 'shipped')
+                AND o.ordered_at >= now() - INTERVAL '7 days'
+                AND o.status IN ('paid', 'shipped')
             GROUP BY oi.product_id
             ORDER BY revenue_cents DESC
             LIMIT 50
@@ -100,7 +100,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                 FROM customer c
                 JOIN "order" o ON o.customer_id = c.customer_id
                 WHERE o.ordered_at >= now() - INTERVAL '90 days'
-                  AND o.status IN ('paid', 'shipped')
+                    AND o.status IN ('paid', 'shipped')
                 GROUP BY c.person_id
             )
             SELECT
@@ -127,14 +127,14 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
             WHERE o.ordered_at >= now() - INTERVAL '24 hours'
-              AND o.status IN ('paid', 'shipped')
+                AND o.status IN ('paid', 'shipped')
             GROUP BY c.person_id
             HAVING COUNT(DISTINCT p.seller_id) >= 10
             ORDER BY distinct_sellers DESC
             LIMIT 200
         '''
 
-    # This is designed to be heavy if you do it wrong, but fast if you limit scope. Good for optimizer tests.
+    # This is designed to be heavy if we do it wrong, but fast if we limit scope. Good for optimizer tests.
     # Input: a temp table hot_products(product_id) with maybe top 1% products.
     # Output: co-buy counts for pairs, last 7 days, only when at least one side is hot.
     # 'Q11',
@@ -226,7 +226,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                 GROUP BY r.product_id
             ) tr ON tr.product_id = p.product_id
             WHERE p.product_id = '{product_id}'
-              AND p.is_active = TRUE
+                AND p.is_active = TRUE
         '''
 
     @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
@@ -259,7 +259,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                 GROUP BY r.product_id
             ) rs ON rs.product_id = p.product_id
             WHERE p.product_id IN ({product_ids})
-              AND p.is_active = TRUE
+                AND p.is_active = TRUE
             LIMIT 200
         '''
 
@@ -276,13 +276,13 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             FROM follows f1
             JOIN follows f2 ON f1.from_id = f2.to_id
             WHERE f1.to_id = '{person_id}'
-              AND f2.from_id <> '{person_id}'
-              AND NOT EXISTS (
-                SELECT 1
-                FROM follows direct
-                WHERE direct.to_id = '{person_id}'
-                  AND direct.from_id = f2.from_id
-            )
+                AND f2.from_id <> '{person_id}'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM follows direct
+                    WHERE direct.to_id = '{person_id}'
+                        AND direct.from_id = f2.from_id
+                )
             GROUP BY f2.from_id
             ORDER BY paths DESC
             LIMIT 50
@@ -300,14 +300,14 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             JOIN order_item oi2 ON oi1.order_id = oi2.order_id
             JOIN "order" o ON o.order_id = oi1.order_id
             WHERE oi1.product_id = '{product_id}'
-              AND oi2.product_id <> '{product_id}'
-              AND o.status IN ('paid', 'shipped')
+                AND oi2.product_id <> '{product_id}'
+                AND o.status IN ('paid', 'shipped')
             GROUP BY oi2.product_id
             ORDER BY co_buy DESC
             LIMIT 20
         '''
 
-    @query('test', 1.0, 'Personalized feed candidates (User -> Person)')
+    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
     def _personalized_feed_candidates(self):
         return f'''
             SELECT
@@ -317,7 +317,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             JOIN has_category hc ON hc.category_id = hi.category_id
             JOIN product p ON p.product_id = hc.product_id
             WHERE hi.person_id = '{self._param_person_id()}'
-              AND p.is_active = TRUE
+                AND p.is_active = TRUE
             GROUP BY hc.product_id
             ORDER BY interest_score DESC
             LIMIT 200

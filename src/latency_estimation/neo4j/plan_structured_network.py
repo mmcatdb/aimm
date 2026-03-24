@@ -46,7 +46,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             num_children=operator.num_children,
             data_vec_dim=self.config.data_vec_dim,
             hidden_dim=self.config.hidden_dim,
-            num_layers=self.config.num_layers,
+            hidden_num=self.config.hidden_num,
             is_root=is_root_op,
         )
 
@@ -162,18 +162,20 @@ class NeuralUnit(nn.Module):
     For Neo4j, internal units output only data vectors.
     Only the root unit (ProduceResults) outputs latency estimation.
     """
-    def __init__(self, input_dim: int, hidden_dim: int, data_vec_dim: int, num_layers: int, is_root: bool = False):
+    def __init__(self, input_dim: int, hidden_dim: int, data_vec_dim: int, hidden_num: int, is_root: bool = False):
         """
         Args:
             input_dim: Size of input feature vector
             hidden_dim: Size of hidden layers
             data_vec_dim: Size of output data vector (default 32)
-            num_layers: Number of hidden layers
+            hidden_num: Number of hidden layers
             is_root: Whether this is the root unit (ProduceResults) that estimates latency
         """
         super().__init__()
 
         self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.hidden_num = hidden_num
         self.data_vec_dim = data_vec_dim
         self.is_root = is_root
 
@@ -181,7 +183,7 @@ class NeuralUnit(nn.Module):
         layers = []
         current_dim = input_dim
 
-        for i in range(num_layers):
+        for i in range(hidden_num):
             layers.append(nn.Linear(current_dim, hidden_dim))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(0.2))
@@ -231,7 +233,7 @@ class GenericUnit(NeuralUnit):
             input_dim: Size of operator's feature vector (without children)
             num_children: Number of child operators
             data_vec_dim: Size of data vector output
-            **kwargs: Passed to NeuralUnit (hidden_dim, num_layers, etc.)
+            **kwargs: Passed to NeuralUnit (hidden_dim, hidden_num, etc.)
         """
         # Total input = operator features + (data_vec_dim * num_children)
         total_input_dim = input_dim + (data_vec_dim * num_children)

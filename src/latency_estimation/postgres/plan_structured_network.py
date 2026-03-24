@@ -42,7 +42,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             num_children=operator.num_children,
             data_vec_dim=self.config.data_vec_dim,
             hidden_dim=self.config.hidden_dim,
-            num_layers=self.config.num_layers
+            hidden_num=self.config.hidden_num
         )
 
     def forward(self, plan: dict) -> torch.Tensor:
@@ -133,19 +133,19 @@ class NeuralUnit(nn.Module):
     - Data vector output (d values)
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, data_vec_dim: int):
+    def __init__(self, input_dim: int, hidden_dim: int, hidden_num: int, data_vec_dim: int):
         """
         Args:
             input_dim: Dimension of input features (including children outputs)
             hidden_dim: Number of neurons in each hidden layer
-            num_layers: Number of hidden layers
+            hidden_num: Number of hidden layers
             data_vec_dim: Dimension of output data vector
         """
         super().__init__()
 
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
+        self.hidden_num = hidden_num
         self.data_vec_dim = data_vec_dim
 
         # Build hidden layers
@@ -156,7 +156,7 @@ class NeuralUnit(nn.Module):
         layers.append(nn.ReLU())
 
         # Hidden layers
-        for _ in range(num_layers - 1):
+        for _ in range(hidden_num - 1):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.ReLU())
 
@@ -196,7 +196,7 @@ class GenericUnit(NeuralUnit):
             input_dim: Feature dimension of *this operator only*
             num_children: Number of children this operator has
             data_vec_dim: Dimension of data output vectors
-            **kwargs: Passed to NeuralUnit (hidden_dim, num_layers, etc.)
+            **kwargs: Passed to NeuralUnit (hidden_dim, hidden_num, etc.)
         """
         total_input_dim = input_dim + num_children * (1 + data_vec_dim)
 

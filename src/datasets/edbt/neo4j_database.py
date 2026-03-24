@@ -200,7 +200,7 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             LIMIT 20
         '''
 
-    @query('test', 1.0, 'Personalized feed candidates (User -> Person)')
+    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
     def _personalized_feed_candidates(self):
         return f'''
             MATCH (p:Person {{person_id: {self._param_person_id()}}})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
