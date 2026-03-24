@@ -268,7 +268,7 @@ class CachedCsvTable:
 
     def get_non_unique(self, columns: CsvJoin, key: CsvIndexKey) -> list[CsvRow]:
         """Not very safe ... make sure you have defined the index uniqueness correctly ..."""
-        return self.__indexes[columns][key]
+        return self.__indexes[columns].get(key, [])
 
 def get_index_key_for_row(columns: CsvJoin, row: CsvRow) -> CsvIndexKey:
     return tuple(row[i] for i in columns)
