@@ -5,11 +5,13 @@ class ModelConfig:
     """Parameters that don't change during training or evaluation."""
     def __init__(self,
         hidden_dim: int = 128,
-        num_layers: int = 5,
+        hidden_num: int = 5,
         data_vec_dim: int = 32,
     ):
         self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
+        """Number of neurons in each hidden layer of the neural units. In the original paper, 128 seemed to be the optimum."""
+        self.hidden_num = hidden_num
+        """Number of hidden layers in each neural unit (per operator type). In the original paper, 5 seemd to be the optimum."""
         self.data_vec_dim = data_vec_dim
 
 class TrainConfig:
@@ -45,7 +47,7 @@ class TrainConfig:
             num_queries=1200,
             num_epochs=250,
             model=ModelConfig(
-                num_layers=3,
+                hidden_num=3,
             )
         )
 
@@ -63,7 +65,7 @@ class TrainConfig:
         parser.add_argument('--num-epochs',    type=int,   default=self.num_epochs,         help='Number of training epochs.')
         parser.add_argument('--learning-rate', type=float, default=self.learning_rate,      help='Learning rate for optimizer.')
         parser.add_argument('--hidden-dim',    type=int,   default=self.model.hidden_dim,   help='Hidden dimension size.')
-        parser.add_argument('--num-layers',    type=int,   default=self.model.num_layers,   help='Number of hidden layers per neural unit.')
+        parser.add_argument('--hidden-num', type=int,   default=self.model.hidden_num,   help='Number of hidden layers per neural unit.')
         parser.add_argument('--data-vec-dim',  type=int,   default=self.model.data_vec_dim, help='Data vector dimension size.')
         parser.add_argument('--dry-run',       action=BooleanOptionalAction, default=self.dry_run, help='Only print statistics about the dataset.')
 
@@ -79,7 +81,7 @@ class TrainConfig:
             dry_run=args.dry_run,
             model=ModelConfig(
                 hidden_dim=args.hidden_dim,
-                num_layers=args.num_layers,
+                hidden_num=args.hidden_num,
                 data_vec_dim=args.data_vec_dim,
             ),
         )
@@ -93,7 +95,7 @@ class TrainConfig:
             f'num_epochs = {self.num_epochs},\n'
             f'learning_rate = {self.learning_rate},\n'
             f'hidden_dim = {self.model.hidden_dim},\n'
-            f'num_layers = {self.model.num_layers},\n'
+            f'hidden_num = {self.model.hidden_num},\n'
             f'data_vec_dim = {self.model.data_vec_dim},\n'
             f'dry_run = {self.dry_run},'
         )

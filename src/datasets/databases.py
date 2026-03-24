@@ -19,6 +19,9 @@ def find_database_uncached(dataset: DatasetName, type: DriverType) -> Database:
         if type == DriverType.POSTGRES:
             from datasets.edbt.postgres_database import EdbtPostgresDatabase
             return EdbtPostgresDatabase()
+        if type == DriverType.MONGO:
+            from datasets.edbt.mongo_database import EdbtMongoDatabase
+            return EdbtMongoDatabase()
         if type == DriverType.NEO4J:
             from datasets.edbt.neo4j_database import EdbtNeo4jDatabase
             return EdbtNeo4jDatabase()
