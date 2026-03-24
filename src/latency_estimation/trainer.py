@@ -46,8 +46,8 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
             loss = self.train_epoch(train_dataset, epoch_prefix)
 
             if (epoch_number) % self.__epoch_period == 0:
-                print(f'\r{epoch_prefix}')
-                print(f'  Training Loss: {loss:.4f}')
+                print(f'\r{epoch_prefix}{CLEAR_TEXT_LINE}')
+                print(f'  Loss: {loss:.4f}')
 
                 # Evaluate on validation set
                 metrics = self.evaluate(val_dataset)
