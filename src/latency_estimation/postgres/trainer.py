@@ -14,7 +14,6 @@ class Trainer(BaseTrainer[PostgresItem]):
 
     def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int):
         super().__init__(
-            epoch_period=5,
             main_metric='mae',
             train_metrics=['mae', 'mre', 'r_within_1.5', 'r_within_2.0'],
             batch_size=batch_size,
@@ -141,13 +140,12 @@ class Trainer(BaseTrainer[PostgresItem]):
 
             # Compute squared errors for all nodes
             for node_id, output_tensor in all_outputs.items():
-                predicted_latency = output_tensor[0, 0] # Get latency (first element)
+                predicted = output_tensor[0, 0] # Get latency (first element)
 
-                actual_latency = FeatureExtractor.extract_node_latency(item.plan)
-                # TODO is the device needed?
-                actual_latency_tensor = torch.tensor(actual_latency, dtype=predicted_latency.dtype, device=predicted_latency.device)
+                actual = FeatureExtractor.extract_node_latency(item.plan)
+                actual_tensor = torch.tensor(actual, dtype=predicted.dtype, device=predicted.device)
 
-                squared_error = (predicted_latency - actual_latency_tensor) ** 2
+                squared_error = (predicted - actual_tensor) ** 2
                 total_squared_error += squared_error
                 total_nodes += 1
 
@@ -156,9 +154,9 @@ class Trainer(BaseTrainer[PostgresItem]):
             mse = cast(torch.Tensor, total_squared_error) / total_nodes
             # return torch.sqrt(mse)
             return torch.sqrt(mse + EPSILON)
-        else:
-            # Return a 0.0 tensor that still requires gradients
-            return torch.tensor(0.0, requires_grad=True)
+
+        # Return a 0.0 tensor that still requires gradients
+        return torch.tensor(0.0, requires_grad=True)
 
 def group_plans_by_structure(batch: list[PostgresItem]) -> dict[str, list[int]]:
     """

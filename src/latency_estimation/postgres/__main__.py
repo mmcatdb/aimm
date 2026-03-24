@@ -53,7 +53,7 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     print(f'Validation set: {len(bundle.val)} queries')
 
     print('\n[5/7] Creating plan-structured neural network...')
-    model = PlanStructuredNetwork.from_plans(config.model, feature_extractor, [item.plan for item in bundle.train])
+    model = PlanStructuredNetwork.from_plans(config.model, ctx.config.device, feature_extractor, [item.plan for item in bundle.train])
     model.print_summary()
     ctx.save_available_operators(model)
 
