@@ -21,9 +21,11 @@ def main(rawArgs: list[str] | None = None):
     test_args(subparsers.add_parser('test', help='Test a trained QPP-Net model'))
     # estimate_args(subparsers.add_parser('estimate', help='Estimate query latency using a trained QPP-Net model'))
 
+    from common.config import DatasetName
     args = parser.parse_args(rawArgs)
 
-    ctx = MongoContext.create()
+    dataset = DatasetName.TPCH if args.command == 'train' else DatasetName.EDBT
+    ctx = MongoContext.create(dataset=dataset)
 
     with auto_close(ctx):
         if args.command == 'train':
