@@ -109,32 +109,30 @@ class TpchMongoDatabase(TpchDatabase[MongoQuery]):
         ])
 
     #endregion
-    #region $lookup
+    #region Embedded
 
-    @query('lookup', 0.5, 'orders lookup customer')
-    def _orders_lookup_customer(self):
-        return MongoAggregateQuery('orders', [
-            {'$match': {'o_totalprice': {'$gt': self._param_int('price', 100000, 400000)}}},
-            {'$limit': self._param_limit()},
-            {'$lookup': {
-                'from': 'customer',
-                'localField': 'o_custkey',
-                'foreignField': 'c_custkey',
-                'as': 'customer',
-            }},
-        ])
+    @query('embedded', 1.0, 'orders with embedded lineitems shipdate filter')
+    def _orders_embedded_shipdate(self):
+        return MongoFindQuery('orders',
+            filter={'lineitems.l_shipdate': {'$gte': self._param_date()}},
+            projection={'o_orderkey': 1, 'o_custkey': 1, 'lineitems': {'$slice': 5}, '_id': 0},
+            limit=self._param_limit(),
+        )
 
-    @query('lookup', 0.5, 'part lookup partsupp')
-    def _part_lookup_partsupp(self):
-        return MongoAggregateQuery('part', [
-            {'$match': {'p_partkey': {'$in': self._param_partkeys(5, 20)}}},
-            {'$lookup': {
-                'from': 'partsupp',
-                'localField': 'p_partkey',
-                'foreignField': 'ps_partkey',
-                'as': 'suppliers',
-            }},
-        ])
+    @query('embedded', 1.0, 'part with embedded partsupp cost filter')
+    def _part_embedded_partsupp_cost(self):
+        return MongoFindQuery('part',
+            filter={
+                'partsupps': {
+                    '$elemMatch': {
+                        'ps_supplycost': {'$lt': self._param_float('cost', 10, 500)},
+                        'ps_availqty': {'$gt': self._param_int('quantity', 100, 9000)},
+                    }
+                }
+            },
+            projection={'p_partkey': 1, 'p_name': 1, 'partsupps': {'$slice': 5}, '_id': 0},
+            limit=self._param_limit(),
+        )
 
     #endregion
     #region Customer
@@ -392,30 +390,33 @@ class TpchMongoDatabase(TpchDatabase[MongoQuery]):
             {'$sort': {'count': -1}},
         ])
 
-    @query('lookup', 1.0, 'Orders lookup customer price filter')
-    def _orders_lookup_customer_price(self):
+    @query('embedded', 1.0, 'orders unwind embedded lineitems and group by shipmode')
+    def _orders_embedded_group_shipmode(self):
         return MongoAggregateQuery('orders', [
-            {'$match': {'o_totalprice': {'$gt': self._param_int('price_threshold', 200000, 400000)}}},
-            {'$limit': 10},
-            {'$lookup': {
-                'from': 'customer',
-                'localField': 'o_custkey',
-                'foreignField': 'c_custkey',
-                'as': 'customer'
+            {'$match': {'o_orderdate': {'$gte': self._param_date(1996, 1998)}}},
+            {'$unwind': '$lineitems'},
+            {'$group': {
+                '_id': '$lineitems.l_shipmode',
+                'count': {'$sum': 1},
+                'sum_price': {'$sum': '$lineitems.l_extendedprice'},
+                'avg_discount': {'$avg': '$lineitems.l_discount'},
             }},
+            {'$sort': {'sum_price': -1}},
         ])
 
-    @query('lookup', 1.0, 'Part lookup partsupp size filter')
-    def _part_lookup_partsupp_size(self):
+    @query('embedded', 1.0, 'part unwind embedded partsupp and group by supplier')
+    def _part_embedded_group_supplier(self):
         return MongoAggregateQuery('part', [
-            {'$match': {'p_size': {'$gt': self._param_int('size_threshold', 10, 50)}}},
-            {'$limit': 20},
-            {'$lookup': {
-                'from': 'partsupp',
-                'localField': 'p_partkey',
-                'foreignField': 'ps_partkey',
-                'as': 'suppliers'
+            {'$match': {'p_size': {'$gte': self._param_int('size_low', 1, 40)}}},
+            {'$unwind': '$partsupps'},
+            {'$group': {
+                '_id': '$partsupps.ps_suppkey',
+                'part_count': {'$sum': 1},
+                'avg_supplycost': {'$avg': '$partsupps.ps_supplycost'},
+                'total_availqty': {'$sum': '$partsupps.ps_availqty'},
             }},
+            {'$sort': {'part_count': -1}},
+            {'$limit': 30},
         ])
 
     #endregion
@@ -882,124 +883,106 @@ class TpchMongoDatabase(TpchDatabase[MongoQuery]):
         ])
 
     #endregion
-    #region $lookup
+    #region Embedded analytics
 
-    @query('lookup', 1.0, 'Supplier lookup nation balance > 5000')
-    def _supplier_lookup_nation(self):
-        return MongoAggregateQuery('supplier', [
-            {'$match': {'s_acctbal': {'$gt': 5000}}},
-            {'$lookup': {
-                'from': 'nation',
-                'localField': 's_nationkey',
-                'foreignField': 'n_nationkey',
-                'as': 'nation_info'
-            }},
-        ])
-
-    @query('lookup', 1.0, 'Customer -> nation -> region chain (5 stages)')
-    def _customer_lookup_nation_region(self):
+    @query('embedded', 1.0, 'customer grouped by embedded nation and region')
+    def _customer_group_embedded_geography(self):
         return MongoAggregateQuery('customer', [
-            {'$match': {'c_acctbal': {'$gt': 9000}}},
+            {'$match': {'c_acctbal': {'$gt': 0}}},
+            {'$group': {
+                '_id': {
+                    'region': '$nation.region.r_name',
+                    'nation': '$nation.n_name',
+                },
+                'count': {'$sum': 1},
+                'avg_balance': {'$avg': '$c_acctbal'},
+            }},
+            {'$sort': {'avg_balance': -1}},
             {'$limit': 50},
-            {'$lookup': {
-                'from': 'nation',
-                'localField': 'c_nationkey',
-                'foreignField': 'n_nationkey',
-                'as': 'nation'
-            }},
-            {'$unwind': '$nation'},
-            {'$lookup': {
-                'from': 'region',
-                'localField': 'nation.n_regionkey',
-                'foreignField': 'r_regionkey',
-                'as': 'region'
-            }},
         ])
 
-    @query('lookup', 1.0, 'Lineitem -> orders lookup recent shipments (largest collection as driving table)')
-    def _lineitem_lookup_orders(self):
-        return MongoAggregateQuery('lineitem', [
-            {'$match': {
-                'l_shipdate': {'$gte': self._param_date(1998, 1998)},
-                'l_returnflag': 'N'
-            }},
-            {'$limit': 50},
-            {'$lookup': {
-                'from': 'orders',
-                'localField': 'l_orderkey',
-                'foreignField': 'o_orderkey',
-                'as': 'order_info'
-            }},
-        ])
+    @query('embedded', 1.0, 'supplier embedded geography filter and sort by balance')
+    def _supplier_embedded_geography_balance(self):
+        return MongoFindQuery('supplier',
+            filter={
+                'nation.region.r_name': self._param_choice('region', ['AFRICA', 'AMERICA', 'ASIA', 'EUROPE', 'MIDDLE EAST']),
+                's_acctbal': {'$gt': self._param_int('balance', -1000, 10000)},
+            },
+            sort={'s_acctbal': -1},
+            limit=self._param_limit(),
+        )
 
-    @query('lookup', 1.0, 'Nation -> region lookup + unwind (tiny -> tiny, very different cost profile)')
-    def _nation_lookup_region(self):
-        return MongoAggregateQuery('nation', [
-            {'$lookup': {
-                'from': 'region',
-                'localField': 'n_regionkey',
-                'foreignField': 'r_regionkey',
-                'as': 'region'
-            }},
-            {'$unwind': '$region'},
-        ])
+    @query('embedded', 1.0, 'orders embedded lineitems with elemMatch on mode, qty, and date')
+    def _orders_embedded_elem_match(self):
+        return MongoFindQuery('orders',
+            filter={
+                'lineitems': {
+                    '$elemMatch': {
+                        'l_shipmode': self._param_choice('shipmode', ['AIR', 'RAIL', 'SHIP', 'TRUCK', 'MAIL', 'FOB']),
+                        'l_quantity': {'$gt': self._param_int('quantity', 1, 50)},
+                        'l_shipdate': {'$gte': self._param_date(1996, 1998)},
+                    }
+                }
+            },
+            projection={'o_orderkey': 1, 'o_orderdate': 1, '_id': 0},
+            limit=self._param_limit(),
+        )
 
-    @query('lookup', 1.0, 'Orders -> customer lookup + unwind + group (6 stages)')
-    def _orders_lookup_customer_group(self):
+    @query('embedded', 1.0, 'orders embedded lineitems revenue projection and group by order priority')
+    def _orders_embedded_revenue_by_priority(self):
         return MongoAggregateQuery('orders', [
-            {'$match': {'o_orderdate': {'$gte': self._param_date(1997, 1997)}}},
-            {'$limit': 100},
-            {'$lookup': {
-                'from': 'customer',
-                'localField': 'o_custkey',
-                'foreignField': 'c_custkey',
-                'as': 'cust'
+            {'$match': {'o_orderdate': {'$gte': self._param_date(1996, 1998)}}},
+            {'$project': {
+                'o_orderpriority': 1,
+                'line_revenue': {
+                    '$sum': {
+                        '$map': {
+                            'input': '$lineitems',
+                            'as': 'li',
+                            'in': {
+                                '$multiply': ['$$li.l_extendedprice', {'$subtract': [1, '$$li.l_discount']}]
+                            }
+                        }
+                    }
+                }
             }},
-            {'$unwind': '$cust'},
             {'$group': {
-                '_id': '$cust.c_mktsegment',
-                'order_count': {'$sum': 1},
-                'avg_price': {'$avg': '$o_totalprice'},
+                '_id': '$o_orderpriority',
+                'orders': {'$sum': 1},
+                'total_revenue': {'$sum': '$line_revenue'},
+                'avg_revenue': {'$avg': '$line_revenue'},
             }},
-            {'$sort': {'order_count': -1}},
+            {'$sort': {'total_revenue': -1}},
         ])
 
-    #endregion
-    #region I - $unwind-heavy pipelines
-
-    @query('lookup', 1.0, 'Part BRASS size = 15 lookup + unwind + sort (TPC-H Q2 style)')
-    def _part_lookup_partsupp_unwind(self):
+    @query('embedded', 1.0, 'part embedded partsupp unwind then cheapest per part')
+    def _part_embedded_cheapest_supplier_per_part(self):
         return MongoAggregateQuery('part', [
-            {'$match': {'p_size': 15, 'p_type': {'$regex': 'BRASS$'}}},
-            {'$lookup': {
-                'from': 'partsupp',
-                'localField': 'p_partkey',
-                'foreignField': 'ps_partkey', 'as': 'ps'
+            {'$match': {'p_size': {'$gte': self._param_int('size_threshold', 1, 40)}}},
+            {'$unwind': '$partsupps'},
+            {'$sort': {'partsupps.ps_supplycost': 1}},
+            {'$group': {
+                '_id': '$p_partkey',
+                'part_name': {'$first': '$p_name'},
+                'min_supplycost': {'$first': '$partsupps.ps_supplycost'},
+                'supplier_key': {'$first': '$partsupps.ps_suppkey'},
             }},
-            {'$unwind': '$ps'},
-            {'$sort': {'ps.ps_supplycost': 1}},
-            {'$limit': 20},
+            {'$limit': 100},
         ])
 
-    @query('lookup', 1.0, 'Customer AUTOMOBILE -> orders unwind + group (7 stages)')
-    def _customer_lookup_orders(self):
+    @query('embedded', 1.0, 'customer embedded region filter with segment grouping')
+    def _customer_embedded_region_segment_group(self):
         return MongoAggregateQuery('customer', [
-            {'$match': {'c_mktsegment': 'AUTOMOBILE'}},
-            {'$limit': 20},
-            {'$lookup': {
-                'from': 'orders',
-                'localField': 'c_custkey',
-                'foreignField': 'o_custkey',
-                'as': 'orders'
+            {'$match': {
+                'nation.region.r_name': self._param_choice('region', ['AFRICA', 'AMERICA', 'ASIA', 'EUROPE', 'MIDDLE EAST']),
+                'c_acctbal': {'$gt': self._param_int('balance', -1000, 9000)},
             }},
-            {'$unwind': '$orders'},
             {'$group': {
-                '_id': '$c_custkey',
-                'num_orders': {'$sum': 1},
-                'total_spent': {'$sum': '$orders.o_totalprice'},
+                '_id': '$c_mktsegment',
+                'customer_count': {'$sum': 1},
+                'avg_balance': {'$avg': '$c_acctbal'},
             }},
-            {'$sort': {'total_spent': -1}},
-            {'$limit': 10},
+            {'$sort': {'customer_count': -1}},
         ])
 
     #endregion
