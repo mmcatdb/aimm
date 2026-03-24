@@ -14,7 +14,6 @@ class Trainer(BaseTrainer[MongoItem]):
 
     def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int, total_epochs: int, warmup_epochs: int):
         super().__init__(
-            epoch_period=5,
             main_metric='geo_mean_q', # Use geometric mean Q-error as primary criterion (more robust than MAE)
             train_metrics=['mae', 'median_q', 'r_within_2.0', 'geo_mean_q'],
             batch_size=batch_size,
@@ -62,12 +61,12 @@ class Trainer(BaseTrainer[MongoItem]):
                 actual_ms = item.execution_time
 
                 try:
-                    predicted_ms = self.__model(plan, collection_name).item()
+                    predicted = self.__model(plan, collection_name).item()
                 except Exception as e:
                     print_warning(f'Could not compute model outputs for a query: \n{query}', e)
                     continue
 
-                estimations.append(predicted_ms)
+                estimations.append(predicted)
                 actuals.append(actual_ms)
 
         if not estimations:
@@ -130,19 +129,17 @@ class Trainer(BaseTrainer[MongoItem]):
 
         for item in batch:
             query: MongoQuery = item.query
-            collection_name = query.collection
-            plan = item.plan
-            actual_ms = item.execution_time
+            actual = item.execution_time
 
             try:
-                predicted_ms = self.__model(plan, collection_name)
+                predicted = self.__model(item.plan, query.collection)
             except Exception as e:
                 print_warning(f'Could not compute model outputs for a query: \n{query}', e)
                 continue
 
-            log_pred = torch.log(predicted_ms + EPSILON)
-            log_actual = torch.log(torch.tensor(actual_ms + EPSILON, dtype=log_pred.dtype, device=log_pred.device))
-            loss = (log_pred - log_actual) ** 2
+            predicted_log = torch.log(predicted + EPSILON)
+            actual_log = torch.log(torch.tensor(actual + EPSILON, dtype=predicted_log.dtype, device=predicted_log.device))
+            loss = (predicted_log - actual_log) ** 2
             losses.append(loss)
 
         if losses:

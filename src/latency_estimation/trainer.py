@@ -3,7 +3,7 @@ from collections.abc import Callable
 from typing import Generic
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-from common.utils import BOLD_TEXT, RESET_BOLD_TEXT, CLEAR_TEXT_LINE
+from common.utils import INFO_TEXT, BOLD_TEXT, RESET_TEXT, CLEAR_TEXT_LINE
 from latency_estimation.common import TDatasetItem, print_warning
 
 TrainerMetrics = dict[str, float]
@@ -14,14 +14,18 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
     Implements optimized training with batching and caching.
     """
 
-    def __init__(self, epoch_period: int, main_metric: str, train_metrics: list[str], batch_size: int):
-        self.__epoch_period = epoch_period
-        """Number of epochs between evaluations and potential best model updates."""
+    def __init__(self, main_metric: str, train_metrics: list[str], batch_size: int, epoch_period = 5, autosave_period = 25):
         self.__main_metric = main_metric
         """Name of the primary metric used for tracking the best model."""
         self.__train_metrics = train_metrics
         """List of metric names to print during training."""
         self.__batch_size = batch_size
+
+        self.__epoch_period = epoch_period
+        """Number of epochs between evaluations and potential best model updates."""
+        self.__autosave_period = autosave_period
+        """Number of epochs between automatic checkpoint saves. Should be a multiple of epoch_period."""
+
         self._loss_history: list[float] = []
 
     @abstractmethod
@@ -59,7 +63,11 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
                     best_metric = main_metric
                     best_metrics = metrics
                     save_checkpoint('best', metrics)
-                    print(f'  ✓ New best model!')
+                    print(f'  {INFO_TEXT}✓ New best model!{RESET_TEXT}')
+
+                # Autosave because why not
+                if (epoch_number) % self.__autosave_period == 0:
+                    save_checkpoint(f'e{epoch_number:04d}', metrics)
 
                 print()
 
@@ -145,6 +153,6 @@ def print_metric(metrics: TrainerMetrics, name: str, is_main: bool = False):
 
     string = METRIC_FORMATTERS[name](value)
     if is_main:
-        string = BOLD_TEXT + string + RESET_BOLD_TEXT
+        string = BOLD_TEXT + string + RESET_TEXT
 
     print('  ' + string)

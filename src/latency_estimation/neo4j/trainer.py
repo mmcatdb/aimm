@@ -14,7 +14,6 @@ class Trainer(BaseTrainer[Neo4jItem]):
 
     def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int):
         super().__init__(
-            epoch_period=5,
             main_metric='mse',
             train_metrics=['mse', 'rmse', 'mae', 'mean_q', 'median_q'],
             batch_size=batch_size,
@@ -50,7 +49,7 @@ class Trainer(BaseTrainer[Neo4jItem]):
         """
         self.__model.eval()
 
-        estimations = []
+        predictions = []
         actuals = []
 
         with torch.no_grad():
@@ -61,25 +60,25 @@ class Trainer(BaseTrainer[Neo4jItem]):
                     print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
                     continue
 
-                estimations.append(predicted_ms)
+                predictions.append(predicted_ms)
                 actuals.append(item.execution_time)
 
         # Convert to numpy arrays
-        estimations = np.array(estimations)
+        predictions = np.array(predictions)
         actuals = np.array(actuals)
 
         # Mean squared error
-        mse = np.mean((estimations - actuals) ** 2).item()
+        mse = np.mean((predictions - actuals) ** 2).item()
         rmse = np.sqrt(mse)
         # Mean absolute error
-        mae = np.mean(np.abs(estimations - actuals)).item()
+        mae = np.mean(np.abs(predictions - actuals)).item()
         # R-value: max(pred/actual, actual/pred)
         r_values = np.maximum(
-            estimations / (actuals + EPSILON),
-            actuals / (estimations + EPSILON)
+            predictions / (actuals + EPSILON),
+            actuals / (predictions + EPSILON)
         )
         # Mean relative error
-        mre = np.mean(np.abs(estimations - actuals) / (actuals + EPSILON)).item()
+        mre = np.mean(np.abs(predictions - actuals) / (actuals + EPSILON)).item()
 
         return {
             'mse': mse,
@@ -110,8 +109,8 @@ class Trainer(BaseTrainer[Neo4jItem]):
         Compute MSLE loss for a batch of query plans.
         Loss = (log(estimated + 1) - log(actual + 1))²
         """
-        estimations = []
-        targets = []
+        predictions = []
+        actuals = []
 
         # Group plans by structure for efficiency
         structure_groups = group_plans_by_structure(batch)
@@ -120,28 +119,28 @@ class Trainer(BaseTrainer[Neo4jItem]):
             # Process plans with same structure together
             for index in indexes:
                 item = batch[index]
+                actual = item.execution_time
+
                 try:
                     # TODO tensors vs floats? Why no .item()?
-                    predicted_ms = self.__model(item.plan)
+                    predicted = self.__model(item.plan)
                 except Exception as e:
                     print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
                     continue
 
-                estimations.append(predicted_ms)
-                targets.append(torch.tensor([[item.execution_time]], dtype=torch.float32))
-                # TODO not sure about this ... is the device needed?
-                # targets.append(torch.tensor([[execution_time]], dtype=torch.float32, device=self.device))
+                predictions.append(predicted)
+                actuals.append(torch.tensor([[actual]], dtype=predicted.dtype, device=predicted.device))
 
-        # Stack estimations and targets
-        estimations = torch.cat(estimations, dim=0)
-        targets = torch.cat(targets, dim=0)
+        # Stack predictions and actuals
+        predictions = torch.cat(predictions, dim=0)
+        actuals = torch.cat(actuals, dim=0)
 
         # Apply Log transformation before MSE
-        log_preds = torch.log1p(torch.abs(estimations))
-        log_targets = torch.log1p(targets)
+        predictions_log = torch.log1p(torch.abs(predictions))
+        acutals_log = torch.log1p(actuals)
 
         # Compute MSE on log values -> MSLE
-        return self.criterion(log_preds, log_targets)
+        return self.criterion(predictions_log, acutals_log)
 
 def group_plans_by_structure(batch: list[Neo4jItem]) -> dict[str, list[int]]:
     """

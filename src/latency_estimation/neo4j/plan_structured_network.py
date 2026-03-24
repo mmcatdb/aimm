@@ -11,10 +11,11 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
         super().__init__(config, feature_extractor)
 
     @staticmethod
-    def from_plans(config: ModelConfig, feature_extractor: FeatureExtractor, plans: list[dict]) -> 'PlanStructuredNetwork':
+    def from_plans(config: ModelConfig, device: str, feature_extractor: FeatureExtractor, plans: list[dict]) -> 'PlanStructuredNetwork':
         """Create neural units by analyzing all operator types and their *number of children* in the training plans."""
         model = PlanStructuredNetwork(config, feature_extractor)
         model._define_operators(OperatorCollector.run(feature_extractor, plans))
+        model.set_device(device)
         return model
 
     @staticmethod
@@ -30,9 +31,8 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
         # Load trained weights
         model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(device)
+        model.set_device(device)
         model.eval()
-
         return model
 
     @override
@@ -101,7 +101,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             child_outputs.append(child_output.data)
 
         node_features = self.feature_extractor.extract_features(node)
-        node_features_tensor = torch.tensor(node_features, dtype=torch.float32)
+        node_features_tensor = torch.tensor(node_features, dtype=torch.float32, device=self.device)
 
         operator_type = self.feature_extractor.get_node_type(node)
         num_children = len(child_outputs)
@@ -113,7 +113,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
         current_feature_dim = node_features_tensor.shape[0]
         if current_feature_dim < expected_feature_dim:
-            padding = torch.zeros(expected_feature_dim - current_feature_dim, dtype=node_features_tensor.dtype)
+            padding = torch.zeros(expected_feature_dim - current_feature_dim, dtype=node_features_tensor.dtype, device=self.device)
             node_features_tensor = torch.cat([node_features_tensor, padding])
         elif current_feature_dim > expected_feature_dim:
             node_features_tensor = node_features_tensor[:expected_feature_dim]

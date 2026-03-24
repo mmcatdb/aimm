@@ -23,6 +23,14 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
         """One neural unit for each operator type"""
         self.operators: dict[str, NnOperator] = {}
 
+        self.device = 'cpu'
+        """Default device; will be updated when loading checkpoint or moving model."""
+
+    def set_device(self, device: str):
+        """Set the device for the model and move it there."""
+        self.device = device
+        self.to(device)
+
     def to_checkpoint(self) -> dict:
         """Serialization to a file-friendly dictionary."""
         return {
