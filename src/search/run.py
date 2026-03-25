@@ -10,6 +10,7 @@ from latency_estimation.mongo.context import MongoContext
 from latency_estimation.mongo.latency_estimator import LatencyEstimator as MongoLatencyEstimator
 from common.database import MongoQuery, MongoAggregateQuery, MongoFindQuery, try_parse_mongo_query
 import re
+import sys
 
 
 def extract_neo4j_tables(queries: dict[str, str]) -> dict[str, tuple[str, ...]]:
@@ -168,13 +169,14 @@ def load_mongo_estimator(
     return ctx, estimator
 
 class QueryEngine:
-    def __init__(self, postgres_estimator, neo4j_estimator, postgres_queries, neo4j_queries, mongo_estimator, mongo_queries):
+    def __init__(self, postgres_estimator, neo4j_estimator, postgres_queries, neo4j_queries, mongo_estimator, mongo_queries, query_weights):
         self.postgres_estimator = postgres_estimator
         self.neo4j_estimator = neo4j_estimator
         self.postgres_queries = postgres_queries
         self.neo4j_queries = neo4j_queries
         self.mongo_estimator = mongo_estimator
         self.mongo_queries = mongo_queries
+        self.query_weights = query_weights
 
     def _normalize_database_name(self, database: str) -> str:
         lowered = database.strip().lower()
@@ -215,12 +217,15 @@ class QueryEngine:
 
             if not queries:
                 raise ValueError(f"No queries found for query_id={query_id} in database={database}")
+            
+            weight = self.query_weights[query_id]
 
             for query in queries:
                 latency, _ = estimator.estimate(query)
                 if normalized_database == "neo4j":
                     latency /= 30
-                total_latency += float(latency)
+                
+                total_latency += float(latency) * weight
 
         return total_latency
     
@@ -260,6 +265,10 @@ if __name__ == "__main__":
     from datasets.edbt.postgres_database import EdbtPostgresDatabase
     from datasets.edbt.neo4j_database import EdbtNeo4jDatabase
     from datasets.edbt.mongo_database import EdbtMongoDatabase
+    import ast
+    
+    query_weights_str = "".join(sys.argv[1:])
+    query_weights = ast.literal_eval(query_weights_str)
 
     postgres_ctx, postgres_estimator = load_postgres_estimator("data/checkpoints/edbt_postgres_best.pt")
     neo4j_ctx, neo4j_estimator = load_neo4j_estimator("data/checkpoints/edbt_neo4j_best.pt")
@@ -284,7 +293,7 @@ if __name__ == "__main__":
     mongo_query_map = {query_id: q[0] for query_id, q in mongo_queries.items()}
     query_to_tables_mongo = extract_mongo_tables(mongo_query_map)
     
-    query_engine = QueryEngine(postgres_estimator, neo4j_estimator, postgres_queries, neo4j_queries, mongo_estimator, mongo_queries)
+    query_engine = QueryEngine(postgres_estimator, neo4j_estimator, postgres_queries, neo4j_queries, mongo_estimator, mongo_queries, query_weights)
     schema_converter = SchemaConverter(query_to_tables_postgres, query_to_tables_neo, query_to_tables_mongo)
     
     
