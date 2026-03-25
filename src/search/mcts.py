@@ -4,22 +4,22 @@ import random
 
 class MCTS:
     """
-    Graph-based MCTS for matrix states.
+        Graph-based MCTS for matrix states.
 
     State format used by this implementation:
     - Immutable matrix (tuple of tuples).
-    - Rows = databases, columns = kinds.
+        - Rows = databases, columns = queries.
     - Cell values:
-      - False: kind is not stored in this database.
-      - True: kind is stored directly in this database.
-      - <kind_name>: kind is embedded into <kind_name> in this database.
+            - False: query is not assigned to this database.
+            - True: query is assigned to this database.
     """
 
     def __init__(
         self,
         query_engine,
         kinds,
-        databases=None,
+        schema_converter,
+        databases,
         relation_endpoints=None,
         relationship_kinds=None,
         isa_roots=None,
@@ -34,6 +34,8 @@ class MCTS:
 
         self.query_engine = query_engine
         self.kinds = tuple(kinds)
+        self.query_ids = self.kinds
+        self.schema_converter = schema_converter
 
         if databases is None:
             self.databases = tuple(self.query_engine.available_databases())
@@ -43,7 +45,7 @@ class MCTS:
         if not self.databases:
             raise ValueError("No databases available for MCTS")
         if not self.kinds:
-            raise ValueError("No kinds provided for MCTS")
+            raise ValueError("No queries provided for MCTS")
 
         self.kind_to_index = {kind: index for index, kind in enumerate(self.kinds)}
         self.db_to_index = {db: index for index, db in enumerate(self.databases)}
@@ -63,7 +65,7 @@ class MCTS:
         self.state_to_node = {}
         self.edge_visits = {}
 
-    def run(self, initial_state, iterations=100):
+    def run(self, initial_state, iterations=1000):
         if iterations <= 0:
             raise ValueError("iterations must be > 0")
 
@@ -80,6 +82,9 @@ class MCTS:
         best_mapping = self.state_to_mapping(root_state)
         _, best_time = self.perform_simulation(root_state)
 
+        initial_schema = self.schema_converter.convert_state_to_schema(best_mapping)
+        print("Initial time:", best_time)
+        
         for iteration in range(iterations):
             if self.verbose:
                 print("Iteration", iteration + 1)
@@ -111,6 +116,8 @@ class MCTS:
                 if is_new:
                     reward, exec_time = self.perform_simulation(child.state)
                     if exec_time < best_time:
+                        schema = self.schema_converter.convert_state_to_schema(self.state_to_mapping(child.state))
+                        print([schema, exec_time])
                         best_time = exec_time
                         best_mapping = self.state_to_mapping(child.state)
                 else:
@@ -150,7 +157,7 @@ class MCTS:
         Returns immutable matrix: tuple(tuple(...), ...)
         """
 
-        # Backward-compatible input: (db_for_kind0, db_for_kind1, ...)
+        # Backward-compatible input: (db_for_query0, db_for_query1, ...)
         if self.looks_like_mapping_vector(raw_state):
             return self.mapping_vector_to_state(raw_state)
 
@@ -166,7 +173,7 @@ class MCTS:
             if not isinstance(row, (list, tuple)):
                 raise ValueError("Each matrix row must be list/tuple")
             if len(row) != len(self.kinds):
-                raise ValueError("Matrix column count must match number of kinds")
+                raise ValueError("Matrix column count must match number of queries")
 
             normalized_row = []
             for column_index, cell in enumerate(row):
@@ -192,24 +199,24 @@ class MCTS:
         for _ in self.databases:
             rows.append([False] * len(self.kinds))
 
-        for kind_index, db_name in enumerate(mapping_vector):
+        for query_index, db_name in enumerate(mapping_vector):
             db_index = self.db_to_index[db_name]
-            rows[db_index][kind_index] = True
+            rows[db_index][query_index] = True
 
         return tuple(tuple(row) for row in rows)
     
     def state_to_mapping_vector(self, state):
         mapping_vector = []
-        for kind_index in range(len(self.kinds)):
+        for query_index in range(len(self.kinds)):
             assigned_db = None
             for db_index in range(len(self.databases)):
-                cell = state[db_index][kind_index]
-                if cell is not False:
+                cell = state[db_index][query_index]
+                if cell is True:
                     assigned_db = self.databases[db_index]
                     break
 
             if assigned_db is None:
-                raise ValueError("Invalid state: kind has no assigned database")
+                raise ValueError("Invalid state: query has no assigned database")
             mapping_vector.append(assigned_db)
 
         return tuple(mapping_vector)
@@ -228,15 +235,6 @@ class MCTS:
             if lowered == "true":
                 return True
 
-            # String identifier: must reference a known kind and not itself.
-            kind_name = cell.strip()
-            current_kind = self.kinds[column_index]
-            if kind_name == current_kind:
-                raise ValueError("Embedding target cannot be the same kind")
-            if kind_name not in self.kind_to_index:
-                raise ValueError("Unknown embedding identifier: " + kind_name)
-            return kind_name
-
         raise ValueError("Invalid cell value in matrix state")
 
     def perform_simulation(self, state):
@@ -244,59 +242,58 @@ class MCTS:
         Evaluates the state and returns (reward, execution_time).
 
         Tries multiple integration styles:
-        1) query_engine.estimate_latency(state_matrix)
+        1) query_engine.estimate_latency(state_matrix, mcts)
         2) query_engine.measure_state(state_matrix)
         3) query_engine.measure_queries(mapping)
         """
 
-
-        execution_time = self.query_engine.estimate_latency(state, self)
+        if hasattr(self.query_engine, "estimate_latency"):
+            execution_time = self.query_engine.estimate_latency(state, self)
+        elif hasattr(self.query_engine, "measure_state"):
+            execution_time = self.query_engine.measure_state(state)
+        elif hasattr(self.query_engine, "measure_queries"):
+            execution_time = self.query_engine.measure_queries(self.state_to_mapping(state), verbose=False)
+        else:
+            raise AttributeError("query_engine must provide estimate_latency, measure_state, or measure_queries")
 
         reward = 100.0 / (execution_time + 0.001)
         return reward, execution_time
 
     def state_to_mapping(self, state):
         """
-        Converts matrix state into kind -> database mapping.
-        If a kind has multiple non-false placements (should not happen with default actions),
-        this picks the first row where the kind appears.
+        Converts matrix state into query -> database mapping.
         """
 
         mapping = {}
-        for kind_index, kind_name in enumerate(self.kinds):
+        for query_index, query_id in enumerate(self.kinds):
             chosen_db = None
             for db_index, db_name in enumerate(self.databases):
-                cell = state[db_index][kind_index]
-                if cell is not False:
+                cell = state[db_index][query_index]
+                if cell is True:
                     chosen_db = db_name
                     break
 
             if chosen_db is None:
-                # Keep behavior explicit so invalid states are obvious during integration.
-                raise ValueError("Kind has no assigned database in state: " + kind_name)
+                raise ValueError("Query has no assigned database in state: " + query_id)
 
-            mapping[kind_name] = chosen_db
+            mapping[query_id] = chosen_db
 
         return mapping
 
     def is_valid_state(self, state):
-        # 3.1 Structural integrity: non-relationship, non-ISA kinds must appear at least once.
-        if not self.validate_structural_integrity(state):
-            return False
+        return self.validate_query_assignments(state)
 
-        # 3.2 Embedding rules.
-        if not self.validate_embeddings(state):
-            return False
-
-        # 3.3 Relationship kind rules.
-        if not self.validate_relationship_kinds(state):
-            return False
-
-        # 3.4 ISA rules.
-        if not self.validate_isa_rules(state):
-            return False
-
-
+    def validate_query_assignments(self, state):
+        for query_index in range(len(self.kinds)):
+            assignment_count = 0
+            for db_index in range(len(self.databases)):
+                cell = state[db_index][query_index]
+                if not isinstance(cell, bool):
+                    return False
+                if cell:
+                    assignment_count += 1
+            if assignment_count != 1:
+                return False
         return True
 
     def validate_structural_integrity(self, state):
@@ -518,70 +515,34 @@ class MCTSNode:
 
     def generate_base_actions(self):
         """
-        Each action changes one kind assignment:
-        - direct placement in one database
-        - embedding into another kind in one database
+        Each action changes one query assignment.
 
         Action tuple format:
-        (mode, kind_index, db_index, target_kind_name_or_none)
+        ("direct", query_index, db_index, None)
         """
 
         actions = []
-        mongodb_index = self.get_mongodb_index()
-
-        for kind_index, kind_name in enumerate(self.mcts.kinds):
+        for query_index, _ in enumerate(self.mcts.kinds):
             for db_index in range(len(self.mcts.databases)):
-                actions.append(("direct", kind_index, db_index, None))
-
-                # Embeddings are only allowed in MongoDB.
-                # The target host kind must already exist in MongoDB in the current state.
-                if mongodb_index is not None and db_index == mongodb_index:
-                    for target_kind_index, target_kind in enumerate(self.mcts.kinds):
-                        if target_kind == kind_name:
-                            continue
-
-                        target_cell_in_mongo = self.state[mongodb_index][target_kind_index]
-                        if target_cell_in_mongo is False:
-                            continue
-                        
-
-                        actions.append(("embed", kind_index, db_index, target_kind))
+                if query_index >= 9 and db_index == 2: continue  # NOTE: Mongo doesn't have last 2 queries defined
+                actions.append(("direct", query_index, db_index, None))
 
         random.shuffle(actions)
         return actions
 
-    def get_mongodb_index(self):
-        for index, db_name in enumerate(self.mcts.databases):
-            if isinstance(db_name, str) and db_name.lower() == "mongodb":
-                return index
-        return None
-
     def apply_action(self, action):
-        mode, kind_index, db_index, target_kind = action
-        moved_kind_name = self.mcts.kinds[kind_index]
+        mode, query_index, db_index, _ = action
 
         rows = [list(row) for row in self.state]
 
-        # Reset this kind column across all databases first (single assignment policy).
+        # Reset this query column across all databases first (single assignment policy).
         for row_index in range(len(rows)):
-            rows[row_index][kind_index] = False
+            rows[row_index][query_index] = False
 
         if mode == "direct":
-            rows[db_index][kind_index] = True
-        elif mode == "embed":
-            rows[db_index][kind_index] = target_kind
+            rows[db_index][query_index] = True
         else:
             raise ValueError("Unknown action mode")
-
-        # If a host kind moved away from a database, remove stale embeddings that pointed to it
-        # in those other databases. We keep those kinds in place as direct storage.
-        for row_index in range(len(rows)):
-            if row_index == db_index:
-                continue
-
-            for other_kind_index in range(len(self.mcts.kinds)):
-                if rows[row_index][other_kind_index] == moved_kind_name:
-                    rows[row_index][other_kind_index] = True
 
         return tuple(tuple(row) for row in rows)
 
