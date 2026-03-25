@@ -126,6 +126,29 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             ORDER BY distinct_sellers DESC
             LIMIT 200
         '''
+        
+    @query('test', 1.0, 'Who should I follow? (User -> Person)')
+    def _who_to_follow(self):
+        person_id = self._param_person_id()
+
+        return f'''
+            MATCH (p:Person {{person_id: {person_id}}})-[:FOLLOWS]->(:Person)-[:FOLLOWS]->(cand:Person)
+            WHERE NOT (p)-[:FOLLOWS]->(cand) AND cand.person_id <> {person_id}
+            RETURN cand.person_id AS person_id, COUNT(*) AS paths
+            ORDER BY paths DESC
+            LIMIT 50
+        '''
+        
+    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
+    def _personalized_feed_candidates(self):
+        return f'''
+            MATCH (p:Person {{person_id: {self._param_person_id()}}})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
+            WHERE pr.is_active = true
+            RETURN pr.product_id AS product_id, SUM(hi.strength) AS interest_score
+            ORDER BY interest_score DESC
+            LIMIT 200
+        '''
+
 
     # Document focused (MongoDB)
     # These are built to avoid joins at read time. Put "product page bundle" in one document.
@@ -155,38 +178,28 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
                 }}) AS reviews
         '''
 
-    @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
-    def _bulk_fetch_product_pages(self):
-        return f'''
-            MATCH (pr:Product)
-            WHERE pr.product_id IN [{self._param_product_ids(5, 20)}]
-              AND pr.is_active = true
-            MATCH (s:Seller)-[:OFFERS]->(pr)
-            OPTIONAL MATCH (:Customer)-[r:REVIEWED]->(pr)
-            WITH pr, s, avg(toFloat(r.rating)) AS avg_rating, count(r) AS review_count
-            RETURN
-                pr.product_id AS product_id,
-                pr.title AS title,
-                pr.price_cents AS price_cents,
-                pr.currency AS currency,
-                {{seller_id: s.seller_id, display_name: s.display_name}} AS seller,
-                {{avg: COALESCE(avg_rating, 0.0), count: review_count}} AS rating_summary
-            LIMIT 200
-        '''
+    # @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
+    # def _bulk_fetch_product_pages(self):
+    #     return f'''
+    #         MATCH (pr:Product)
+    #         WHERE pr.product_id IN [{self._param_product_ids(5, 20)}]
+    #           AND pr.is_active = true
+    #         MATCH (s:Seller)-[:OFFERS]->(pr)
+    #         OPTIONAL MATCH (:Customer)-[r:REVIEWED]->(pr)
+    #         WITH pr, s, avg(toFloat(r.rating)) AS avg_rating, count(r) AS review_count
+    #         RETURN
+    #             pr.product_id AS product_id,
+    #             pr.title AS title,
+    #             pr.price_cents AS price_cents,
+    #             pr.currency AS currency,
+    #             {{seller_id: s.seller_id, display_name: s.display_name}} AS seller,
+    #             {{avg: COALESCE(avg_rating, 0.0), count: review_count}} AS rating_summary
+    #         LIMIT 200
+    #     '''
 
     # Graph focused (Neo4j)
 
-    @query('test', 1.0, 'Who should I follow? (User -> Person)')
-    def _who_to_follow(self):
-        person_id = self._param_person_id()
 
-        return f'''
-            MATCH (p:Person {{person_id: {person_id}}})-[:FOLLOWS]->(:Person)-[:FOLLOWS]->(cand:Person)
-            WHERE NOT (p)-[:FOLLOWS]->(cand) AND cand.person_id <> {person_id}
-            RETURN cand.person_id AS person_id, COUNT(*) AS paths
-            ORDER BY paths DESC
-            LIMIT 50
-        '''
 
     @query('test', 1.0, 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders')
     def _people_also_bought(self):
@@ -200,12 +213,3 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             LIMIT 20
         '''
 
-    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
-    def _personalized_feed_candidates(self):
-        return f'''
-            MATCH (p:Person {{person_id: {self._param_person_id()}}})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
-            WHERE pr.is_active = true
-            RETURN pr.product_id AS product_id, SUM(hi.strength) AS interest_score
-            ORDER BY interest_score DESC
-            LIMIT 200
-        '''
