@@ -1,0 +1,53 @@
+name: "aimm"
+
+services:
+    postgres:
+        image: postgres:latest
+        # restart: always
+        environment:
+            POSTGRES_DB: ${POSTGRES_ROOT_DATABASE}
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+        ports:
+            - ${POSTGRES_PORT}:5432
+        expose:
+            - ${POSTGRES_PORT}
+
+    mongo:
+        image: mongo:latest
+        # restart: always
+        ports:
+            - ${MONGO_PORT}:27017
+        expose:
+            - ${MONGO_PORT}
+
+    neo4j-tpch:
+        image: neo4j:latest
+        # restart: always
+        environment:
+            NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+        ports:
+            - ${NEO4J_TPCH_PORT}:7687
+            # No bolt port because it can't be easily remapped and we would have multiple of them.
+        expose:
+            - ${NEO4J_TPCH_PORT}
+        volumes:
+            - ./data/inputs/tpch:/import:ro
+
+    neo4j-edbt:
+        image: neo4j:latest
+        # restart: always
+        environment:
+            NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+        ports:
+            - ${NEO4J_EDBT_PORT}:7687
+            # No bolt port because it can't be easily remapped and we would have multiple of them.
+        expose:
+            - ${NEO4J_EDBT_PORT}
+        volumes:
+            - ./data/inputs/edbt:/import:ro
+
+networks:
+    default:
+        name: mmcat-network
+        external: true
