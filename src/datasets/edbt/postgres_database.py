@@ -134,6 +134,46 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             LIMIT 200
         '''
 
+    @query('test', 1.0, 'Who should I follow? (User -> Person)')
+    def _who_to_follow(self):
+        person_id = self._param_person_id()
+
+        return f'''
+            SELECT
+                f2.from_id AS person_id,
+                COUNT(*) AS paths
+            FROM follows f1
+            JOIN follows f2 ON f1.from_id = f2.to_id
+            WHERE f1.to_id = '{person_id}'
+                AND f2.from_id <> '{person_id}'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM follows direct
+                    WHERE direct.to_id = '{person_id}'
+                        AND direct.from_id = f2.from_id
+                )
+            GROUP BY f2.from_id
+            ORDER BY paths DESC
+            LIMIT 50
+        '''
+        
+        
+    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
+    def _personalized_feed_candidates(self):
+        return f'''
+            SELECT
+                hc.product_id,
+                SUM(hi.strength) AS interest_score
+            FROM has_interest hi
+            JOIN has_category hc ON hc.category_id = hi.category_id
+            JOIN product p ON p.product_id = hc.product_id
+            WHERE hi.person_id = '{self._param_person_id()}'
+                AND p.is_active = TRUE
+            GROUP BY hc.product_id
+            ORDER BY interest_score DESC
+            LIMIT 200
+        '''
+
     # This is designed to be heavy if we do it wrong, but fast if we limit scope. Good for optimizer tests.
     # Input: a temp table hot_products(product_id) with maybe top 1% products.
     # Output: co-buy counts for pairs, last 7 days, only when at least one side is hot.
@@ -229,64 +269,42 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                 AND p.is_active = TRUE
         '''
 
-    @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
-    def _bulk_fetch_product_pages(self):
-        product_ids = self._param_product_ids(5, 20)
+    # @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
+    # def _bulk_fetch_product_pages(self):
+    #     product_ids = self._param_product_ids(5, 20)
 
-        return f'''
-            SELECT
-                p.product_id,
-                p.title,
-                p.price_cents,
-                p.currency,
-                jsonb_build_object(
-                    'seller_id', s.seller_id,
-                    'display_name', s.display_name
-                ) AS seller,
-                jsonb_build_object(
-                    'avg', COALESCE(rs.avg_rating, 0),
-                    'count', COALESCE(rs.review_count, 0)
-                ) AS rating_summary
-            FROM product p
-            JOIN seller s ON s.seller_id = p.seller_id
-            LEFT JOIN (
-                SELECT
-                    r.product_id,
-                    AVG(r.rating)::float8 AS avg_rating,
-                    COUNT(*)::int AS review_count
-                FROM review r
-                WHERE r.product_id IN ({product_ids})
-                GROUP BY r.product_id
-            ) rs ON rs.product_id = p.product_id
-            WHERE p.product_id IN ({product_ids})
-                AND p.is_active = TRUE
-            LIMIT 200
-        '''
+    #     return f'''
+    #         SELECT
+    #             p.product_id,
+    #             p.title,
+    #             p.price_cents,
+    #             p.currency,
+    #             jsonb_build_object(
+    #                 'seller_id', s.seller_id,
+    #                 'display_name', s.display_name
+    #             ) AS seller,
+    #             jsonb_build_object(
+    #                 'avg', COALESCE(rs.avg_rating, 0),
+    #                 'count', COALESCE(rs.review_count, 0)
+    #             ) AS rating_summary
+    #         FROM product p
+    #         JOIN seller s ON s.seller_id = p.seller_id
+    #         LEFT JOIN (
+    #             SELECT
+    #                 r.product_id,
+    #                 AVG(r.rating)::float8 AS avg_rating,
+    #                 COUNT(*)::int AS review_count
+    #             FROM review r
+    #             WHERE r.product_id IN ({product_ids})
+    #             GROUP BY r.product_id
+    #         ) rs ON rs.product_id = p.product_id
+    #         WHERE p.product_id IN ({product_ids})
+    #             AND p.is_active = TRUE
+    #         LIMIT 200
+    #     '''
 
-    # Graph focused (Neo4j)
 
-    @query('test', 1.0, 'Who should I follow? (User -> Person)')
-    def _who_to_follow(self):
-        person_id = self._param_person_id()
 
-        return f'''
-            SELECT
-                f2.from_id AS person_id,
-                COUNT(*) AS paths
-            FROM follows f1
-            JOIN follows f2 ON f1.from_id = f2.to_id
-            WHERE f1.to_id = '{person_id}'
-                AND f2.from_id <> '{person_id}'
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM follows direct
-                    WHERE direct.to_id = '{person_id}'
-                        AND direct.from_id = f2.from_id
-                )
-            GROUP BY f2.from_id
-            ORDER BY paths DESC
-            LIMIT 50
-        '''
 
     @query('test', 1.0, 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders:')
     def _people_also_bought(self):
@@ -307,21 +325,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             LIMIT 20
         '''
 
-    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
-    def _personalized_feed_candidates(self):
-        return f'''
-            SELECT
-                hc.product_id,
-                SUM(hi.strength) AS interest_score
-            FROM has_interest hi
-            JOIN has_category hc ON hc.category_id = hi.category_id
-            JOIN product p ON p.product_id = hc.product_id
-            WHERE hi.person_id = '{self._param_person_id()}'
-                AND p.is_active = TRUE
-            GROUP BY hc.product_id
-            ORDER BY interest_score DESC
-            LIMIT 200
-        '''
+
 
     # One "multi-db" query (on purpose)
 
