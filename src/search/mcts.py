@@ -1,5 +1,7 @@
+import json
 import math
 import random
+import sys
 
 
 class MCTS:
@@ -65,7 +67,7 @@ class MCTS:
         self.state_to_node = {}
         self.edge_visits = {}
 
-    def run(self, initial_state, iterations=1000):
+    def run(self, initial_state, iterations=1000000):
         if iterations <= 0:
             raise ValueError("iterations must be > 0")
 
@@ -82,9 +84,17 @@ class MCTS:
         best_mapping = self.state_to_mapping(root_state)
         _, best_time = self.perform_simulation(root_state)
 
+
         initial_schema = self.schema_converter.convert_state_to_schema(best_mapping)
-        print("Initial time:", best_time)
-        
+        self.processed_states = 0
+
+        outputs = [ {
+            'id': self.processed_states,
+            'price': best_time,
+            'objexes': initial_schema,
+        } ]
+        self.output_best_schemas(outputs)
+
         for iteration in range(iterations):
             if self.verbose:
                 print("Iteration", iteration + 1)
@@ -114,9 +124,18 @@ class MCTS:
                 path_state_keys.add(child.key)
 
                 if is_new:
+                    self.processed_states += 1
                     reward, exec_time = self.perform_simulation(child.state)
                     if exec_time < best_time:
                         schema = self.schema_converter.convert_state_to_schema(self.state_to_mapping(child.state))
+
+                        outputs.insert(0, {
+                            'id': self.processed_states,
+                            'price': exec_time,
+                            'objexes': schema,
+                        })
+                        self.output_best_schemas(outputs)
+
                         print([schema, exec_time])
                         best_time = exec_time
                         best_mapping = self.state_to_mapping(child.state)
@@ -133,6 +152,15 @@ class MCTS:
                 self.edge_visits[edge] = self.edge_visits.get(edge, 0) + 1
 
         return best_mapping, best_time
+
+    def output_best_schemas(self, outputs):
+        output = {
+            'processedStates': self.processed_states,
+            'solutions': outputs[:3],
+        }
+        json_string = json.dumps(output)
+        sys.stdout.write(json_string + '\n')
+        sys.stdout.flush()
 
     def get_or_create_node(self, state):
         key = self.state_key(state)
@@ -204,7 +232,7 @@ class MCTS:
             rows[db_index][query_index] = True
 
         return tuple(tuple(row) for row in rows)
-    
+
     def state_to_mapping_vector(self, state):
         mapping_vector = []
         for query_index in range(len(self.kinds)):
