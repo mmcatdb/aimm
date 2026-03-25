@@ -21,11 +21,13 @@ def extract_neo4j_tables(queries: dict[str, str]) -> dict[str, tuple[str, ...]]:
     results = {}
     # Regex to match Neo4j node labels, e.g., (alias:Label) or (:Label)
     pattern = re.compile(r'\(\s*\w*\s*:\s*([A-Za-z0-9_]+)')
+    edge_pattern = re.compile(r'\[\s*\w*\s*:\s*(FOLLOWS|HAS_CATEGORY)\b')
     
     for query_id, query in queries.items():
         labels = pattern.findall(query)
+        edges = edge_pattern.findall(query)
         # Use dict.fromkeys to remove duplicates while preserving order
-        unique_labels = tuple(dict.fromkeys(labels))
+        unique_labels = tuple(dict.fromkeys(labels + edges))
         results[query_id] = unique_labels
         
     return results
