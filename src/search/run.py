@@ -1,7 +1,6 @@
 from search.mcts import MCTS
 from common.config import DatasetName
 from common.utils import auto_close
-from search.queries import get_postgres_queries, get_neo4j_queries
 from latency_estimation.postgres.context import PostgresContext
 from latency_estimation.postgres.latency_estimator import LatencyEstimator as PostgresLatencyEstimator
 from latency_estimation.neo4j.context import Neo4jContext
