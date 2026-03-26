@@ -1,3 +1,4 @@
+from typing_extensions import override
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -31,11 +32,13 @@ class Trainer(BaseTrainer[Neo4jItem]):
         trainer._loss_history = checkpoint['loss_history']
         return trainer
 
+    @override
+    def model(self) -> PlanStructuredNetwork:
+        return self.__model
+
+    @override
     def to_checkpoint(self) -> dict:
-        """Serialization to a file-friendly dictionary."""
-        return {
-            'epoch': len(self._loss_history),
-            'loss_history': self._loss_history,
+        return self._to_common_checkpoint() | {
             # We don't save the learning rate as it can be changed between sessions.
             # Weight decay should be saved automatically.
             'optimizer_state_dict': self.__optimizer.state_dict(),

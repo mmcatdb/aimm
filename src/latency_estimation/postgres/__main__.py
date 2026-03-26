@@ -69,7 +69,7 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = Trainer(model, config.learning_rate, config.batch_size)
 
-    trainer.train_epochs(bundle.train, val_dataset, config.num_epochs, lambda name, metrics: ctx.save_checkpoint(name, model, trainer, metrics))
+    trainer.train_epochs(bundle.train, val_dataset, config.num_epochs, ctx)
 
 def test_args(parser: argparse.ArgumentParser):
     TestConfig.postgres().add_arguments(parser)

@@ -1,12 +1,19 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Generic
+from typing import Generic, Protocol
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from common.utils import INFO_TEXT, BOLD_TEXT, RESET_TEXT, CLEAR_TEXT_LINE
 from latency_estimation.common import TDatasetItem, print_warning
+from latency_estimation.plan_structured_network import BasePlanStructuredNetwork
 
 TrainerMetrics = dict[str, float]
+
+class FileManager(Protocol):
+    def epoch_id(self, epoch: int) -> str: ...
+
+    def save_checkpoint(self, name: str, trainer: 'BaseTrainer', metrics: TrainerMetrics): ...
+
+    def save_metrics(self, name: str, metrics: TrainerMetrics): ...
 
 class BaseTrainer(ABC, Generic[TDatasetItem]):
     """
@@ -29,11 +36,31 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
         self._loss_history: list[float] = []
 
     @abstractmethod
+    def model(self) -> BasePlanStructuredNetwork:
+        """Return the underlying model being trained."""
+        pass
+
+    @abstractmethod
+    def to_checkpoint(self) -> dict:
+        """Serialization to a file-friendly dictionary."""
+        pass
+
+    def _to_common_checkpoint(self) -> dict:
+        return {
+            'epoch': len(self._loss_history),
+            'loss_history': self._loss_history,
+        }
+
+    @staticmethod
+    def get_loss_history_from_checkpoint(checkpoint: dict) -> list[float]:
+        return checkpoint.get('loss_history', [])
+
+    @abstractmethod
     def evaluate(self, dataset: Dataset[TDatasetItem]) -> TrainerMetrics:
         """Evaluate the model on the dataset and return metrics."""
         pass
 
-    def train_epochs(self, train_dataset: Dataset[TDatasetItem], val_dataset: Dataset[TDatasetItem], num_epochs: int, save_checkpoint: Callable[[str, TrainerMetrics], None]) -> None:
+    def train_epochs(self, train_dataset: Dataset[TDatasetItem], val_dataset: Dataset[TDatasetItem], num_epochs: int, ctx: FileManager) -> None:
         best_metrics: TrainerMetrics = {}
         best_metric = float('inf')
 
@@ -57,23 +84,24 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
                 for metric_name in self.__train_metrics:
                     if metric_name in metrics:
                         print_metric(metrics, metric_name, is_main=(metric_name == self.__main_metric))
+                ctx.save_metrics(ctx.epoch_id(epoch_number), metrics)
 
                 # Track and save best model
                 if main_metric < best_metric:
                     best_metric = main_metric
                     best_metrics = metrics
-                    save_checkpoint('best', metrics)
+                    ctx.save_checkpoint('best', self, metrics)
+                    ctx.save_metrics('best', metrics)
                     print(f'  {INFO_TEXT}✓ New best model!{RESET_TEXT}')
 
                 # Autosave because why not
                 if (epoch_number) % self.__autosave_period == 0:
-                    save_checkpoint(f'e{epoch_number:04d}', metrics)
+                    ctx.save_checkpoint(ctx.epoch_id(epoch_number), self, metrics)
 
                 print()
 
-        final_metrics = self.__final_evaluation(train_dataset, val_dataset)
+        self.__final_evaluation(train_dataset, val_dataset)
         self.print_metrics(best_metrics, 'Best Validation')
-        save_checkpoint('final', final_metrics)
 
     def train_epoch(self, dataset: Dataset[TDatasetItem], epoch_prefix: str) -> float:
         # Identity collate_fn - return list of items as-is
@@ -104,7 +132,7 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
         """Hook for any final steps after epoch completes."""
         pass
 
-    def __final_evaluation(self, train_dataset: Dataset[TDatasetItem], val_dataset: Dataset[TDatasetItem]) -> TrainerMetrics:
+    def __final_evaluation(self, train_dataset: Dataset[TDatasetItem], val_dataset: Dataset[TDatasetItem]):
         train_metrics = self.evaluate(train_dataset)
         val_metrics = self.evaluate(val_dataset)
 
@@ -119,8 +147,6 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
         print()
         val_metrics = self.evaluate(val_dataset)
         self.print_metrics(val_metrics, 'Final Validation')
-
-        return val_metrics
 
     @staticmethod
     def print_metrics(metrics: TrainerMetrics, type = 'Evaluation'):

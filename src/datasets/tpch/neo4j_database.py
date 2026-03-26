@@ -16,16 +16,16 @@ class TpchNeo4jDatabase(TpchDatabase[str]):
             WHERE li.l_shipdate <= date('{self._param_date(1996)}')
             WITH li.l_returnflag AS returnflag, li.l_linestatus AS linestatus, li
             RETURN
-            returnflag,
-            linestatus,
-            sum(li.l_quantity) AS sum_qty,
-            sum(li.l_extendedprice) AS sum_base_price,
-            sum(li.l_extendedprice * (1 - li.l_discount)) AS sum_disc_price,
-            sum(li.l_extendedprice * (1 - li.l_discount) * (1 + li.l_tax)) AS sum_charge,
-            avg(li.l_quantity) AS avg_qty,
-            avg(li.l_extendedprice) AS avg_price,
-            avg(li.l_discount) AS avg_disc,
-            count(li) AS count_order
+                returnflag,
+                linestatus,
+                sum(li.l_quantity) AS sum_qty,
+                sum(li.l_extendedprice) AS sum_base_price,
+                sum(li.l_extendedprice * (1 - li.l_discount)) AS sum_disc_price,
+                sum(li.l_extendedprice * (1 - li.l_discount) * (1 + li.l_tax)) AS sum_charge,
+                avg(li.l_quantity) AS avg_qty,
+                avg(li.l_extendedprice) AS avg_price,
+                avg(li.l_discount) AS avg_disc,
+                count(li) AS count_order
             ORDER BY returnflag, linestatus
         '''
 
@@ -320,7 +320,7 @@ class TpchNeo4jDatabase(TpchDatabase[str]):
         return f'''
             MATCH (p:Part)
             WHERE p.p_size > {self._param_int('size', 10, 40)}
-            AND p.p_retailprice < {self._param_int('price', 1000, 1500)}
+                AND p.p_retailprice < {self._param_int('price', 1000, 1500)}
             RETURN p.p_name, p.p_size, p.p_retailprice
         '''
 

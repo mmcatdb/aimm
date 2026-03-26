@@ -1,13 +1,15 @@
 from typing_extensions import override
 from common.loaders.neo4j_loader import Neo4jLoader
+from common.config import DatasetName
 
 # TODO now we add foreign keys in neo4j (and then we remove them for some kinds)
 # - they are probably used in some queries (in TPC-H) but they shouldn't (and after that, we should remove them)
 
 class EdbtNeo4jLoader(Neo4jLoader):
+
     @override
-    def name(self):
-        return 'EDBT'
+    def dataset(self):
+        return DatasetName.EDBT
 
     @override
     def _get_kinds(self):

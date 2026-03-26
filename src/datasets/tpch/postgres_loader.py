@@ -1,10 +1,12 @@
 from typing_extensions import override
 from common.loaders.postgres_loader import PostgresLoader, ColumnSchema, IndexSchema
+from common.config import DatasetName
 
 class TpchPostgresLoader(PostgresLoader):
+
     @override
-    def name(self):
-        return 'TPC-H'
+    def dataset(self):
+        return DatasetName.TPCH
 
     # TODO Add not null constraints.
 

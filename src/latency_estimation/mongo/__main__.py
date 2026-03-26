@@ -73,7 +73,7 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     print(f'\n[6/7] Training for {config.num_epochs} epochs...')
     trainer = Trainer(model, config.learning_rate, config.batch_size, config.num_epochs, args.warmup_epochs)
 
-    trainer.train_epochs(bundle.train, val_dataset, config.num_epochs, lambda name, metrics: ctx.save_checkpoint(name, model, trainer, metrics))
+    trainer.train_epochs(bundle.train, val_dataset, config.num_epochs, ctx)
 
 def get_all_collection_stats(driver: MongoDriver) -> dict[str, dict]:
     """Get statistics for all collections."""

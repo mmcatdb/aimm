@@ -1,10 +1,12 @@
 from typing_extensions import override
 from common.loaders.neo4j_loader import Neo4jLoader
+from common.config import DatasetName
 
 class TpchNeo4jLoader(Neo4jLoader):
+
     @override
-    def name(self):
-        return 'TPC-H'
+    def dataset(self):
+        return DatasetName.TPCH
 
     @override
     def _get_kinds(self):

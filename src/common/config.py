@@ -10,6 +10,15 @@ class DatasetName(Enum):
     TPCH = 'tpch'
     EDBT = 'edbt'
 
+    def label(self) -> str:
+        """Get a human-readable label for this dataset."""
+        if self == DatasetName.TPCH:
+            return 'TPC-H'
+        elif self == DatasetName.EDBT:
+            return 'EDBT'
+        else:
+            return self.value
+
 class Config:
     def __init__(self, postgres: PostgresConfig, mongo: MongoConfig, neo4j: Neo4jConfig, rest: dict[str, Any] = {}):
         self.postgres = postgres
@@ -18,8 +27,9 @@ class Config:
 
         self.import_directory: str = rest['import_directory']
         self.cache_directory: str = rest['cache_directory']
-        self.checkpoint_directory: str = rest['checkpoint_directory']
+        self.checkpoints_directory: str = rest['checkpoints_directory']
         self.results_directory: str = rest['results_directory']
+        self.metrics_directory: str = rest['metrics_directory']
         self.device: str = rest['device']
         self.train_num_runs: int | None = rest.get('train_num_runs')
         self.num_queries: int | None = rest.get('num_queries')
@@ -80,8 +90,9 @@ class Config:
         return {
             'import_directory': _string('IMPORT_DIRECTORY', 'data/inputs'),
             'cache_directory': _string('CACHE_DIRECTORY', 'data/cache'),
-            'checkpoint_directory': _string('CHECKPOINT_DIRECTORY', 'data/checkpoints'),
+            'checkpoints_directory': _string('CHECKPOINTS_DIRECTORY', 'data/checkpoints'),
             'results_directory': _string('RESULTS_DIRECTORY', 'data'),
+            'metrics_directory': _string('METRICS_DIRECTORY', 'data/metrics'),
             'device': _string('DEVICE'),
             'train_num_runs': _int_optional('TRAIN_NUM_RUNS'),
             'num_queries': _int_optional('NUM_QUERIES'),
@@ -90,16 +101,17 @@ class Config:
 
 def _string(key: str, default: str | None = None) -> str:
     value = os.getenv(key, default)
-    if value is None:
+    if value is None or (value == '' and default != ''):
         raise ValueError(f'Environment variable "{key}" is not set.')
     return value
 
 def _string_optional(key: str) -> str | None:
-    return os.getenv(key)
+    value = os.getenv(key)
+    return None if value == '' else value
 
 def _int(key: str, default: str | None = None) -> int:
     return int(_string(key, default))
 
 def _int_optional(key: str) -> int | None:
-    value = os.getenv(key)
+    value = _string_optional(key)
     return int(value) if value is not None else None
