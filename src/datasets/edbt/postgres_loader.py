@@ -1,13 +1,15 @@
 from typing_extensions import override
 from common.loaders.postgres_loader import PostgresLoader, ColumnSchema, IndexSchema
+from common.config import DatasetName
 
 # TODO review is for customer_id, not person_id
 # TODO order_item should not have seller_id (can get from product)
 
 class EdbtPostgresLoader(PostgresLoader):
+
     @override
-    def name(self):
-        return 'EDBT'
+    def dataset(self):
+        return DatasetName.EDBT
 
     @override
     def _get_schemas(self):

@@ -2,14 +2,16 @@ from abc import ABC, abstractmethod
 import os
 from common.drivers import Neo4jDriver, cypher
 from common.utils import ProgressTracker, print_warning
+from common.config import DatasetName
 
 class Neo4jLoader(ABC):
+
     """A class to load data into a Neo4j database."""
     def __init__(self, driver: Neo4jDriver):
         self._driver = driver
 
     @abstractmethod
-    def name(self) -> str:
+    def dataset(self) -> DatasetName:
         """Returns the name of the loader (for display purposes)."""
         pass
 
@@ -29,7 +31,7 @@ class Neo4jLoader(ABC):
         pass
 
     def run(self, import_directory: str, do_reset: bool):
-        title = f'--- {self.name()} Neo4j Loader ---'
+        title = f'--- {self.dataset().label()} Neo4j Loader ---'
         print(title)
         print(f'Connecting to Neo4j at: {self._driver.config.host}:{self._driver.port}')
         print('-' * len(title) + '\n')

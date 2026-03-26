@@ -18,6 +18,10 @@ class DatabaseInfo:
         """Get unique identifier for this database. Useful for caching."""
         return f'{self.dataset.value}_{self.type.value}'
 
+    def label(self) -> str:
+        """Get a human-readable label for this database."""
+        return f'{self.dataset.label()} ({self.type.value.capitalize()})'
+
 class ValueType(Enum):
     STRING = 'string'
     NUMBER = 'number'

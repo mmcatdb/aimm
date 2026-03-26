@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import os
 from common.drivers import PostgresDriver
+from common.config import DatasetName
 
 class ColumnSchema:
     def __init__(self, name: str, type: str, primary_key = False, references: str | None = None):
@@ -17,12 +18,13 @@ class IndexSchema:
         self.where = where
 
 class PostgresLoader(ABC):
+
     """A class to load data into a Postgres database."""
     def __init__(self, driver: PostgresDriver):
         self._driver = driver
 
     @abstractmethod
-    def name(self) -> str:
+    def dataset(self) -> DatasetName:
         """Returns the name of the loader (for display purposes)."""
         pass
 
@@ -37,7 +39,7 @@ class PostgresLoader(ABC):
         pass
 
     def run(self, import_directory: str, do_reset: bool):
-        title = f'--- {self.name()} Postgres Loader ---'
+        title = f'--- {self.dataset().label()} Postgres Loader ---'
         print(title)
         print(f'Connecting to Postgres at: {self._driver.config.host}:{self._driver.config.port}')
         print('-' * len(title) + '\n')

@@ -4,19 +4,21 @@ import datetime
 from enum import Enum
 import json
 import os
+import re
 from pymongo import ASCENDING
 from common.utils import ProgressTracker, print_warning
 from common.loaders.postgres_loader import ColumnSchema
 from common.drivers import MongoDriver
-import re
+from common.config import DatasetName
 
 class MongoLoader(ABC):
+
     """A class to load data into a Mongo database."""
     def __init__(self, driver: MongoDriver):
         self._driver = driver
 
     @abstractmethod
-    def name(self) -> str:
+    def dataset(self) -> DatasetName:
         """Returns the name of the loader (for display purposes)."""
         pass
 
@@ -31,7 +33,7 @@ class MongoLoader(ABC):
         pass
 
     def run(self, import_directory: str, do_reset: bool):
-        title = f'--- {self.name()} Mongo Loader ---'
+        title = f'--- {self.dataset().label()} Mongo Loader ---'
         print(title)
         print(f'Connecting to Mongo at: {self._driver.config.host}:{self._driver.config.port}')
         print('-' * len(title) + '\n')

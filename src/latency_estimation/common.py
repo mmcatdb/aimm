@@ -1,10 +1,7 @@
-from abc import ABC
 from argparse import Namespace
 from collections.abc import Callable
-import os
 import pickle
 from typing import Generic, TypeVar
-import torch
 from common.utils import exit_with_error, print_warning, print_info, time_quantity
 from torch.utils.data import Dataset
 from latency_estimation.feature_extractor import BaseDatasetItem
@@ -112,24 +109,6 @@ def load_queries(args: Namespace, parser: Callable[[str], list[str]]) -> list[st
         exit_with_error(f'No queries found in {args.file}.')
 
     return queries
-
-def save_checkpoint_file(path: str, dict: dict, is_first_time: bool) -> None:
-    if is_first_time and os.path.isfile(path):
-        print_warning(f'Overwriting existing checkpoint file at {path}.')
-
-    try:
-        torch.save(dict, path)
-    except Exception as e:
-        # There is no point in continuing if we can't save the checkpoint.
-        exit_with_error(f'Could not save checkpoint to {path}.', e)
-
-def load_checkpoint_file(path: str, device: str) -> dict:
-    try:
-        return torch.load(path, map_location=device, weights_only=False)
-    except FileNotFoundError:
-        exit_with_error(f'Model checkpoint not found at {path}. Specify a valid --checkpoint path.')
-    except Exception as e:
-        exit_with_error(f'Could not load checkpoint from {path}.', e)
 
 def parse_queries(content: str) -> list[str]:
     """Works for both PostgreSQL and Neo4j query files."""

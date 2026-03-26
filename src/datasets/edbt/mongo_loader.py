@@ -1,11 +1,13 @@
 from typing_extensions import override
 from common.loaders.mongo_loader import MongoLoader, MongoPostgresBuilder, IndexSchema
 from datasets.edbt.postgres_loader import get_postgres_edbt_schemas
+from common.config import DatasetName
 
 class EdbtMongoLoader(MongoLoader):
+
     @override
-    def name(self):
-        return 'EDBT'
+    def dataset(self):
+        return DatasetName.EDBT
 
     @override
     def run(self, import_directory: str, do_reset: bool):

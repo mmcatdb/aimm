@@ -1,11 +1,13 @@
 from typing_extensions import override
 from common.loaders.mongo_loader import MongoLoader, MongoPostgresBuilder, IndexSchema
 from datasets.tpch.postgres_loader import get_postgres_tpch_schemas
+from common.config import DatasetName
 
 class TpchMongoLoader(MongoLoader):
+
     @override
-    def name(self):
-        return 'TPC-H'
+    def dataset(self):
+        return DatasetName.TPCH
 
     @override
     def _get_schemas(self):
@@ -141,5 +143,4 @@ class TpchMongoLoader(MongoLoader):
             IndexSchema('lineitem', [ 'l_partkey' ]),
             IndexSchema('lineitem', [ 'l_suppkey' ]),
             IndexSchema('lineitem', [ 'l_shipdate' ]),
-
         ]
