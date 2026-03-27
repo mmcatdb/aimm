@@ -46,8 +46,8 @@ def train_run(args: argparse.Namespace, ctx: MongoContext):
     print(f'\n[1/7] Configuration:')
     print(config)
 
-    print(f'\n[2/7] Collecting {config.num_queries} query plans...')
-    bundle = ctx.load_or_create_dataset(config)
+    print(f'\n[2/7] Collecting {config.dataset.num_queries} query plans...')
+    bundle = ctx.load_or_create_dataset(config.dataset)
     combined = bundle.train + bundle.val
 
     print('\n[3/7] Building feature vocabularies...')

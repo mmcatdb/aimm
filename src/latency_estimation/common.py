@@ -42,12 +42,7 @@ class DatasetBundle(Generic[TDatasetItem]):
         # Ok, we are not casting it here because we use the ArrayDataset ... but if we ever switch to the base Dataset, we could use this ...
         return len(self.train) + len(self.val) # + len(self.test)
 
-def load_or_create_dataset(path: str | None, fallback: Callable[[], DatasetBundle[TDatasetItem]]) -> DatasetBundle[TDatasetItem]:
-    if path is None:
-        dataset = fallback()
-        print(f'Collected {dataset.length()} query plans')
-        return dataset
-
+def load_or_create_dataset(path: str, fallback: Callable[[], DatasetBundle[TDatasetItem]]) -> DatasetBundle[TDatasetItem]:
     # Try load cached dataset first.
     try:
         with open(path, 'rb') as file:

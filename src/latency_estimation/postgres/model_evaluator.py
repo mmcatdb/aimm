@@ -48,26 +48,26 @@ class ModelEvaluator:
         """
         print(f'\nEvaluating: {query.label()}')
 
-        content = query.generate()
-        result = Result(query.label(), content)
+        result = Result(query.label())
 
         # 1. Get EXPLAIN ANALYZE time
         print('  [1/3] Running EXPLAIN ANALYZE...')
-        plan, explain_time = self.extractor.explain_plan(content, False)
-        result.explain_analyze_time = explain_time
-        print(f'        EXPLAIN ANALYZE: {explain_time:.2f} ms')
+        content = query.generate()
+        plan, extracted_ms = self.extractor.explain_plan(content, False)
+        result.extracted_ms = extracted_ms
+        print(f'        EXPLAIN ANALYZE: {extracted_ms:.2f} ms')
 
         # 2. Get estimation (without executing)
         print('  [2/3] Getting query plan and estimation...')
-        estimated_time = self.__estimate_latency(plan)
-        result.estimated_time = estimated_time
-        print(f'        Model Estimation: {estimated_time:.2f} ms')
+        predicted_ms = self.__estimate_latency(plan)
+        result.predicted_ms = predicted_ms
+        print(f'        Model Estimation: {predicted_ms:.2f} ms')
 
         # Calculate errors and ratios
-        result.error_vs_explain = abs(estimated_time - explain_time)
-        result.relative_error_vs_explain = abs(estimated_time - explain_time) / (explain_time + EPSILON)
-        result.r_vs_explain = max(estimated_time / (explain_time + EPSILON), explain_time / (estimated_time + EPSILON))
-        result.explain_estimated_ratio = explain_time / (estimated_time + EPSILON)
+        result.error_vs_explain = abs(predicted_ms - extracted_ms)
+        result.relative_error_vs_explain = abs(predicted_ms - extracted_ms) / (extracted_ms + EPSILON)
+        result.r_vs_explain = max(predicted_ms / (extracted_ms + EPSILON), extracted_ms / (predicted_ms + EPSILON))
+        result.explain_estimated_ratio = extracted_ms / (predicted_ms + EPSILON)
         print(f'\n  Estimation Error vs EXPLAIN ANALYZE: {result.error_vs_explain:.2f} ms (R={result.r_vs_explain:.2f})')
 
         # 3. Get actual execution time
@@ -85,14 +85,14 @@ class ModelEvaluator:
             actual.time_max = actual_max
             print(f'        Actual Time: {actual_mean:.2f} ms (min: {actual_min:.2f}, max: {actual_max:.2f})')
 
-            actual.error_vs_actual = abs(estimated_time - actual_mean)
-            actual.relative_error_vs_actual = abs(estimated_time - actual_mean) / (actual_mean + EPSILON)
-            actual.r_vs_actual = max(estimated_time / (actual_mean + EPSILON), actual_mean / (estimated_time + EPSILON))
-            actual.estimated_ratio = actual_mean / (estimated_time + EPSILON)
+            actual.error_vs_actual = abs(predicted_ms - actual_mean)
+            actual.relative_error_vs_actual = abs(predicted_ms - actual_mean) / (actual_mean + EPSILON)
+            actual.r_vs_actual = max(predicted_ms / (actual_mean + EPSILON), actual_mean / (predicted_ms + EPSILON))
+            actual.estimated_ratio = actual_mean / (predicted_ms + EPSILON)
 
             # Also compare EXPLAIN ANALYZE vs Actual
-            actual.explain_vs_actual_error = abs(explain_time - actual_mean)
-            actual.explain_vs_actual_relative = abs(explain_time - actual_mean) / (actual_mean + EPSILON)
+            actual.explain_vs_actual_error = abs(extracted_ms - actual_mean)
+            actual.explain_vs_actual_relative = abs(extracted_ms - actual_mean) / (actual_mean + EPSILON)
 
             print(f'  Estimation Error vs Actual: {actual.error_vs_actual:.2f} ms (R={actual.r_vs_actual:.2f})')
             print(f'  EXPLAIN ANALYZE vs Actual: {actual.explain_vs_actual_error:.2f} ms')
@@ -114,9 +114,9 @@ class ModelEvaluator:
         table_data = []
         for r in results:
             row = [
-                r.name,
-                f'{r.estimated_time:.1f}',
-                f'{r.explain_analyze_time:.1f}',
+                r.label[:30],
+                f'{r.predicted_ms:.1f}',
+                f'{r.extracted_ms:.1f}',
                 f'{r.actual.time_mean:.1f}' if r.actual else 'N/A',
                 f'{r.explain_estimated_ratio:.2f}',
                 f'{r.r_vs_explain:.2f}',
@@ -136,6 +136,10 @@ class ModelEvaluator:
             'Explain/\nEstimated',
             'R vs\nEXPLAIN'
         ]
+
+        print('\n' + '=' * 80)
+        print('Detailed Results')
+        print('=' * 80)
 
         if results[0].actual:
             headers.extend(['Actual/\nEstimated', 'R vs\nActual'])
@@ -190,8 +194,8 @@ class ModelEvaluator:
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         fig.suptitle('QPP-Net Model Evaluation', fontsize=16, fontweight='bold')
 
-        estimated = [r.estimated_time for r in results]
-        explain = [r.explain_analyze_time for r in results]
+        estimated = [r.predicted_ms for r in results]
+        explain = [r.extracted_ms for r in results]
 
         # Plot 1: Estimated vs EXPLAIN ANALYZE
         ax1 = axes[0, 0]
@@ -278,10 +282,9 @@ class ActualResult:
 @dataclass
 class Result:
     """Holds a single query evaluation result."""
-    name: str
-    content: str
-    estimated_time: float = nan
-    explain_analyze_time: float = nan
+    label: str
+    predicted_ms: float = nan
+    extracted_ms: float = nan
     error_vs_explain: float = nan
     relative_error_vs_explain: float = nan
     r_vs_explain: float = nan

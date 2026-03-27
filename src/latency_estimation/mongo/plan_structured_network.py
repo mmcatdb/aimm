@@ -37,12 +37,14 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
     @override
     def _create_unit(self, operator: NnOperator) -> nn.Module:
-        return GenericUnit(
-            input_dim=operator.feature_dim,
-            num_children=operator.num_children,
+        data_vec_dim = self.config.data_vec_dim
+        total_input_dim = operator.feature_dim + operator.num_children * (1 + data_vec_dim)
+
+        return NeuralUnit(
+            input_dim=total_input_dim,
+            output_dim=data_vec_dim,
             hidden_dim=self.config.hidden_dim,
             hidden_num=self.config.hidden_num,
-            data_vec_dim=self.config.data_vec_dim,
         )
 
     def forward(self, plan_tree: dict, collection_name: str) -> torch.Tensor:
@@ -69,20 +71,16 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
         child_outputs = []
         for child in self.feature_extractor.get_node_children(node):
-            child_output = self.__process_plan_node(child, collection_name, cache)
-            # Extract data vector from child
-            child_outputs.append(child_output)
+            child_outputs.append(self.__process_plan_node(child, collection_name, cache))
 
         node_features = self.feature_extractor.extract_features(node, collection_name)
         node_features_tensor = torch.tensor(node_features, dtype=torch.float32, device=self.device).unsqueeze(0)
 
-        type = self.feature_extractor.get_node_type(node)
-        operator = NnOperator(
-            type=type,
+        unit = self._get_unit(NnOperator(
+            type=self.feature_extractor.get_node_type(node),
             num_children=len(child_outputs),
-            feature_dim=self.feature_extractor.get_feature_dim(type),
-        )
-        unit = self._get_unit(operator)
+            feature_dim=len(node_features),
+        ))
 
         if child_outputs:
             child_concat = torch.cat(child_outputs, dim=1)
@@ -106,20 +104,20 @@ class NeuralUnit(nn.Module):
     - Data vector (d values, passed to parent unit)
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int, hidden_num: int, data_vec_dim: int):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int, hidden_num: int):
         """
         Args:
             input_dim: Dimension of input features (including children outputs)
             hidden_dim: Number of neurons in each hidden layer
             hidden_num: Number of hidden layers
-            data_vec_dim: Dimension of output data vector
+            output_dim: Dimension of output data vector
         """
         super().__init__()
 
         self.input_dim = input_dim
+        self.output_dim = output_dim
         self.hidden_dim = hidden_dim
         self.hidden_num = hidden_num
-        self.data_vec_dim = data_vec_dim
 
         # Build hidden layers
         layers = []
@@ -142,11 +140,11 @@ class NeuralUnit(nn.Module):
         )
 
         # Data vector head
-        self.data_head = nn.Linear(hidden_dim, data_vec_dim)
+        self.data_head = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Returns: [batch, 1 + data_vec_dim] where [:,0] is latency, [:,1:] is data vec.
+        Returns: [batch, 1 + output_dim] where [:,0] is latency, [:,1:] is data vec.
         """
         # Pass through hidden layers
         h = self.hidden_layers(x)
@@ -155,16 +153,3 @@ class NeuralUnit(nn.Module):
         data_vec = self.data_head(h)
 
         return torch.cat([latency, data_vec], dim=1)
-
-class GenericUnit(NeuralUnit):
-    """
-    Generic neural unit that handles variable numbers of children.
-    Total input = operator features + children * (1 + data_vec_dim).
-    """
-    def __init__(self, input_dim: int, num_children: int, data_vec_dim: int, **kwargs):
-        total_input_dim = input_dim + num_children * (1 + data_vec_dim)
-
-        super().__init__(total_input_dim, data_vec_dim=data_vec_dim, **kwargs)
-
-        self.operator_feature_dim = input_dim
-        self.num_children = num_children

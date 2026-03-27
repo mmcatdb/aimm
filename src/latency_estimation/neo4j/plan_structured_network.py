@@ -40,11 +40,12 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
         # The root operator (ProduceResults) is special in that it estimates latency.
         # ProduceResults should always be the root.
         is_root_op = (operator.type == 'ProduceResults')
+        data_vec_dim = self.config.data_vec_dim
+        input_dim = operator.feature_dim + (data_vec_dim * operator.num_children)
 
-        return GenericUnit(
-            input_dim=operator.feature_dim,
-            num_children=operator.num_children,
-            data_vec_dim=self.config.data_vec_dim,
+        return NeuralUnit(
+            input_dim=input_dim,
+            output_dim=self.config.data_vec_dim,
             hidden_dim=self.config.hidden_dim,
             hidden_num=self.config.hidden_num,
             is_root=is_root_op,
@@ -101,43 +102,22 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             child_outputs.append(child_output.data)
 
         node_features = self.feature_extractor.extract_features(node)
-        node_features_tensor = torch.tensor(node_features, dtype=torch.float32, device=self.device)
+        # Add batch dimension: [1, input_dim]
+        node_features_tensor = torch.tensor(node_features, dtype=torch.float32, device=self.device).unsqueeze(0)
 
-        operator_type = self.feature_extractor.get_node_type(node)
-        num_children = len(child_outputs)
-        operator_key = NnOperator.compute_key(operator_type, num_children)
+        unit = self._get_unit(NnOperator(
+            type=self.feature_extractor.get_node_type(node),
+            num_children=len(child_outputs),
+            feature_dim=len(node_features),
+        ))
 
-        expected_feature_dim = len(node_features)
-        if operator_key in self.operators:
-            expected_feature_dim = self.operators[operator_key].feature_dim
-
-        current_feature_dim = node_features_tensor.shape[0]
-        if current_feature_dim < expected_feature_dim:
-            padding = torch.zeros(expected_feature_dim - current_feature_dim, dtype=node_features_tensor.dtype, device=self.device)
-            node_features_tensor = torch.cat([node_features_tensor, padding])
-        elif current_feature_dim > expected_feature_dim:
-            node_features_tensor = node_features_tensor[:expected_feature_dim]
-
-        operator = NnOperator(
-            type=operator_type,
-            num_children=num_children,
-            feature_dim=expected_feature_dim,
-        )
-        unit = self._get_unit(operator)
-
-        # Concatenate operator features with children data vectors
         if child_outputs:
-            # Stack child data vectors: [num_children, data_vec_dim]
-            child_data = torch.stack(child_outputs)
-            # Flatten to [num_children * data_vec_dim]
-            child_data_flat = child_data.flatten()
+            # Concatenate child data vectors
+            child_concat = torch.cat(child_outputs, dim=1)
             # Concatenate with operator features
-            unit_input = torch.cat([node_features_tensor, child_data_flat])
+            unit_input = torch.cat([node_features_tensor, child_concat], dim=1)
         else:
             unit_input = node_features_tensor
-
-        # Add batch dimension: [1, input_dim]
-        unit_input = unit_input.unsqueeze(0)
 
         # Forward pass through neural unit
         output = unit(unit_input)
@@ -146,7 +126,6 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
         cache[node_id] = output
 
         return output
-
 
 class Estimation:
     def __init__(self, data: torch.Tensor, latency: torch.Tensor | None):
@@ -162,12 +141,12 @@ class NeuralUnit(nn.Module):
     For Neo4j, internal units output only data vectors.
     Only the root unit (ProduceResults) outputs latency estimation.
     """
-    def __init__(self, input_dim: int, hidden_dim: int, data_vec_dim: int, hidden_num: int, is_root: bool = False):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int, hidden_num: int, is_root: bool):
         """
         Args:
             input_dim: Size of input feature vector
             hidden_dim: Size of hidden layers
-            data_vec_dim: Size of output data vector (default 32)
+            output_dim: Size of output data vector (default 32)
             hidden_num: Number of hidden layers
             is_root: Whether this is the root unit (ProduceResults) that estimates latency
         """
@@ -176,14 +155,14 @@ class NeuralUnit(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.hidden_num = hidden_num
-        self.data_vec_dim = data_vec_dim
+        self.output_dim = output_dim
         self.is_root = is_root
 
         # Build hidden layers
         layers = []
         current_dim = input_dim
 
-        for i in range(hidden_num):
+        for _ in range(hidden_num):
             layers.append(nn.Linear(current_dim, hidden_dim))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(0.2))
@@ -192,7 +171,7 @@ class NeuralUnit(nn.Module):
         self.hidden_layers = nn.Sequential(*layers)
 
         # Output layer: data vector for all units
-        self.data_output = nn.Linear(hidden_dim, data_vec_dim)
+        self.data_output = nn.Linear(hidden_dim, output_dim)
 
         # Latency output: only for root unit
         if is_root:
@@ -218,27 +197,3 @@ class NeuralUnit(nn.Module):
             latency = self.latency_activation(self.latency_output(h))
 
         return Estimation(data_vec, latency)
-
-class GenericUnit(NeuralUnit):
-    """
-    Generic neural unit for Neo4j operators.
-
-    Handles variable number of children by concatenating their data vectors
-    with the operator's own features.
-    """
-
-    def __init__(self, input_dim: int, num_children: int, data_vec_dim: int, **kwargs):
-        """
-        Args:
-            input_dim: Size of operator's feature vector (without children)
-            num_children: Number of child operators
-            data_vec_dim: Size of data vector output
-            **kwargs: Passed to NeuralUnit (hidden_dim, hidden_num, etc.)
-        """
-        # Total input = operator features + (data_vec_dim * num_children)
-        total_input_dim = input_dim + (data_vec_dim * num_children)
-
-        super().__init__(total_input_dim, data_vec_dim=data_vec_dim, **kwargs)
-
-        self.num_children = num_children
-        self.operator_feature_dim = input_dim

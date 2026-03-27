@@ -4,9 +4,9 @@ import json
 from common.utils import JsonEncoder, auto_close, exit_with_error, print_warning
 from common.query_registry import QueryDef
 from latency_estimation.common import format_latency, load_queries, parse_queries, truncate_query, prune_dataset
-from latency_estimation.config import TrainConfig, TestConfig
+from latency_estimation.config import TrainConfig, TestConfig, DatasetConfig
 from latency_estimation.postgres.context import PostgresContext
-from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
+from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork, TsneItem
 from latency_estimation.postgres.trainer import Trainer
 from latency_estimation.postgres.latency_estimator import LatencyEstimator
 from latency_estimation.postgres.model_evaluator import ModelEvaluator
@@ -19,11 +19,12 @@ def main(rawArgs: list[str] | None = None):
     train_args(subparsers.add_parser('train', help='Train a new QPP-Net model'))
     test_args(subparsers.add_parser('test', help='Test a trained QPP-Net model'))
     estimate_args(subparsers.add_parser('estimate', help='Estimate query latency using a trained QPP-Net model'))
+    tsne_args(subparsers.add_parser('tsne', help='Generate t-SNE data for all plans in the training dataset'))
 
     from common.config import DatasetName
     args = parser.parse_args(rawArgs)
 
-    dataset = DatasetName.TPCH if args.command == 'train' else DatasetName.EDBT
+    dataset = DatasetName.TPCH if args.command == 'train' or args.command == 'tsne' else DatasetName.EDBT
     ctx = PostgresContext.create(dataset=dataset)
 
     with auto_close(ctx):
@@ -33,6 +34,8 @@ def main(rawArgs: list[str] | None = None):
             test_run(args, ctx)
         elif args.command == 'estimate':
             estimate_run(args, ctx)
+        elif args.command == 'tsne':
+            tsne_run(args, ctx)
 
 def train_args(parser: argparse.ArgumentParser):
     TrainConfig.postgres().add_arguments(parser)
@@ -43,8 +46,8 @@ def train_run(args: argparse.Namespace, ctx: PostgresContext):
     print(f'\n[1/7] Configuration:')
     print(config)
 
-    print(f'\n[2/7] Collecting {config.num_queries} query plans...')
-    bundle = ctx.load_or_create_dataset(config)
+    print(f'\n[2/7] Collecting {config.dataset.num_queries} query plans...')
+    bundle = ctx.load_or_create_dataset(config.dataset)
     combined = bundle.train + bundle.val
 
     print('\n[3/7] Building feature vocabularies...')
@@ -196,6 +199,82 @@ def estimate_run(args: argparse.Namespace, ctx: PostgresContext):
                 print(f'Total queries: {len(results)}')
                 print(f'Successful estimates: {len(valid_latencies)}')
                 print(f'Average estimated latency: {format_latency(sum(valid_latencies) / len(valid_latencies))}')
+
+
+def tsne_args(parser: argparse.ArgumentParser):
+    train = TrainConfig.postgres()
+    train.dataset.add_arguments(parser)
+    parser.add_argument('--checkpoint', '-c', type=str, help='Path to model checkpoint. Defaults to the "best" model.')
+
+def tsne_run(args: argparse.Namespace, ctx: PostgresContext):
+    dataset_config = DatasetConfig.from_arguments(ctx.config, args)
+
+    bundle = ctx.load_or_create_dataset(dataset_config)
+
+    model = ctx.load_model(args.checkpoint)
+    val_dataset = prune_dataset(bundle.val, model)
+
+    tsne_items = list[TsneItem]()
+    for item in val_dataset:
+        tsne_items.extend(model.get_tsne_data(item.plan))
+
+    tsne_by_operator: dict[str, list[TsneItem]] = {}
+    for item in tsne_items:
+        key = item.operator.key()
+        if key not in tsne_by_operator:
+            tsne_by_operator[key] = []
+        tsne_by_operator[key].append(item)
+
+    for items in tsne_by_operator.values():
+        try:
+            tsne_for_operator(items)
+        except Exception as e:
+            print_warning('Could not generate t-SNE plot for operator.', e)
+
+def tsne_for_operator(items: list[TsneItem]):
+    import numpy as np
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.manifold import TSNE
+    import matplotlib.pyplot as plt
+
+    operator = items[0].operator
+
+    print(f'\nOperator: {operator.key()}, Items: {len(items)}')
+    features = np.array([item.features for item in items])
+    estimated = np.array([item.estimated for item in items])
+    extracted = np.array([item.extracted for item in items])
+    difference = extracted - estimated
+
+    perplexity = min(30, (len(features) - 1) // 3)
+    tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)
+    x = StandardScaler().fit_transform(features)
+
+    if np.var(x) < 1e-8:
+        # There is no variance in the features, t-SNE will fail. Skip in this case.
+        print_warning('No variance in features, skipping t-SNE for this operator.')
+        return
+
+    X_2d = tsne.fit_transform(x)
+
+    plt.figure(figsize=(16, 5))
+    plt.suptitle(f't-SNE of input features for operator: {operator.key()}')
+
+    plt.subplot(1, 3, 1)
+    plt.scatter(X_2d[:, 0], X_2d[:, 1], c=estimated)
+    plt.colorbar()
+    plt.title("Estimated latency")
+
+    plt.subplot(1, 3, 2)
+    plt.scatter(X_2d[:, 0], X_2d[:, 1], c=extracted)
+    plt.colorbar()
+    plt.title("Extracted latency")
+
+    plt.subplot(1, 3, 3)
+    plt.scatter(X_2d[:, 0], X_2d[:, 1], c=difference)
+    plt.colorbar()
+    plt.title("Difference")
+
+    plt.show()
 
 if __name__ == '__main__':
     main()

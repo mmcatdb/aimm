@@ -33,25 +33,25 @@ class ModelEvaluator:
     def evaluate_query(self, query: QueryDef[str], num_runs: int) -> 'Result':
         print(f'\nEvaluating: {query.label()}')
 
+        result = Result(query.label())
+
         content = query.generate()
         plan = self.extractor.explain_plan(content)
-        result = Result(query.label(), content, plan)
-
-        estimated_latency = self.__estimate_latency(result.plan)
-        actual_latency, times, _ = self.extractor.measure_query(content, num_runs)
+        predicted_ms = self.__estimate_latency(plan)
+        actual_ms, times, _ = self.extractor.measure_query(content, num_runs)
         result.std_latency = np.std(times).item()
 
-        result.estimated_latency = estimated_latency
-        result.actual_latency = actual_latency
+        result.predicted_ms = predicted_ms
+        result.actual_ms = actual_ms
 
         # Compute metrics
-        result.absolute_error = abs(estimated_latency - actual_latency)
-        result.r_value = max(estimated_latency / actual_latency, actual_latency / estimated_latency) \
-            if estimated_latency > 0 and actual_latency > 0 else float('inf')
+        result.error_ms = abs(predicted_ms - actual_ms)
+        result.r_value = max(predicted_ms / actual_ms, actual_ms / predicted_ms) \
+            if predicted_ms > 0 and actual_ms > 0 else float('inf')
 
-        print(f'  Estimated: {estimated_latency:.2f}ms')
-        print(f'  Actual: {actual_latency:.2f}ms (±{result.std_latency:.2f}ms)')
-        print(f'  Absolute Error: {result.absolute_error:.2f}ms')
+        print(f'  Estimated: {predicted_ms:.2f}ms')
+        print(f'  Actual: {actual_ms:.2f}ms (±{result.std_latency:.2f}ms)')
+        print(f'  Absolute Error: {result.error_ms:.2f}ms')
         print(f'  R-value: {result.r_value:.4f}')
 
         return result
@@ -71,16 +71,16 @@ class ModelEvaluator:
         print('=' * 80)
 
         # Extract metrics
-        absolute_errors = [r.absolute_error for r in results]
+        errors = [r.error_ms for r in results]
         r_values = [r.r_value for r in results if r.r_value != float('inf')]
 
         # Compute statistics
         print(f'\nNumber of queries: {len(results)}')
         print(f'\nAbsolute Error:')
-        print(f'  Mean: {np.mean(absolute_errors):.2f}ms')
-        print(f'  Median: {np.median(absolute_errors):.2f}ms')
-        print(f'  Std: {np.std(absolute_errors):.2f}ms')
-        print(f'  Min/Max: {np.min(absolute_errors):.2f}ms / {np.max(absolute_errors):.2f}ms')
+        print(f'  Mean: {np.mean(errors):.2f}ms')
+        print(f'  Median: {np.median(errors):.2f}ms')
+        print(f'  Std: {np.std(errors):.2f}ms')
+        print(f'  Min/Max: {np.min(errors):.2f}ms / {np.max(errors):.2f}ms')
 
 
         if r_values:
@@ -91,43 +91,40 @@ class ModelEvaluator:
             print(f'  95th percentile: {np.percentile(r_values, 95):.4f}')
             print(f'  Min/Max: {np.min(r_values):.4f} / {np.max(r_values):.4f}')
 
-        # Create results table
-        table_data = []
-        for r in results:
-            table_data.append([
-                r.name[:30] if r.name else 'N/A',
-                f'{r.estimated_latency:.2f}',
-                f'{r.actual_latency:.2f}',
-                f'{r.absolute_error:.2f}',
-                f'{r.r_value:.4f}' if r.r_value != float('inf') else 'inf'
-            ])
+            r_value_thresholds = [1.5, 2.0, 3.0]
+            total_queries = len(results)
+            print('\nR-value Thresholds:')
+            for threshold in r_value_thresholds:
+                count_below = sum(1 for r in results if r.r_value < threshold)
+                percent_below = (count_below / total_queries) * 100
+                print(f'  R-value < {threshold}: {count_below} queries ({percent_below:.2f}%)')
 
         print('\n' + '=' * 80)
         print('Detailed Results')
         print('=' * 80)
+
+        table_data = []
+        for r in results:
+            table_data.append([
+                r.label[:30],
+                f'{r.predicted_ms:.2f}',
+                f'{r.actual_ms:.2f}',
+                f'{r.error_ms:.2f}',
+                f'{r.r_value:.4f}' if r.r_value != float('inf') else 'inf'
+            ])
+
         print(tabulate(
             table_data,
             headers=['Query', 'Estimated (ms)', 'Actual (ms)', 'Abs Error (ms)', 'R-value'],
             tablefmt='grid'
         ))
 
-        r_value_thresholds = [1.5, 2.0, 3.0]
-        total_queries = len(results)
-        print('\nR-value Thresholds:')
-        for threshold in r_value_thresholds:
-            count_below = sum(1 for r in results if r.r_value < threshold)
-            percent_below = (count_below / total_queries) * 100
-            print(f'  R-value < {threshold}: {count_below} queries ({percent_below:.2f}%)')
-
 @dataclass
 class Result:
     """Holds a single query evaluation result."""
-    name: str
-    content: str
-    plan: dict
-
-    estimated_latency: float = nan
-    actual_latency: float = nan
+    label: str
+    predicted_ms: float = nan
+    actual_ms: float = nan
     std_latency: float = nan
-    absolute_error: float = nan
+    error_ms: float = nan
     r_value: float = nan

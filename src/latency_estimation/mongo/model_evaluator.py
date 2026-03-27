@@ -1,6 +1,7 @@
 from math import nan
 import torch
 import numpy as np
+from tabulate import tabulate
 from dataclasses import dataclass
 from common.utils import EPSILON, print_warning
 from common.query_registry import QueryDef
@@ -111,11 +112,26 @@ class ModelEvaluator:
         print(f'  R <= 2.0: {np.mean([r <= 2.0 for r in r_values]) * 100:.1f}%')
         print(f'  R <= 5.0: {np.mean([r <= 5.0 for r in r_values]) * 100:.1f}%')
 
+        table_data = []
+        for r in results:
+            table_data.append([
+                r.label[:30],
+                f'{r.predicted_ms:.2f}',
+                f'{r.actual_ms:.2f}',
+                f'{r.error_ms:.2f}',
+                f'{r.r_value:.4f}' if r.r_value != float('inf') else 'inf'
+            ])
+
+        print(tabulate(
+            table_data,
+            headers=['Query', 'Predicted (ms)', 'Actual (ms)', 'Abs Error (ms)', 'R-value'],
+            tablefmt='grid'
+        ))
+
 @dataclass
 class Result:
     """Holds a single query evaluation result."""
     label: str
-
     predicted_ms: float = nan
     actual_ms: float = nan
     actual_min: float = nan

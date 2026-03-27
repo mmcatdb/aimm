@@ -78,7 +78,7 @@ class Trainer(BaseTrainer[Neo4jItem]):
         # R-value: max(pred/actual, actual/pred)
         r_values = np.maximum(
             predictions / (actuals + EPSILON),
-            actuals / (predictions + EPSILON)
+            actuals / (predictions + EPSILON),
         )
         # Mean relative error
         mre = np.mean(np.abs(predictions - actuals) / (actuals + EPSILON)).item()

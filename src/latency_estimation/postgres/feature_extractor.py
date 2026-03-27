@@ -85,9 +85,8 @@ class FeatureExtractor(BaseFeatureExtractor):
                 self.agg_operator_vocab.add(node['Operator'])
 
             # Recursively process children
-            if 'Plans' in node:
-                for child in node['Plans']:
-                    traverse_plan(child)
+            for child in self.get_node_children(node):
+                traverse_plan(child)
 
         # Process all plans
         for plan in plans:
