@@ -57,9 +57,10 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
             # For now, we'll just error out.
             raise NeuralUnitNotFoundException(operator)
 
-        # Operator consistency check - maybe not needed?
         if op_key not in self.operators:
             raise ValueError(f'Operator not found: {op_key}. Available operators: {list(self.operators.keys())}')
+
+        # Operator consistency check - maybe not needed?
         op_original = self.operators[op_key]
         if op_original.feature_dim != operator.feature_dim:
             raise ValueError(f'Feature dimension mismatch for operator {op_key}: expected {op_original.feature_dim}, got {operator.feature_dim}.')

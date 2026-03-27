@@ -72,7 +72,7 @@ class Trainer(BaseTrainer[PostgresItem]):
         # R-value: max(pred/actual, actual/pred)
         r_values = np.maximum(
             estimations / (actuals + EPSILON),
-            actuals / (estimations + EPSILON)
+            actuals / (estimations + EPSILON),
         )
         # Mean relative error
         mre = np.mean(np.abs(estimations - actuals) / (actuals + EPSILON)).item()

@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from typing_extensions import override
 import torch
 import torch.nn as nn
+import numpy as np
 from common.nn_operator import NnOperator
 from latency_estimation.config import ModelConfig
 from latency_estimation.plan_structured_network import BasePlanStructuredNetwork, OperatorCollector
@@ -37,10 +39,12 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
     @override
     def _create_unit(self, operator: NnOperator) -> nn.Module:
-        return GenericUnit(
-            input_dim=operator.feature_dim,
-            num_children=operator.num_children,
-            data_vec_dim=self.config.data_vec_dim,
+        data_vec_dim = self.config.data_vec_dim
+        input_dim = operator.feature_dim + operator.num_children * (1 + data_vec_dim)
+
+        return NeuralUnit(
+            input_dim=input_dim,
+            output_dim=data_vec_dim,
             hidden_dim=self.config.hidden_dim,
             hidden_num=self.config.hidden_num
         )
@@ -75,7 +79,16 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
         return cache
 
-    def __process_plan_node(self, node: dict, cache: dict[int, torch.Tensor]) -> torch.Tensor:
+    def get_tsne_data(self, plan: dict) -> list['TsneItem']:
+        tsne_items: list[TsneItem] = []
+
+        cache: dict[int, torch.Tensor] = {}
+
+        self.__process_plan_node(plan, cache, tsne_items)
+
+        return tsne_items
+
+    def __process_plan_node(self, node: dict, cache: dict[int, torch.Tensor], tsne_items: list['TsneItem'] | None = None) -> torch.Tensor:
         """
         Recursively process a query plan node.
         Args:
@@ -92,9 +105,8 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
         # Process children recursively
         child_outputs = []
-        if 'Plans' in node:
-            for child in node['Plans']:
-                child_outputs.append(self.__process_plan_node(child, cache))
+        for child in self.feature_extractor.get_node_children(node):
+            child_outputs.append(self.__process_plan_node(child, cache, tsne_items))
 
         node_features = self.feature_extractor.extract_features(node)
         node_features_tensor = torch.tensor(node_features, dtype=torch.float32, device=self.device).unsqueeze(0)
@@ -108,7 +120,6 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
         # Prepare input for neural unit
         if child_outputs:
-            # Internal node: concatenate node features with children outputs
             children_concat = torch.cat(child_outputs, dim=1)
             unit_input = torch.cat([node_features_tensor, children_concat], dim=1)
         else:
@@ -116,37 +127,45 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             unit_input = node_features_tensor
 
         # Forward pass through neural unit
-        output = unit(unit_input)
+        output: torch.Tensor = unit(unit_input)
 
         # Cache result
         cache[node_id] = output
+
+        # Add to t-SNE items if provided
+        if tsne_items is not None:
+            tsne_items.append(TsneItem(
+                operator=operator,
+                features=node_features,
+                extracted=self.feature_extractor.extract_node_latency(node),
+                estimated=output[:, 0].item(),
+            ))
 
         return output
 
 class NeuralUnit(nn.Module):
     """
     Base class for operator-level neural units.
-
     Each unit has:
     - Hidden layers for feature learning
     - Latency output (1 value)
     - Data vector output (d values)
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int, hidden_num: int, data_vec_dim: int):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int, hidden_num: int):
         """
         Args:
             input_dim: Dimension of input features (including children outputs)
             hidden_dim: Number of neurons in each hidden layer
             hidden_num: Number of hidden layers
-            data_vec_dim: Dimension of output data vector
+            output_dim: Dimension of output data vector
         """
         super().__init__()
 
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.hidden_num = hidden_num
-        self.data_vec_dim = data_vec_dim
+        self.output_dim = output_dim
 
         # Build hidden layers
         layers = []
@@ -164,7 +183,7 @@ class NeuralUnit(nn.Module):
 
         # Output layers
         self.latency_output = nn.Linear(hidden_dim, 1)
-        self.data_output = nn.Linear(hidden_dim, data_vec_dim)
+        self.data_output = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -172,7 +191,7 @@ class NeuralUnit(nn.Module):
         Args:
             x: Input tensor [batch_size, input_dim]
         Returns:
-            Output tensor [batch_size, 1 + data_vec_dim]
+            Output tensor [batch_size, 1 + output_dim]
             where output[:, 0] is latency and output[:, 1:] is data vector
         """
         # Pass through hidden layers
@@ -183,21 +202,9 @@ class NeuralUnit(nn.Module):
 
         return torch.cat([latency, data_vec], dim=1)
 
-class GenericUnit(NeuralUnit):
-    """
-    Generic neural unit for all operator types.
-    Handles variable number of children by calculating the
-    total input dimension correctly.
-    """
-
-    def __init__(self, input_dim: int, num_children: int, data_vec_dim: int, **kwargs):
-        """
-        Args:
-            input_dim: Feature dimension of *this operator only*
-            num_children: Number of children this operator has
-            data_vec_dim: Dimension of data output vectors
-            **kwargs: Passed to NeuralUnit (hidden_dim, hidden_num, etc.)
-        """
-        total_input_dim = input_dim + num_children * (1 + data_vec_dim)
-
-        super().__init__(total_input_dim, data_vec_dim=data_vec_dim, **kwargs)
+@dataclass
+class TsneItem:
+    operator: NnOperator
+    features: np.ndarray
+    extracted: float
+    estimated: float

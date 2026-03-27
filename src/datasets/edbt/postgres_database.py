@@ -156,8 +156,8 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             ORDER BY paths DESC
             LIMIT 50
         '''
-        
-        
+
+
     @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
     def _personalized_feed_candidates(self):
         return f'''

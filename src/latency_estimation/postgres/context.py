@@ -5,7 +5,7 @@ from common.database import DatabaseInfo
 from datasets.databases import TRAIN_DATASET
 from latency_estimation.context import BaseContext
 from latency_estimation.common import DatasetBundle, load_or_create_dataset
-from latency_estimation.config import TrainConfig
+from latency_estimation.config import DatasetConfig
 from latency_estimation.postgres.plan_extractor import PlanExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 from latency_estimation.postgres.trainer import Trainer
@@ -27,13 +27,13 @@ class PostgresContext(BaseContext[PlanStructuredNetwork]):
     def close(self):
         self.driver.close()
 
-    def load_or_create_dataset(self, config: TrainConfig):
+    def load_or_create_dataset(self, config: DatasetConfig):
         return load_or_create_dataset(
             self._dataset_path(config.num_queries, config.num_runs),
             lambda: self.__create_dataset(config),
         )
 
-    def __create_dataset(self, config: TrainConfig):
+    def __create_dataset(self, config: DatasetConfig):
         def_map, train_queries, val_queries = self.database().generate_queries(config.num_queries, config.train_split)
         train = self.extractor.create_dataset(train_queries, config.num_runs, def_map=def_map)
         val = self.extractor.create_dataset(val_queries, config.num_runs, def_map=def_map)
