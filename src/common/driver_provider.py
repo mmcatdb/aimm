@@ -7,7 +7,7 @@ Driver = PostgresDriver | MongoDriver | Neo4jDriver
 
 class DriverProvider:
     def __init__(self, db_configs: dict[DriverType, PostgresConfig | MongoConfig | Neo4jConfig]):
-        self._drivers: dict[str, Driver] = {}
+        self._drivers = dict[str, Driver]()
         self._db_configs = db_configs
 
     @staticmethod

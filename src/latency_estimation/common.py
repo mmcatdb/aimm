@@ -28,19 +28,28 @@ class ArrayDataset(Dataset[TDatasetItem]):
         return self.items[index]
 
 TDataset = TypeVar('TDataset', bound=Dataset)
+TDatasetItemStatic = TypeVar('TDatasetItemStatic', bound=BaseDatasetItem)
 
 class DatasetBundle(Generic[TDatasetItem]):
     """Container for all datasets related to latency estimation."""
-    def __init__(self, train: ArrayDataset[TDatasetItem], val: ArrayDataset[TDatasetItem]):
+    def __init__(self, train: ArrayDataset[TDatasetItem], val: ArrayDataset[TDatasetItem], test: ArrayDataset[TDatasetItem]):
         self.train = train
         self.val = val
-        # self.test = test
+        self.test = test
+
+    @staticmethod
+    def train_only(train: ArrayDataset[TDatasetItemStatic], val: ArrayDataset[TDatasetItemStatic]) -> 'DatasetBundle[TDatasetItemStatic]':
+        return DatasetBundle(train, val, ArrayDataset([]))
+
+    @staticmethod
+    def test_only(test: ArrayDataset[TDatasetItemStatic]) -> 'DatasetBundle[TDatasetItemStatic]':
+        return DatasetBundle(ArrayDataset([]), ArrayDataset([]), test)
 
     def length(self):
         # The length is missing on the base Dataset class, but it's present on all our implementations as well as ConcatDataset and others.
         # So we can safely cast to Sized to get the length.
         # Ok, we are not casting it here because we use the ArrayDataset ... but if we ever switch to the base Dataset, we could use this ...
-        return len(self.train) + len(self.val) # + len(self.test)
+        return len(self.train) + len(self.val) + len(self.test)
 
 def load_or_create_dataset(path: str, fallback: Callable[[], DatasetBundle[TDatasetItem]]) -> DatasetBundle[TDatasetItem]:
     # Try load cached dataset first.

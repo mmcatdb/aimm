@@ -33,7 +33,7 @@ class BaseTrainer(ABC, Generic[TDatasetItem]):
         self.__autosave_period = autosave_period
         """Number of epochs between automatic checkpoint saves. Should be a multiple of epoch_period."""
 
-        self._loss_history: list[float] = []
+        self._loss_history = list[float]()
 
     @abstractmethod
     def model(self) -> BasePlanStructuredNetwork:

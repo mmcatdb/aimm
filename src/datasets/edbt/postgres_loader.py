@@ -111,8 +111,6 @@ def get_postgres_edbt_schemas() -> dict[str, list[ColumnSchema]]:
         ColumnSchema('line_total_cents', 'INTEGER'),
         # GENERATED ALWAYS AS (unit_price_cents * quantity) STORED
         ColumnSchema('created_at', 'TIMESTAMPTZ NOT NULL'),
-        # Optional "doc style" snapshot for fast reads if you later embed in Mongo
-        ColumnSchema('product_snapshot', 'JSONB NOT NULL'),
     ]
 
     review = [

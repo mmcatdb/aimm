@@ -22,7 +22,7 @@ class ModelEvaluator:
             measure_actual: Whether to measure actual execution times
             num_runs: Number of runs for each query
         """
-        results: list['Result'] = []
+        results = list['Result']()
 
         print('=' * 80)
         print(f'EVALUATING {len(queries)} QUERIES')
@@ -53,7 +53,7 @@ class ModelEvaluator:
         # 1. Get EXPLAIN ANALYZE time
         print('  [1/3] Running EXPLAIN ANALYZE...')
         content = query.generate()
-        plan, extracted_ms = self.extractor.explain_plan(content, False)
+        plan, extracted_ms = self.extractor.explain_query(content, False)
         result.extracted_ms = extracted_ms
         print(f'        EXPLAIN ANALYZE: {extracted_ms:.2f} ms')
 
@@ -76,7 +76,8 @@ class ModelEvaluator:
             result.actual = actual
 
             print(f'  [3/3] Measuring actual execution ({num_runs} runs)...')
-            actual_mean, times, _ = self.extractor.measure_query(content, num_runs)
+            times = self.extractor.measure_query_multiple(content, num_runs)
+            actual_mean = np.mean(times).item()
             actual_min = np.min(times)
             actual_max = np.max(times)
 

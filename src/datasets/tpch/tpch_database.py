@@ -6,7 +6,7 @@ from common.query_registry import TQuery
 class TpchDatabase(Database[TQuery]):
 
     def __init__(self, driver: DriverType):
-        super().__init__(DatasetName.TPCH, driver)
+        super().__init__(DatasetName.TPCH, driver, None)
 
     def _param_date(self, start_year=1992, end_year=1998):
         return self._param('date', lambda: self._convert_date(self._rng_date(start_year=start_year, end_year=end_year)))

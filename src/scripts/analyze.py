@@ -20,7 +20,7 @@ def main(rawArgs: list[str] | None = None):
 
     args = parser.parse_args(rawArgs)
     type = DriverType(args.database[0])
-    info = DatabaseInfo(TRAIN_DATASET, type)
+    info = DatabaseInfo(TRAIN_DATASET, type, None)
 
     _run(info)
 
@@ -81,7 +81,7 @@ def _plot_metrics_and_losses(epochs: list[int], metrics: list[TrainerMetrics], l
     metrics_keys = list(metrics[0].keys())
     num_plots = len(metrics_keys) + (1 if losses else 0)
 
-    rows, cols = _get_subplots_dimensions(num_plots)
+    rows, cols = get_subplots_dimensions(num_plots)
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 4))
     axes = axes.flatten() if len(axes.shape) > 1 else [axes]
 
@@ -101,7 +101,7 @@ def _plot_metrics_and_losses(epochs: list[int], metrics: list[TrainerMetrics], l
     plt.savefig(save_path)
     print(f'Metrics plot saved to {save_path}.')
 
-def _get_subplots_dimensions(num_plots: int):
+def get_subplots_dimensions(num_plots: int):
     cols = math.ceil(math.sqrt(num_plots))
     rows = math.ceil(num_plots / cols)
     return rows, cols

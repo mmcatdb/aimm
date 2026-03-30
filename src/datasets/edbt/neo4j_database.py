@@ -4,12 +4,12 @@ from datasets.edbt.edbt_database import EdbtDatabase
 
 class EdbtNeo4jDatabase(EdbtDatabase[str]):
 
-    def __init__(self):
-        super().__init__(DriverType.NEO4J)
+    def __init__(self, scale: float):
+        super().__init__(DriverType.NEO4J, scale)
 
     # OLTP focused (mostly Postgres)
 
-    @query('test', 1.0, 'Order history for a person (join via customer)')
+    @query('test', 1.0, 'Order history for a person (order, customer)')
     def _order_history_for_person(self):
         return f'''
             MATCH (p:Person {{person_id: {self._param_person_id()}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
@@ -20,15 +20,14 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
                 o.total_cents AS total_cents,
                 o.currency AS currency
             ORDER BY o.ordered_at DESC
-            LIMIT 20
         '''
 
-    @query('test', 1.0, 'Order details view (now checks person via customer)')
+    @query('test', 1.0, 'Order details view (order, customer, order_item, product)')
     def _order_details(self):
         return f'''
             MATCH (p:Person {{person_id: {self._param_person_id()}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             MATCH (o)-[it:HAS_ITEM]->(pr:Product)
-                RETURN
+            RETURN
                 o.order_id AS order_id,
                 o.ordered_at AS ordered_at,
                 o.status AS status,
@@ -41,24 +40,33 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             ORDER BY order_item_id
         '''
 
-    @query('test', 1.0, 'How many times did this person buy this product? (via customer snapshots)')
+    @query('test', 1.0, 'How many times did this person bought these products? (order, customer, order_item)')
     def _product_purchases_for_person(self):
+        person_ids = self._param_person_ids(100, 1000)
+        product_ids = self._param_product_ids(100, 1000)
+
         return f'''
-            MATCH (p:Person {{person_id: {self._param_person_id()}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
+            MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid', 'shipped']
-            MATCH (o)-[:HAS_ITEM]->(pr:Product {{product_id: {self._param_product_id()}}})
+            MATCH (o)-[:HAS_ITEM]->(pr:Product)
+            WHERE p.person_id IN [{person_ids}]
+                AND pr.product_id IN [{product_ids}]
             RETURN COUNT(*) AS purchase_count
         '''
 
     # OLAP focused (Postgres)
 
-    @query('test', 1.0, 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)')
+    @query('test', 1.0, 'Seller daily revenue for last 30 days (order, order_item, product)')
     def _seller_daily_revenue(self):
+        date = self._param_date_minus_days(30, 120)
+        seller_ids = self._param_seller_ids(100, 1000)
+
         return f'''
-            MATCH (s:Seller {{seller_id: {self._param_seller_id()}}})-[:OFFERS]->(pr:Product)
+            MATCH (s:Seller)-[:OFFERS]->(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
-            WHERE o.status IN ['paid', 'shipped']
-              AND o.ordered_at >= datetime() - duration('P30D')
+            WHERE s.seller_id IN [{seller_ids}]
+                AND o.ordered_at >= datetime('{date}')
+                AND o.status IN ['paid', 'shipped']
             WITH
                 date(o.ordered_at) AS day,
                 (it.unit_price_cents * it.quantity) AS line_total,
@@ -70,13 +78,17 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             ORDER BY day
         '''
 
-    @query('test', 1.0, 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)')
+    @query('test', 1.0, 'Top products by revenue inside one category, last 7-30 days (order, order_item, product, has_category)')
     def _top_products_by_revenue(self):
+        date = self._param_date_minus_days(7, 30)
+        category_ids = self._param_category_ids(10, 50)
+
         return f'''
-            MATCH (c:Category {{category_id: {self._param_category_id()}}})<-[:HAS_CATEGORY]-(pr:Product)
+            MATCH (c:Category)<-[:HAS_CATEGORY]-(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
-            WHERE o.status IN ['paid', 'shipped']
-              AND o.ordered_at >= datetime() - duration('P7D')
+            WHERE c.category_id IN [{category_ids}]
+                AND o.ordered_at >= datetime('{date}')
+                AND o.status IN ['paid', 'shipped']
             WITH
                 pr,
                 sum(it.unit_price_cents * it.quantity) AS revenue_cents,
@@ -87,15 +99,15 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
                 revenue_cents AS revenue_cents,
                 units AS units
             ORDER BY revenue_cents DESC
-            LIMIT 50
+            LIMIT 200
         '''
 
-    @query('test', 1.0, 'Customer spend buckets (now per person)')
+    @query('test', 1.0, 'Customer spend buckets (order, customer)')
     def _customer_spend_buckets(self):
         return f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid', 'shipped']
-              AND o.ordered_at >= datetime() - duration('P90D')
+                AND o.ordered_at >= datetime('{self._param_date_minus_days(30, 180)}')
             WITH p.person_id AS person_id, sum(o.total_cents) AS spend_cents
             WITH
                 CASE
@@ -107,12 +119,15 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             ORDER BY bucket
         '''
 
-    @query('test', 1.0, 'Fraud-ish pattern (now per person)')
+    @query('test', 1.0, 'Fraud-ish pattern (order, customer, order_item, product)')
     def _fraud_pattern(self):
+        date = self._param_date_minus_days(1, 7)
+        distinct_sellers_threshold = self._param_int('distinct_sellers_threshold', 10, 1000)
+
         return f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid', 'shipped']
-              AND o.ordered_at >= datetime() - duration('PT24H')
+                AND o.ordered_at >= datetime('{date}')
             MATCH (o)-[:HAS_ITEM]->(pr:Product)
             MATCH (s:Seller)-[:OFFERS]->(pr)
             WITH p.person_id AS person_id,
@@ -121,29 +136,31 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
             WITH person_id,
                 size(seller_ids) AS distinct_sellers,
                 size(order_ids) AS orders
-            WHERE distinct_sellers >= 10
+            WHERE distinct_sellers >= {distinct_sellers_threshold}
             RETURN person_id, distinct_sellers, orders
             ORDER BY distinct_sellers DESC
             LIMIT 200
         '''
-        
-    @query('test', 1.0, 'Who should I follow? (User -> Person)')
+
+    @query('test', 1.0, 'Who should I follow? (follows)')
     def _who_to_follow(self):
         person_id = self._param_person_id()
 
         return f'''
-            MATCH (p:Person {{person_id: {person_id}}})-[:FOLLOWS]->(:Person)-[:FOLLOWS]->(cand:Person)
+            MATCH (p:Person {{person_id: {person_id}}})<-[:FOLLOWS]-(:Person)<-[:FOLLOWS]-(cand:Person)
             WHERE NOT (p)-[:FOLLOWS]->(cand) AND cand.person_id <> {person_id}
             RETURN cand.person_id AS person_id, COUNT(*) AS paths
             ORDER BY paths DESC
-            LIMIT 50
+            LIMIT 200
         '''
-        
-    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
+
+    @query('test', 1.0, 'Personalized feed candidates (product, has_category, has_interest)')
     def _personalized_feed_candidates(self):
         return f'''
-            MATCH (p:Person {{person_id: {self._param_person_id()}}})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
-            WHERE pr.is_active = true
+            MATCH (p:Person)-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
+            WHERE
+                p.person_id IN [{self._param_person_ids(2, 20)}]
+                AND pr.is_active = true
             RETURN pr.product_id AS product_id, SUM(hi.strength) AS interest_score
             ORDER BY interest_score DESC
             LIMIT 200
@@ -153,19 +170,17 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
     # Document focused (MongoDB)
     # These are built to avoid joins at read time. Put "product page bundle" in one document.
 
-    @query('test', 1.0, 'Product page read (Mongo, OLTP read-heavy, very high weight in sale)')
+    @query('test', 1.0, 'Product page read (product, seller, review)')
     def _product_page_read(self):
         return f'''
-            MATCH (pr:Product {{product_id: {self._param_product_id()}}})
+            MATCH (pr:Product {{product_id: {self._param_product_id()}, is_active: true}})
             MATCH (s:Seller)-[:OFFERS]->(pr)
             OPTIONAL MATCH (c:Customer)-[r:REVIEWED]->(pr)
-            RETURN
-                pr.product_id AS product_id,
-                pr.title AS title,
-                pr.price_cents AS price_cents,
-                pr.currency AS currency,
-                pr.stock_qty AS stock_qty,
-                {{seller_id: s.seller_id, display_name: s.display_name}} AS seller,
+            WITH pr, s, r, c
+            ORDER BY r.helpful_votes DESC, r.created_at DESC
+            WITH
+                pr,
+                s,
                 avg(toFloat(r.rating)) AS review_avg,
                 count(r) AS review_count,
                 collect({{
@@ -175,15 +190,28 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
                     body: r.body,
                     created_at: r.created_at,
                     helpful_votes: r.helpful_votes
-                }}) AS reviews
+                }})[0..50] AS top_reviews
+            RETURN
+                pr.product_id AS product_id,
+                pr.title AS title,
+                pr.price_cents AS price_cents,
+                pr.currency AS currency,
+                pr.stock_qty AS stock_qty,
+                {{
+                    seller_id: s.seller_id,
+                    display_name: s.display_name
+                }} AS seller,
+                coalesce(review_avg, 0) AS review_avg,
+                review_count,
+                top_reviews;
         '''
 
-    # @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
+    # Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)
     # def _bulk_fetch_product_pages(self):
     #     return f'''
     #         MATCH (pr:Product)
     #         WHERE pr.product_id IN [{self._param_product_ids(5, 20)}]
-    #           AND pr.is_active = true
+    #             AND pr.is_active = true
     #         MATCH (s:Seller)-[:OFFERS]->(pr)
     #         OPTIONAL MATCH (:Customer)-[r:REVIEWED]->(pr)
     #         WITH pr, s, avg(toFloat(r.rating)) AS avg_rating, count(r) AS review_count
@@ -201,14 +229,18 @@ class EdbtNeo4jDatabase(EdbtDatabase[str]):
 
 
 
-    @query('test', 1.0, 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders')
+    @query('test', 1.0, 'People also bought using shared orders (order, order_item)')
     def _people_also_bought(self):
-        product_id = self._param_product_id()
+        product_ids = self._param_product_ids(10, 50)
 
         return f'''
-            MATCH (target:Product {{product_id: {product_id}}})<-[:HAS_ITEM]-(o:Order)-[:HAS_ITEM]->(other:Product)
-            WHERE other.product_id <> {product_id}
-            RETURN other.product_id AS product_id, COUNT(*) AS co_buy
+            MATCH (target:Product)<-[:HAS_ITEM]-(o:Order)-[:HAS_ITEM]->(other:Product)
+            WHERE target.product_id IN [{product_ids}]
+                AND NOT other.product_id IN [{product_ids}]
+                AND o.status IN ['paid', 'shipped']
+            RETURN
+                other.product_id AS product_id,
+                COUNT(*) AS co_buy
             ORDER BY co_buy DESC
             LIMIT 20
         '''

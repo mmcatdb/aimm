@@ -13,6 +13,8 @@ from latency_estimation.mongo.trainer import Trainer
 from latency_estimation.mongo.model_evaluator import ModelEvaluator
 from latency_estimation.mongo.feature_extractor import FeatureExtractor
 
+SCALE = 1.0 # FIXME
+
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Mongo QPP-Net')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -25,7 +27,7 @@ def main(rawArgs: list[str] | None = None):
     args = parser.parse_args(rawArgs)
 
     dataset = DatasetName.TPCH if args.command == 'train' else DatasetName.EDBT
-    ctx = MongoContext.create(dataset=dataset)
+    ctx = MongoContext.create(SCALE, dataset=dataset)
 
     with auto_close(ctx):
         if args.command == 'train':
@@ -104,7 +106,7 @@ def test_run(args: argparse.Namespace, ctx: MongoContext):
     config = TestConfig.from_arguments(args)
 
     if config.queries:
-        test_queries: list[QueryDef[MongoQuery]] = []
+        test_queries = list[QueryDef[MongoQuery]]()
         for i, content in enumerate(config.queries, 1):
             mongo_query = try_parse_mongo_query(content)
             if mongo_query is not None:

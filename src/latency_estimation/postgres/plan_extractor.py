@@ -1,28 +1,28 @@
 import time
 from typing_extensions import override
-import numpy as np
 from common.drivers import PostgresDriver
 from common.utils import ProgressTracker, print_warning, time_quantity
 from common.query_registry import QueryDefMap
 from latency_estimation.common import ArrayDataset
 from latency_estimation.feature_extractor import BaseDatasetItem
+from latency_estimation.plan_extractor import BasePlanExtractor
 
 class PostgresItem(BaseDatasetItem):
-    def __init__(self, query: str, plan: dict, execution_time: float):
-        super().__init__(plan, execution_time)
+    def __init__(self, id: str, query: str, plan: dict, times: list[float]):
+        super().__init__(id, plan, times)
         self.query = query
 
     @override
     def query_string(self) -> str:
         return self.query
 
-class PlanExtractor:
+class PlanExtractor(BasePlanExtractor[str]):
     """Extracts query plans and execution statistics from PostgreSQL."""
 
     def __init__(self, driver: PostgresDriver):
         self.driver = driver
 
-    def create_dataset(self, queries: list[str], num_runs: int, clear_cache: bool = True, def_map: QueryDefMap[str] | None = None) -> ArrayDataset[PostgresItem]:
+    def create_dataset(self, queries: list[str], num_runs: int, def_map: QueryDefMap[str], clear_cache: bool = True) -> ArrayDataset[PostgresItem]:
         """
         Collect a dataset of query plans and execution times.
         Args:
@@ -37,13 +37,13 @@ class PlanExtractor:
         progress = ProgressTracker.limited(len(queries))
         progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
 
-        items: list[PostgresItem] = []
+        items = list[PostgresItem]()
 
         for i, query in enumerate(queries):
             try:
-                plan, _ = self.explain_plan(query, clear_cache=clear_cache)
-                execution_time, _, _ = self.measure_query(query, num_runs)
-                items.append(PostgresItem(query, plan, execution_time))
+                plan, _ = self.explain_query(query, clear_cache=clear_cache)
+                times = self.measure_query_multiple(query, num_runs)
+                items.append(PostgresItem(def_map[id(query)].id, query, plan, times))
                 progress.track()
 
             except Exception as e:
@@ -60,7 +60,7 @@ class PlanExtractor:
         print(f'\nCollected {len(dataset)} query plans.')
         return dataset
 
-    def explain_plan(self, query: str, clear_cache: bool = True) -> tuple[dict, float]:
+    def explain_query(self, query: str, clear_cache: bool = True) -> tuple[dict, float]:
         """
         Get the query plan using EXPLAIN without executing the query.
         Args:
@@ -81,7 +81,6 @@ class PlanExtractor:
                     except Exception as e:
                         # NICE_TO_HAVE If DISCARD ALL fails, try alternative cache clearing
                         print_warning(f'Could not clear cache.', e)
-                        pass
 
                 # Get the plan without execution (no ANALYZE)
                 cursor.execute(f'EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}')
@@ -94,32 +93,20 @@ class PlanExtractor:
         finally:
             self.driver.put_connection(connection)
 
-    def measure_query(self, query: str, num_runs: int) -> tuple[float, list[float], int]:
-        """
-        Execute query and measure actual wall-clock time. Runs multiple times and returns statistics.
-        Args:
-            query: SQL query string
-            num_runs: Number of times to execute the query
-        Returns:
-            Tuple of (mean_time_ms, times_ms, num_results)
-        """
-        times_ms = []
-        num_results = -1
+    @override
+    def measure_query(self, query: str) -> tuple[float, int]:
+        connection = self.driver.get_connection()
+        connection.autocommit = True
 
-        for _ in range(num_runs):
-            connection = self.driver.get_connection()
-            connection.autocommit = True
+        try:
+            with connection.cursor() as cursor:
+                start = time.perf_counter()
+                cursor.execute(query)
+                # Fetch all results to ensure query completes
+                results = cursor.fetchall()
+                elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
+                num_results = len(results)
 
-            try:
-                with connection.cursor() as cursor:
-                    start = time.perf_counter()
-                    cursor.execute(query)
-                    # Fetch all results to ensure query completes
-                    results = cursor.fetchall()
-                    elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
-                    times_ms.append(elapsed_ms)
-                    num_results = len(results)
-            finally:
-                self.driver.put_connection(connection)
-
-        return np.mean(times_ms).item(), times_ms, num_results
+                return elapsed_ms, num_results
+        finally:
+            self.driver.put_connection(connection)

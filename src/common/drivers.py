@@ -206,3 +206,9 @@ class Neo4jDriver():
 def cypher(query: str) -> LiteralString:
     """Nobody asked for this feature. What about some actually useful types hints instead?"""
     return cast(LiteralString, query)
+
+DATABASE_COLORS: dict[DriverType, str] = {
+    DriverType.POSTGRES: '#9673A6',
+    DriverType.MONGO: '#82B366',
+    DriverType.NEO4J: '#6C8EBF',
+}

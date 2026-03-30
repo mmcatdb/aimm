@@ -137,7 +137,7 @@ def _node_label(operators: OperatorNameFormatter | None, node: dict) -> str:
         icon = op_type
     label = operators.format(op_type, num_children, icon) if operators else icon
 
-    extras: list[str] = []
+    extras = list[str]()
     for key in ('Relation Name', 'Index Name', 'CTE Name', 'Function Name', 'Schema', 'Operation'):
         if key in node:
             extras.append(str(node[key]))

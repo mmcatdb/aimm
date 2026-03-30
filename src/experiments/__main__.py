@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 from common.utils import auto_close, data_size_quantity, pretty_print_int, print_warning, print_info, exit_with_error
 from common.config import DatasetName
 from common.drivers import DriverType
@@ -8,6 +9,7 @@ from latency_estimation.exceptions import NeuralUnitNotFoundException
 NUM_RUNS = 1
 # FIXME this
 TEST_DATASET = DatasetName.EDBT
+SCALE = 1.0
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Test Postgres EDBT')
@@ -50,7 +52,7 @@ def check_run():
         print(data_size_quantity.pretty_print(size))
 
     with auto_close(mongo):
-        print('MongoDB')
+        print('Mongo')
         print('- connection ... ', end='')
         mongo.database().list_collection_names()
         print('OK')
@@ -102,7 +104,7 @@ def test_mongo(checkpoint: str):
 
     missing_operators: set[str] = set()
 
-    ctx = MongoContext.create(dataset=TEST_DATASET)
+    ctx = MongoContext.create(SCALE, dataset=TEST_DATASET)
     with auto_close(ctx):
         model = ctx.load_model(checkpoint)
         estimator = LatencyEstimator(ctx.extractor, model)
@@ -112,8 +114,11 @@ def test_mongo(checkpoint: str):
                 print(f'Executing query {query.label()}...')
                 content = query.generate()
                 estimated, _ = estimator.estimate(content)
-                actual, _, num_results = ctx.extractor.measure_query(content, num_runs=NUM_RUNS)
-                print_query_results(num_results, estimated, actual)
+
+                times = ctx.extractor.measure_query_multiple(content, NUM_RUNS)
+                actual = np.mean(times).item()
+
+                print_query_results(estimated, actual)
             except NeuralUnitNotFoundException as e:
                 missing_operators.add(e.operator.key())
                 print_warning(str(e))
@@ -130,7 +135,7 @@ def test_postgres(checkpoint: str):
 
     missing_operators: set[str] = set()
 
-    ctx = PostgresContext.create(dataset=TEST_DATASET)
+    ctx = PostgresContext.create(SCALE, dataset=TEST_DATASET)
     with auto_close(ctx):
         model = ctx.load_model(checkpoint)
         estimator = LatencyEstimator(ctx.extractor, model)
@@ -140,8 +145,11 @@ def test_postgres(checkpoint: str):
                 print(f'Executing query {query.label()}...')
                 content = query.generate()
                 estimated, _ = estimator.estimate(content)
-                actual, _, num_results = ctx.extractor.measure_query(content, num_runs=NUM_RUNS)
-                print_query_results(num_results, estimated, actual)
+
+                times = ctx.extractor.measure_query_multiple(content, NUM_RUNS)
+                actual = np.mean(times).item()
+
+                print_query_results(estimated, actual)
             except NeuralUnitNotFoundException as e:
                 missing_operators.add(e.operator.key())
                 print_warning(str(e))
@@ -158,7 +166,7 @@ def test_neo4j(checkpoint: str):
 
     missing_operators: set[str] = set()
 
-    ctx = Neo4jContext.create(dataset=TEST_DATASET)
+    ctx = Neo4jContext.create(SCALE, dataset=TEST_DATASET)
     with auto_close(ctx):
         model = ctx.load_model(checkpoint)
         estimator = LatencyEstimator(ctx.extractor, model)
@@ -168,8 +176,11 @@ def test_neo4j(checkpoint: str):
                 print(f'Executing query {query.label()}...')
                 content = query.generate()
                 estimated, _ = estimator.estimate(content)
-                actual, _, num_results = ctx.extractor.measure_query(content, num_runs=NUM_RUNS)
-                print_query_results(num_results, estimated, actual)
+
+                times = ctx.extractor.measure_query_multiple(content, NUM_RUNS)
+                actual = np.mean(times).item()
+
+                print_query_results(estimated, actual)
             except NeuralUnitNotFoundException as e:
                 missing_operators.add(e.operator.key())
                 print_warning(str(e))
@@ -180,8 +191,8 @@ def test_neo4j(checkpoint: str):
 
         try_print_missing_operators(missing_operators, model.get_units())
 
-def print_query_results(num_results: int, estimated: float, actual: float):
-    print(f'Returned {num_results} rows. Estimated: {estimated:.2f} ms, Actual: {actual:.2f} ms.')
+def print_query_results(estimated: float, actual: float):
+    print(f'Estimated: {estimated:.2f} ms, Actual: {actual:.2f} ms.')
 
 def try_print_missing_operators(missing: set[str], available: list[NnOperator]):
     if not missing:

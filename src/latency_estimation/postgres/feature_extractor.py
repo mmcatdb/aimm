@@ -1,3 +1,5 @@
+import re
+
 from typing_extensions import override
 import numpy as np
 from collections import defaultdict
@@ -335,3 +337,35 @@ class FeatureExtractor(BaseFeatureExtractor):
     def extract_node_latency(node: dict) -> float:
         """Extract actual execution time for node from EXPLAIN ANALYZE output."""
         return node.get('Actual Total Time', 0.0)
+
+    # TODO Make this abstract (or move it elsewhere)?
+    def extract_query_kinds(self, query: str) -> set[str]:
+        """Returns the set of kinds that have to be in the database for the query to be executed."""
+
+        # FIXME Check this ...
+
+        ctes = {
+            *CTE_PATTERN.findall(query),
+            *CTE_FOLLOWING_PATTERN.findall(query),
+        }
+        ctes_lower = {cte.lower() for cte in ctes}
+
+        tables = set[str]()
+        for match in SOURCE_PATTERN.finditer(query):
+            first_quoted, first_plain, second_quoted, second_plain = match.groups()
+
+            first_part = first_quoted or first_plain
+            second_part = second_quoted or second_plain
+            table_name = second_part if second_part else first_part
+
+            if not table_name:
+                continue
+            if table_name.lower() in ctes_lower:
+                continue
+            tables.add(table_name)
+
+        return tables
+
+CTE_PATTERN = re.compile(r'\bWITH\s+([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(', re.IGNORECASE)
+CTE_FOLLOWING_PATTERN = re.compile(r',\s*([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(', re.IGNORECASE)
+SOURCE_PATTERN = re.compile(r'\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:(?:"([^"]+)")|([A-Za-z_][A-Za-z0-9_]*))(?:\s*\.\s*(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*)))?', re.IGNORECASE)

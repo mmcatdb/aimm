@@ -60,7 +60,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             Estimated latency (scalar tensor [1, 1])
         """
         # Process the entire plan tree
-        cache: dict[int, Estimation] = {}
+        cache = dict[int, Estimation]()
         output = self.__process_plan_node(plan, cache)
 
         # Root should have estimated latency

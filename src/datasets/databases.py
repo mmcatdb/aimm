@@ -4,27 +4,30 @@ from common.drivers import DriverType
 
 # FIXME Use some unified database provider
 
-DB_CACHE: dict[str, Database] = {}
+DB_CACHE = dict[str, Database]()
 
 def find_database(info: DatabaseInfo) -> Database:
     database = DB_CACHE.get(info.id())
     if not database:
-        database = find_database_uncached(info.dataset, info.type)
+        database = _find_database_uncached(info.dataset, info.type, info.scale)
         DB_CACHE[info.id()] = database
 
     return database
 
-def find_database_uncached(dataset: DatasetName, type: DriverType) -> Database:
+def _find_database_uncached(dataset: DatasetName, type: DriverType, scale: float | None) -> Database:
     if dataset == DatasetName.EDBT:
+        if scale is None:
+            raise ValueError('Scale factor must be provided for EDBT dataset.')
+
         if type == DriverType.POSTGRES:
             from datasets.edbt.postgres_database import EdbtPostgresDatabase
-            return EdbtPostgresDatabase()
+            return EdbtPostgresDatabase(scale)
         if type == DriverType.MONGO:
             from datasets.edbt.mongo_database import EdbtMongoDatabase
-            return EdbtMongoDatabase()
+            return EdbtMongoDatabase(scale)
         if type == DriverType.NEO4J:
             from datasets.edbt.neo4j_database import EdbtNeo4jDatabase
-            return EdbtNeo4jDatabase()
+            return EdbtNeo4jDatabase(scale)
     elif dataset == DatasetName.TPCH:
         if type == DriverType.POSTGRES:
             from datasets.tpch.postgres_database import TpchPostgresDatabase

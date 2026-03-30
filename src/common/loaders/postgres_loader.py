@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 import os
+import time
 from common.drivers import PostgresDriver
 from common.config import DatasetName
+from common.utils import time_quantity
 
 class ColumnSchema:
     def __init__(self, name: str, type: str, primary_key = False, references: str | None = None):
@@ -44,6 +46,7 @@ class PostgresLoader(ABC):
         print(f'Connecting to Postgres at: {self._driver.config.host}:{self._driver.config.port}')
         print('-' * len(title) + '\n')
 
+        self.__times = dict[str, float]()
         self._import_directory = import_directory
         self.__check_files()
 
@@ -63,6 +66,8 @@ class PostgresLoader(ABC):
         for entity, schema in self._get_schemas().items():
             self.__populate_kind(entity, schema)
         print('Data loading completed.')
+
+        return self.__times
 
     def __check_files(self):
         """Verify that all files exist in the import directory."""
@@ -150,9 +155,11 @@ class PostgresLoader(ABC):
 
         path = os.path.join(self._import_directory, entity + '.tbl')
 
+        start = time.perf_counter()
         with open(path, "r") as file:
             with self._driver.cursor() as cursor:
                 cursor.copy_expert(query, file)
+        self.__times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')
 
 def create_database_if_not_exists(driver: PostgresDriver, database_name: str) -> bool:
     """Returns True if the database was created, False if it already existed."""

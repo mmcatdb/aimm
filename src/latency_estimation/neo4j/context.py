@@ -17,28 +17,32 @@ class Neo4jContext(BaseContext[PlanStructuredNetwork]):
         self.extractor: PlanExtractor
 
     @staticmethod
-    def create(quiet: bool = False, dataset: DatasetName = TRAIN_DATASET) -> 'Neo4jContext':
+    def create(scale: float | None, quiet: bool = False, dataset: DatasetName = TRAIN_DATASET) -> 'Neo4jContext':
         ctx = Neo4jContext(Config.load(), quiet)
         ctx.driver = Neo4jDriver(ctx.config.neo4j, dataset.value)
-        ctx.info = DatabaseInfo(dataset, DriverType.NEO4J)
+        ctx.info = DatabaseInfo(dataset, DriverType.NEO4J, scale)
         ctx.extractor = PlanExtractor(ctx.driver)
         return ctx
 
     def close(self):
         self.driver.close()
 
-    def load_or_create_dataset(self, config: DatasetConfig):
+    def load_or_create_dataset(self, config: DatasetConfig, is_for_test: bool = False):
         return load_or_create_dataset(
             self._dataset_path(config.num_queries, config.num_runs),
-            lambda: self.__create_dataset(config),
+            lambda: self.__create_dataset(config, is_for_test),
         )
 
-    def __create_dataset(self, config: DatasetConfig):
+    def __create_dataset(self, config: DatasetConfig, is_for_test: bool):
+        if is_for_test:
+            def_map, test_queries = self.database().generate_test_queries()
+            test = self.extractor.create_dataset(test_queries, config.num_runs, def_map=def_map)
+            return DatasetBundle.test_only(test)
+
         def_map, train_queries, val_queries = self.database().generate_queries(config.num_queries, config.train_split)
         train = self.extractor.create_dataset(train_queries, config.num_runs, def_map=def_map)
         val = self.extractor.create_dataset(val_queries, config.num_runs, def_map=def_map)
-
-        return DatasetBundle(train, val)
+        return DatasetBundle.train_only(train, val)
 
     @override
     def _create_model(self, checkpoint_model: dict) -> PlanStructuredNetwork:

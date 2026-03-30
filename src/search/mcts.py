@@ -1,8 +1,25 @@
-import json
 import math
 import random
-import sys
+from typing import Protocol
+from common.drivers import DriverType
 
+QueryState = list[str]
+StateMatrix = tuple[tuple[int, ...], ...]
+StateMapping = list[str]
+"""Assigned database for each query."""
+StateKey = StateMatrix # Might be changed later
+MCTSEdge = tuple[StateKey, StateKey]
+MCTSAction = tuple[str, int, int, None]  # (mode, query_index, db_index, extra)
+
+class IQueryEngine(Protocol):
+    def estimate_latency(self, state: StateMapping) -> float: ...
+
+class IOutputCollector(Protocol):
+    def on_initial_solution(self, state: StateMapping, latency: float): ...
+
+    def on_best_solution(self, state: StateMapping, latency: float, processed_states: int): ...
+
+    def on_iteration(self, iteration: int, processed_states: int): ...
 
 class MCTS:
     """
@@ -18,10 +35,10 @@ class MCTS:
 
     def __init__(
         self,
-        query_engine,
-        kinds,
-        schema_converter,
-        databases,
+        query_engine: IQueryEngine,
+        kinds: list[int],
+        output_collector: IOutputCollector,
+        databases: list[str],
         relation_endpoints=None,
         relationship_kinds=None,
         isa_roots=None,
@@ -29,25 +46,23 @@ class MCTS:
         allowed_isa_strategies=None,
         embedding_morphism_exists=None,
         exploration_weight=None,
-        verbose=False,
     ):
-        if query_engine is None:
-            raise ValueError("query_engine must be provided")
-
         self.query_engine = query_engine
         self.kinds = tuple(kinds)
         self.query_ids = self.kinds
-        self.schema_converter = schema_converter
+        self.output_collector = output_collector
 
-        if databases is None:
-            self.databases = tuple(self.query_engine.available_databases())
-        else:
-            self.databases = tuple(databases)
+        # if databases is None:
+        #     self.databases = tuple(self.query_engine.available_databases())
+        # else:
+        #     self.databases = tuple(databases)
 
-        if not self.databases:
-            raise ValueError("No databases available for MCTS")
-        if not self.kinds:
-            raise ValueError("No queries provided for MCTS")
+        self.databases = tuple(databases)
+
+        # if not self.databases:
+        #     raise ValueError('No databases available for MCTS')
+        # if not self.kinds:
+        #     raise ValueError('No queries provided for MCTS')
 
         self.kind_to_index = {kind: index for index, kind in enumerate(self.kinds)}
         self.db_to_index = {db: index for index, db in enumerate(self.databases)}
@@ -61,43 +76,33 @@ class MCTS:
         self.embedding_morphism_exists = embedding_morphism_exists
 
         self.exploration_weight = math.sqrt(2.0) if exploration_weight is None else exploration_weight
-        self.verbose = verbose
 
         # Global graph storage.
-        self.state_to_node = {}
-        self.edge_visits = {}
+        self.state_to_node = dict[StateKey, MCTSNode]()
+        self.edge_visits = dict[MCTSEdge, int]()
 
-    def run(self, initial_state, iterations=1000000):
+    def run(self, initial_state: QueryState, iterations: int):
         if iterations <= 0:
-            raise ValueError("iterations must be > 0")
+            raise ValueError('iterations must be > 0')
 
         self.state_to_node.clear()
         self.edge_visits.clear()
 
         root_state = self.normalize_state(initial_state)
         if not self.is_valid_state(root_state):
-            raise ValueError("Initial state is not valid according to current constraints")
+            raise ValueError('Initial state is not valid according to current constraints')
 
         root, _ = self.get_or_create_node(root_state)
 
+        processed_states = 0
         # Baseline evaluation (spec: measure root first).
-        best_mapping = self.state_to_mapping(root_state)
+        best_mapping = self._state_to_mapping(root_state)
         _, best_time = self.perform_simulation(root_state)
 
-
-        initial_schema = self.schema_converter.convert_state_to_schema(best_mapping)
-        self.processed_states = 0
-
-        outputs = [ {
-            'id': self.processed_states,
-            'price': best_time,
-            'objexes': initial_schema,
-        } ]
-        self.output_best_schemas(outputs)
+        self.output_collector.on_initial_solution(best_mapping, best_time)
 
         for iteration in range(iterations):
-            if self.verbose:
-                print("Iteration", iteration + 1)
+            self.output_collector.on_iteration(iteration, processed_states)
 
             path_nodes = [root]
             path_edges = []
@@ -124,21 +129,14 @@ class MCTS:
                 path_state_keys.add(child.key)
 
                 if is_new:
-                    self.processed_states += 1
+                    processed_states += 1
                     reward, exec_time = self.perform_simulation(child.state)
                     if exec_time < best_time:
-                        schema = self.schema_converter.convert_state_to_schema(self.state_to_mapping(child.state))
+                        self.output_collector.on_best_solution(self._state_to_mapping(child.state), exec_time, processed_states)
 
-                        outputs.insert(0, {
-                            'id': self.processed_states,
-                            'price': exec_time,
-                            'objexes': schema,
-                        })
-                        self.output_best_schemas(outputs)
-
-                        print([schema, exec_time])
+                        # print([schema, exec_time])
                         best_time = exec_time
-                        best_mapping = self.state_to_mapping(child.state)
+                        best_mapping = self._state_to_mapping(child.state)
                 else:
                     reward = child.avg_reward()
             else:
@@ -153,16 +151,7 @@ class MCTS:
 
         return best_mapping, best_time
 
-    def output_best_schemas(self, outputs):
-        output = {
-            'processedStates': self.processed_states,
-            'solutions': outputs[:3],
-        }
-        json_string = json.dumps(output)
-        sys.stdout.write(json_string + '\n')
-        sys.stdout.flush()
-
-    def get_or_create_node(self, state):
+    def get_or_create_node(self, state: StateMatrix):
         key = self.state_key(state)
         node = self.state_to_node.get(key)
         if node is not None:
@@ -172,11 +161,11 @@ class MCTS:
         self.state_to_node[key] = node
         return node, True
 
-    def state_key(self, state):
+    def state_key(self, state: StateMatrix) -> StateKey:
         # State is already immutable, but keep this helper for readability and future changes.
         return state
 
-    def normalize_state(self, raw_state):
+    def normalize_state(self, raw_state: QueryState) -> StateMatrix:
         """
         Accepts either:
         - Mapping style from old implementation: tuple/list of db names per kind column.
@@ -192,16 +181,16 @@ class MCTS:
         # Matrix input.
         matrix = []
         if not isinstance(raw_state, (list, tuple)):
-            raise ValueError("State must be a mapping vector or matrix")
+            raise ValueError('State must be a mapping vector or matrix')
 
         if len(raw_state) != len(self.databases):
-            raise ValueError("Matrix row count must match number of databases")
+            raise ValueError('Matrix row count must match number of databases')
 
         for row_index, row in enumerate(raw_state):
             if not isinstance(row, (list, tuple)):
-                raise ValueError("Each matrix row must be list/tuple")
+                raise ValueError('Each matrix row must be list/tuple')
             if len(row) != len(self.kinds):
-                raise ValueError("Matrix column count must match number of queries")
+                raise ValueError('Matrix column count must match number of queries')
 
             normalized_row = []
             for column_index, cell in enumerate(row):
@@ -210,7 +199,7 @@ class MCTS:
 
         return tuple(matrix)
 
-    def looks_like_mapping_vector(self, raw_state):
+    def looks_like_mapping_vector(self, raw_state: QueryState) -> bool:
         if not isinstance(raw_state, (list, tuple)):
             return False
         if len(raw_state) != len(self.kinds):
@@ -221,7 +210,7 @@ class MCTS:
                 return False
         return True
 
-    def mapping_vector_to_state(self, mapping_vector):
+    def mapping_vector_to_state(self, mapping_vector: QueryState) -> StateMatrix:
         # Start all cells as False.
         rows = []
         for _ in self.databases:
@@ -233,23 +222,23 @@ class MCTS:
 
         return tuple(tuple(row) for row in rows)
 
-    def state_to_mapping_vector(self, state):
-        mapping_vector = []
-        for query_index in range(len(self.kinds)):
-            assigned_db = None
-            for db_index in range(len(self.databases)):
-                cell = state[db_index][query_index]
-                if cell is True:
-                    assigned_db = self.databases[db_index]
-                    break
+    # def state_to_mapping_vector(self, state: StateMatrix) -> QueryState:
+    #     mapping_vector = []
+    #     for query_index in range(len(self.kinds)):
+    #         assigned_db = None
+    #         for db_index in range(len(self.databases)):
+    #             cell = state[db_index][query_index]
+    #             if cell is True:
+    #                 assigned_db = self.databases[db_index]
+    #                 break
 
-            if assigned_db is None:
-                raise ValueError("Invalid state: query has no assigned database")
-            mapping_vector.append(assigned_db)
+    #         if assigned_db is None:
+    #             raise ValueError('Invalid state: query has no assigned database')
+    #         mapping_vector.append(assigned_db)
 
-        return tuple(mapping_vector)
+    #     return tuple(mapping_vector)
 
-    def normalize_cell(self, cell, row_index, column_index):
+    def normalize_cell(self, cell, row_index, column_index) -> bool:
         if cell is False or cell is True:
             return cell
 
@@ -258,12 +247,12 @@ class MCTS:
 
         if isinstance(cell, str):
             lowered = cell.strip().lower()
-            if lowered == "false":
+            if lowered == 'false':
                 return False
-            if lowered == "true":
+            if lowered == 'true':
                 return True
 
-        raise ValueError("Invalid cell value in matrix state")
+        raise ValueError('Invalid cell value in matrix state')
 
     def perform_simulation(self, state):
         """
@@ -275,24 +264,26 @@ class MCTS:
         3) query_engine.measure_queries(mapping)
         """
 
-        if hasattr(self.query_engine, "estimate_latency"):
-            execution_time = self.query_engine.estimate_latency(state, self)
-        elif hasattr(self.query_engine, "measure_state"):
-            execution_time = self.query_engine.measure_state(state)
-        elif hasattr(self.query_engine, "measure_queries"):
-            execution_time = self.query_engine.measure_queries(self.state_to_mapping(state), verbose=False)
-        else:
-            raise AttributeError("query_engine must provide estimate_latency, measure_state, or measure_queries")
+        # if hasattr(self.query_engine, 'estimate_latency'):
+        #     execution_time = self.query_engine.estimate_latency(state, self)
+        # elif hasattr(self.query_engine, 'measure_state'):
+        #     execution_time = self.query_engine.measure_state(state)
+        # elif hasattr(self.query_engine, 'measure_queries'):
+        #     execution_time = self.query_engine.measure_queries(self._state_to_mapping(state), verbose=False)
+        # else:
+        #     raise AttributeError('query_engine must provide estimate_latency, measure_state, or measure_queries')
+
+        execution_time = self.query_engine.estimate_latency(self._state_to_mapping(state))
 
         reward = 100.0 / (execution_time + 0.001)
         return reward, execution_time
 
-    def state_to_mapping(self, state):
+    def _state_to_mapping(self, state: StateMatrix) -> StateMapping:
         """
         Converts matrix state into query -> database mapping.
         """
 
-        mapping = {}
+        mapping = list[str]()
         for query_index, query_id in enumerate(self.kinds):
             chosen_db = None
             for db_index, db_name in enumerate(self.databases):
@@ -302,16 +293,16 @@ class MCTS:
                     break
 
             if chosen_db is None:
-                raise ValueError("Query has no assigned database in state: " + query_id)
+                raise ValueError(f'Query has no assigned database in state: {query_id}')
 
-            mapping[query_id] = chosen_db
+            mapping.append(chosen_db)
 
         return mapping
 
-    def is_valid_state(self, state):
+    def is_valid_state(self, state: StateMatrix) -> bool:
         return self.validate_query_assignments(state)
 
-    def validate_query_assignments(self, state):
+    def validate_query_assignments(self, state: StateMatrix) -> bool:
         for query_index in range(len(self.kinds)):
             assignment_count = 0
             for db_index in range(len(self.databases)):
@@ -324,7 +315,7 @@ class MCTS:
                 return False
         return True
 
-    def validate_structural_integrity(self, state):
+    def validate_structural_integrity(self, state: StateMatrix) -> bool:
         for kind_index, kind_name in enumerate(self.kinds):
             if kind_name in self.relationship_kinds:
                 continue
@@ -342,22 +333,22 @@ class MCTS:
 
         return True
 
-    def validate_embeddings(self, state):
-        mongodb_index = None
+    def validate_embeddings(self, state: StateMatrix) -> bool:
+        mongo_index = None
         for index, db_name in enumerate(self.databases):
-            if isinstance(db_name, str) and db_name.lower() == "mongodb":
-                mongodb_index = index
+            if isinstance(db_name, str) and db_name == DriverType.MONGO.value:
+                mongo_index = index
                 break
 
         for db_index in range(len(self.databases)):
-            graph = {}
+            graph = dict[int, int]()
 
             # Build local embedding graph for this database.
             for kind_index, kind_name in enumerate(self.kinds):
                 cell = state[db_index][kind_index]
                 if isinstance(cell, str):
                     # Temporary product rule: embeddings can only exist in MongoDB.
-                    if mongodb_index is None or db_index != mongodb_index:
+                    if mongo_index is None or db_index != mongo_index:
                         return False
 
                     # Embedded target must exist in the same database.
@@ -376,11 +367,11 @@ class MCTS:
 
         return True
 
-    def embedding_graph_has_cycle(self, graph):
+    def embedding_graph_has_cycle(self, graph: dict[int, int]) -> bool:
         visiting = set()
         visited = set()
 
-        def dfs(node):
+        def dfs(node: int) -> bool:
             if node in visiting:
                 return True
             if node in visited:
@@ -399,7 +390,7 @@ class MCTS:
                 return True
         return False
 
-    def validate_relationship_kinds(self, state):
+    def validate_relationship_kinds(self, state: StateMatrix) -> bool:
         if not self.relationship_kinds:
             return True
 
@@ -451,7 +442,7 @@ class MCTS:
 
         return True
 
-    def validate_isa_rules(self, state):
+    def validate_isa_rules(self, state: StateMatrix) -> bool:
         if not self.isa_roots:
             return True
 
@@ -463,13 +454,13 @@ class MCTS:
             specializations = self.isa_specializations.get(root_kind, [])
 
             for db_index, db_name in enumerate(self.databases):
-                strategies = self.allowed_isa_strategies.get((db_name, root_kind), {"single table", "table per class"})
+                strategies = self.allowed_isa_strategies.get((db_name, root_kind), {'single table', 'table per class'})
                 root_cell = state[db_index][root_index]
 
-                if "single table" not in strategies and root_cell is not False:
+                if 'single table' not in strategies and root_cell is not False:
                     return False
 
-                if "table per class" not in strategies:
+                if 'table per class' not in strategies:
                     for child_kind in specializations:
                         if child_kind not in self.kind_to_index:
                             continue
@@ -488,13 +479,13 @@ class MCTS:
 
         return True
 
-    def kind_primary_db(self, state, kind_index):
+    def kind_primary_db(self, state: StateMatrix, kind_index: int) -> str | None:
         for db_index in range(len(self.databases)):
             if state[db_index][kind_index] is not False:
                 return self.databases[db_index]
         return None
 
-    def are_embedded_into_each_other(self, state, left_index, right_index):
+    def are_embedded_into_each_other(self, state: StateMatrix, left_index: int, right_index: int) -> bool:
         left_kind = self.kinds[left_index]
         right_kind = self.kinds[right_index]
 
@@ -506,7 +497,7 @@ class MCTS:
 
         return False
 
-    def are_embedded_into_same_host(self, state, left_index, right_index):
+    def are_embedded_into_same_host(self, state: StateMatrix, left_index: int, right_index: int) -> bool:
         for db_index in range(len(self.databases)):
             left_cell = state[db_index][left_index]
             right_cell = state[db_index][right_index]
@@ -518,12 +509,12 @@ class MCTS:
 
 
 class MCTSNode:
-    def __init__(self, mcts, state):
+    def __init__(self, mcts: MCTS, state: StateMatrix):
         self.mcts = mcts
         self.state = state
         self.key = mcts.state_key(state)
 
-        self.children = []
+        self.children = list[MCTSNode]()
         self.parents = set()
 
         self.total_reward = 0.0
@@ -532,33 +523,33 @@ class MCTSNode:
         # For deterministic coverage of action space per node.
         self.actions_left = self.generate_base_actions()
 
-    def avg_reward(self):
+    def avg_reward(self) -> float:
         if self.visits == 0:
             return 0.0
         return self.total_reward / self.visits
 
-    def update(self, reward):
+    def update(self, reward: float):
         self.visits += 1
         self.total_reward += reward
 
-    def generate_base_actions(self):
+    def generate_base_actions(self) -> list[MCTSAction]:
         """
         Each action changes one query assignment.
 
         Action tuple format:
-        ("direct", query_index, db_index, None)
+        ('direct', query_index, db_index, None)
         """
 
-        actions = []
+        actions = list[MCTSAction]()
         for query_index, _ in enumerate(self.mcts.kinds):
             for db_index in range(len(self.mcts.databases)):
                 if query_index >= 9 and db_index == 2: continue  # NOTE: Mongo doesn't have last 2 queries defined
-                actions.append(("direct", query_index, db_index, None))
+                actions.append(('direct', query_index, db_index, None))
 
         random.shuffle(actions)
         return actions
 
-    def apply_action(self, action):
+    def apply_action(self, action: MCTSAction) -> StateMatrix:
         mode, query_index, db_index, _ = action
 
         rows = [list(row) for row in self.state]
@@ -567,14 +558,14 @@ class MCTSNode:
         for row_index in range(len(rows)):
             rows[row_index][query_index] = False
 
-        if mode == "direct":
+        if mode == 'direct':
             rows[db_index][query_index] = True
         else:
-            raise ValueError("Unknown action mode")
+            raise ValueError('Unknown action mode')
 
         return tuple(tuple(row) for row in rows)
 
-    def get_viable_actions(self, path_state_keys):
+    def get_viable_actions(self, path_state_keys: set[StateKey]) -> list[MCTSAction]:
         viable = []
         for action in self.actions_left:
             new_state = self.apply_action(action)
@@ -591,19 +582,19 @@ class MCTSNode:
 
         return viable
 
-    def is_fully_expanded(self, path_state_keys):
+    def is_fully_expanded(self, path_state_keys: set[StateKey]) -> bool:
         return len(self.get_viable_actions(path_state_keys)) == 0
 
-    def is_leaf(self, path_state_keys):
+    def is_leaf(self, path_state_keys: set[StateKey]) -> bool:
         for child in self.children:
             if child.key not in path_state_keys:
                 return False
         return True
 
-    def expand(self, path_state_keys):
+    def expand(self, path_state_keys: set[StateKey]):
         viable_actions = self.get_viable_actions(path_state_keys)
         if not viable_actions:
-            raise RuntimeError("expand called on node without viable actions")
+            raise RuntimeError('expand called on node without viable actions')
 
         action = random.choice(viable_actions)
         self.actions_left.remove(action)
@@ -618,13 +609,13 @@ class MCTSNode:
 
         return child, is_new
 
-    def select_best_child(self, path_state_keys):
+    def select_best_child(self, path_state_keys: set[StateKey]) -> 'MCTSNode':
         viable_children = [child for child in self.children if child.key not in path_state_keys]
         if not viable_children:
-            raise RuntimeError("select_best_child called with no viable child")
+            raise RuntimeError('select_best_child called with no viable child')
 
         best_score = None
-        best_candidates = []
+        best_candidates = list[MCTSNode]()
 
         for child in viable_children:
             edge_key = (self.key, child.key)
@@ -632,7 +623,7 @@ class MCTSNode:
 
             # UCT2 = avg(child) + C * sqrt(ln(parent_visits) / edge_visits)
             if edge_visits == 0:
-                score = float("inf")
+                score = float('inf')
             else:
                 exploitation = child.avg_reward()
                 parent_visits = max(1, self.visits)

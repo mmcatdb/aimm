@@ -4,6 +4,7 @@ from collections import defaultdict
 import math
 from common.utils import EPSILON
 from common.drivers import MongoDriver
+from common.database import MongoQuery, MongoAggregateQuery
 from latency_estimation.feature_extractor import BaseFeatureExtractor
 
 # All known MongoDB execution stages (not used right now)
@@ -45,7 +46,7 @@ class FeatureExtractor(BaseFeatureExtractor):
         self.direction_map = {'forward': 1.0, 'backward': -1.0}
         self.numeric_stats = {}
         # Collection stats cache (loaded before training/inference)
-        self.collection_stats: dict[str, dict[str, int | float]] = {}
+        self.collection_stats = dict[str, dict[str, int | float]]()
 
     @staticmethod
     @override
@@ -555,3 +556,47 @@ class FeatureExtractor(BaseFeatureExtractor):
         return vec
 
     #endregion
+    #region Kinds
+
+    def extract_query_kinds(self, query: MongoQuery) -> set[str]:
+        """Returns the set of kinds that have to be in the database for the query to be executed."""
+        collections = set[str](query.collection)
+        if isinstance(query, MongoAggregateQuery):
+            collections.update(self._extract_mongo_pipeline_collections(query.pipeline))
+
+        return collections
+
+    def _extract_mongo_pipeline_collections(self, pipeline: list[dict]) -> set[str]:
+        collections = set[str]()
+
+        def append_collection(name: str | None):
+            if name is not None:
+                collections.add(name)
+
+        def visit_node(node):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key in ('$lookup', '$graphLookup') and isinstance(value, dict):
+                        append_collection(value.get('from'))
+                        if 'pipeline' in value:
+                            visit_node(value['pipeline'])
+                        continue
+
+                    if key == '$unionWith':
+                        if isinstance(value, str):
+                            append_collection(value)
+                        elif isinstance(value, dict):
+                            append_collection(value.get('coll'))
+                            if 'pipeline' in value:
+                                visit_node(value['pipeline'])
+                        continue
+
+                    visit_node(value)
+            elif isinstance(node, list):
+                for item in node:
+                    visit_node(item)
+
+        visit_node(pipeline)
+
+        return collections
+

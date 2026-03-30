@@ -21,7 +21,7 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
         self.feature_extractor = feature_extractor
         self.units = nn.ModuleDict()
         """One neural unit for each operator type"""
-        self.operators: dict[str, NnOperator] = {}
+        self.operators = dict[str, NnOperator]()
 
         self.device = 'cpu'
         """Default device; will be updated when loading checkpoint or moving model."""

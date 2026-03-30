@@ -1,15 +1,15 @@
-from common.config import DatasetName
+from common.config import Config, DatasetName
 from latency_estimation.postgres.context import PostgresContext
 from latency_estimation.neo4j.context import Neo4jContext
-from common.drivers import cypher
+from common.drivers import cypher, Neo4jDriver
 from experiments.__main__ import main as experiments_main
 
 # FIXME this
 TEST_DATASET = DatasetName.EDBT
 
 def main():
-    # test_plans()
-    test_evaluation()
+    test_plans()
+    # test_evaluation()
 
 def test_evaluation():
     experiments_main(split('evaluate -c data/checkpoints/tpch_neo4j_final.pt -d neo4j'))
@@ -45,7 +45,7 @@ def test_plans():
     #     LIMIT 20
     #     '''.format(person_id=1)
 
-    # plan = ctx.extractor.explain_plan(query)
+    # plan = ctx.extractor.explain_query(query)
 
     with ctx.driver.cursor() as cursor:
         cursor.execute(f'EXPLAIN (GENERIC_PLAN) {query}')

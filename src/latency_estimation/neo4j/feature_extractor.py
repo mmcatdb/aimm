@@ -289,3 +289,14 @@ class FeatureExtractor(BaseFeatureExtractor):
 
         normalized = (value - min_val) / (max_val - min_val + EPSILON)
         return float(np.clip(normalized, 0, 1))
+
+    # TODO Make this abstract (or move it elsewhere)?
+    def extract_query_kinds(self, query: str) -> set[str]:
+        labels = NODE_PATTERN.findall(query)
+        edges = EDGE_PATTERN.findall(query)
+
+        return set(labels + edges)
+
+NODE_PATTERN = re.compile(r'\(\s*\w*\s*:\s*([A-Za-z0-9_]+)')
+# FIXME Check this ...
+EDGE_PATTERN = re.compile(r'\[\s*\w*\s*:\s*(FOLLOWS|HAS_CATEGORY)\b')

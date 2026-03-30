@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
+import numpy as np
 
 class BaseDatasetItem(ABC):
 
-    def __init__(self, plan: dict, execution_time: float):
+    def __init__(self, id: str, plan: dict, times: list[float]):
+        self.id = id
         self.plan = plan
-        self.execution_time = execution_time
+        self.execution_time = np.mean(times).item()
+        self.times = times
         """In milliseconds."""
 
     @abstractmethod

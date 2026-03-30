@@ -8,17 +8,16 @@ from datasets.edbt.edbt_database import EdbtDatabase
 
 class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
 
-    def __init__(self):
-        super().__init__(DriverType.MONGO)
+    def __init__(self, scale: float):
+        super().__init__(DriverType.MONGO, scale)
 
     def _param_customer_id(self):
         return self._param_int('customer_id', 1, 30000)
 
-    @query('test', 1.0, 'Order history for a person (join via customer)')
+    @query('test', 1.0, 'Order history for a person (order, customer)')
     def _order_history_for_person(self):
-        # NOTE: Changed person_id -> customer_id (same access pattern, different identity level).
         return MongoFindQuery('order',
-            filter={'customer_id': self._param_customer_id()},
+            filter={'customer.person_id': self._param_person_id()},
             projection={
                 'order_id': 1,
                 'ordered_at': 1,
@@ -28,14 +27,12 @@ class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
                 '_id': 0,
             },
             sort={'ordered_at': -1},
-            limit=20,
         )
 
-    @query('test', 1.0, 'Order details view (now checks person via customer)')
+    @query('test', 1.0, 'Order details view (order, customer, order_item, product)')
     def _order_details(self):
-        # NOTE: Changed person_id -> customer_id and product title fallback uses only embedded item snapshot.
         return MongoAggregateQuery('order', [
-            {'$match': {'customer_id': self._param_customer_id()}},
+            {'$match': {'customer.person_id': self._param_person_id()}},
             {'$unwind': '$items'},
             {'$project': {
                 '_id': 0,
@@ -43,8 +40,8 @@ class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
                 'ordered_at': '$ordered_at',
                 'status': '$status',
                 'order_item_id': '$items.order_item_id',
-                'product_id': '$items.product_id',
-                'product_title': {'$ifNull': ['$items.product_snapshot.title', None]},
+                'product_id': '$items.product.product_id',
+                'product_title': {'$ifNull': ['$items.product.title', None]},
                 'unit_price_cents': '$items.unit_price_cents',
                 'quantity': '$items.quantity',
                 'line_total_cents': '$items.line_total_cents',
@@ -52,29 +49,33 @@ class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
             {'$sort': {'order_item_id': 1}},
         ])
 
-    @query('test', 1.0, 'How many times did this person buy this product? (via customer snapshots)')
+    @query('test', 1.0, 'How many times did this person bought these products? (order, customer, order_item)')
     def _product_purchases_for_person(self):
-        # NOTE: Changed person_id -> customer_id; counts order-items for paid/shipped orders.
+        person_ids = self._param_person_ids(100, 1000)
+        product_ids = self._param_product_ids(100, 1000)
+
         return MongoAggregateQuery('order', [
             {'$match': {
-                'customer_id': self._param_customer_id(),
+                'customer.person_id': {'$in': person_ids},
                 'status': {'$in': ['paid', 'shipped']},
             }},
             {'$unwind': '$items'},
-            {'$match': {'items.product_id': self._param_product_id()}},
+            {'$match': {'items.product.product_id': {'$in': product_ids}}},
             {'$count': 'count'},
         ])
 
-    @query('test', 1.0, 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)')
+    @query('test', 1.0, 'Seller daily revenue for last 30 days (order, order_item, product)')
     def _seller_daily_revenue(self):
-        # NOTE: Changed seller_id filter -> product_id filter (seller_id is not embedded in order items).
+        date = self._param_date_minus_days(30, 120)
+        seller_ids = self._param_seller_ids(100, 1000)
+
         return MongoAggregateQuery('order', [
             {'$match': {
-                'ordered_at': {'$gte': datetime.now() - timedelta(days=30)},
+                'ordered_at': {'$gte': date},
                 'status': {'$in': ['paid', 'shipped']},
             }},
             {'$unwind': '$items'},
-            {'$match': {'items.product_id': self._param_product_id()}},
+            {'$match': {'items.product.seller_id': {'$in': seller_ids}}},
             {'$group': {
                 '_id': {
                     '$dateTrunc': {
@@ -94,18 +95,29 @@ class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
             {'$sort': {'day': 1}},
         ])
 
-    @query('test', 1.0, 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)')
+    @query('test', 1.0, 'Top products by revenue inside one category, last 7-30 days (order, order_item, product, has_category)')
     def _top_products_by_revenue(self):
-        # NOTE: Dropped category filter (not available in order docs without lookup); computes global top products in last 7 days.
+        date = self._param_date_minus_days(7, 30)
+        category_ids = self._param_category_ids(10, 50)
+
         return MongoAggregateQuery('order', [
             {'$match': {
-                'ordered_at': {'$gte': datetime.now() - timedelta(days=7)},
+                'ordered_at': {'$gte': date},
                 'status': {'$in': ['paid', 'shipped']},
             }},
             {'$unwind': '$items'},
+            {'$lookup': {
+                'from': 'product',
+                'let': {'pid': '$items.product.product_id'},
+                'pipeline': [
+                    {'$match': {'$expr': {'$eq': ['$product_id', '$$pid']}}},
+                    {'$match': {'categories.category.category_id': {'$in': category_ids}}},
+                ],
+                'as': 'product'
+            }},
+            {'$unwind': '$product'},
             {'$group': {
-                '_id': '$items.product_id',
-                'title': {'$max': '$items.product_snapshot.title'},
+                '_id': '$items.product.product_id',
                 'revenue_cents': {'$sum': '$items.line_total_cents'},
                 'units': {'$sum': '$items.quantity'},
             }},
@@ -117,19 +129,18 @@ class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
                 'units': 1,
             }},
             {'$sort': {'revenue_cents': -1}},
-            {'$limit': 50},
+            {'$limit': 200},
         ])
 
-    @query('test', 1.0, 'Customer spend buckets (now per person)')
+    @query('test', 1.0, 'Customer spend buckets (order, customer)')
     def _customer_spend_buckets(self):
-        # NOTE: Changed grouping key person_id -> customer_id.
         return MongoAggregateQuery('order', [
             {'$match': {
-                'ordered_at': {'$gte': datetime.now() - timedelta(days=90)},
+                'ordered_at': {'$gte': self._param_date_minus_days(30, 180)},
                 'status': {'$in': ['paid', 'shipped']},
             }},
             {'$group': {
-                '_id': '$customer_id',
+                '_id': '$customer.person_id',
                 'spend_cents': {'$sum': '$total_cents'},
             }},
             {'$project': {
@@ -151,18 +162,20 @@ class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
             {'$sort': {'bucket': 1}},
         ])
 
-    @query('test', 1.0, 'Fraud-ish pattern (now per person)')
+    @query('test', 1.0, 'Fraud-ish pattern (order, customer, order_item, product)')
     def _fraud_pattern(self):
-        # NOTE: Changed person_id -> customer_id and distinct sellers -> distinct products.
+        date = self._param_date_minus_days(1, 7)
+        distinct_sellers_threshold = self._param_int('distinct_sellers_threshold', 10, 1000)
+
         return MongoAggregateQuery('order', [
             {'$match': {
-                'ordered_at': {'$gte': datetime.now() - timedelta(hours=24)},
+                'ordered_at': {'$gte': date},
                 'status': {'$in': ['paid', 'shipped']},
             }},
             {'$unwind': '$items'},
             {'$group': {
-                '_id': '$customer_id',
-                'distinct_products_set': {'$addToSet': '$items.product_id'},
+                '_id': '$customer.person_id',
+                'distinct_products_set': {'$addToSet': '$items.product.seller_id'},
                 'order_ids': {'$addToSet': '$order_id'},
             }},
             {'$project': {
@@ -171,46 +184,143 @@ class EdbtMongoDatabase(EdbtDatabase[MongoQuery]):
                 'distinct_sellers': {'$size': '$distinct_products_set'},
                 'order': {'$size': '$order_ids'},
             }},
-            {'$match': {'distinct_sellers': {'$gte': 10}}},
+            {'$match': {'distinct_sellers': {'$gte': distinct_sellers_threshold}}},
             {'$sort': {'distinct_sellers': -1}},
             {'$limit': 200},
         ])
 
-    @query('test', 1.0, 'Who should I follow? (User -> Person)')
+    @query('test', 1.0, 'Who should I follow? (follows)')
     def _who_to_follow(self):
-        # NOTE: Replaced friend-of-friend logic with global popularity over follows edges; excludes self only.
         person_id = self._param_person_id()
 
         return MongoAggregateQuery('person', [
-            {'$unwind': '$follows'},
+            {'$match': {'follows.to_person.person_id': person_id}},
+            {'$project': {'from_id': '$person_id'}},
+            {'$lookup': {
+                'from': 'person',
+                'let': {'f1_id': '$from_id'},
+                'pipeline': [
+                    {'$match': {'$expr': {
+                        '$in': ['$$f1_id', '$follows.to_person.person_id'],
+                    }}},
+                    {'$project': {
+                        'person_id': 1,
+                        'follows': 1,
+                    }},
+                ],
+                'as': 'f2',
+            }},
+            {'$unwind': '$f2'},
+            {'$match': {'f2.person_id': {'$ne': person_id}}},
+            {'$match': {'f2.follows': {
+                '$not': {'$elemMatch': {'to_person.person_id': person_id}},
+            }}},
             {'$group': {
-                '_id': '$follows.to_id',
+                '_id': '$f2.person_id',
                 'paths': {'$sum': 1},
             }},
-            {'$match': {'_id': {'$ne': person_id}}},
-            {'$project': {'_id': 0, 'person_id': '$_id', 'paths': 1}},
             {'$sort': {'paths': -1}},
-            {'$limit': 50},
+            {'$limit': 200},
+            {'$project': {
+                '_id': 0,
+                'person_id': '$_id',
+                'paths': 1,
+            }},
         ])
 
-    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
+    @query('test', 1.0, 'Personalized feed candidates (product, has_category, has_interest)')
     def _personalized_feed_candidates(self):
-        # NOTE: Changed personalization source person interests -> single category_id filter from product embeddings.
-        category_id = self._param_category_id()
+        return MongoAggregateQuery('person', [
+            {'$match': {'person_id': {'$in': self._param_person_ids(2, 20)}}},
+            {'$unwind': '$interests'},
+            {'$lookup': {
+                'from': 'product',
+                'let': {'cat_id': '$interests.category.category_id'},
+                'pipeline': [
+                    {'$match': {
+                        '$expr': {'$and': [
+                            {'$eq': ['$is_active', True]},
+                            {'$in': ['$$cat_id', '$categories.category.category_id']},
+                        ]},
+                    }},
+                    {'$project': {
+                        'product_id': 1,
+                    }},
+                ],
+                'as': 'products',
+            }},
+            {'$unwind': '$products'},
+            {'$group': {
+                '_id': '$products.product_id',
+                'interest_score': {'$sum': '$interests.strength'},
+            }},
+            {'$sort': {'interest_score': -1 }},
+            {'$limit': 200},
+            {'$project': {
+                '_id': 0,
+                'product_id': '$_id',
+                'interest_score': 1,
+            }},
+        ])
 
+    @query('test', 1.0, 'Product page read (product, seller, review)')
+    def _product_page_read(self):
         return MongoAggregateQuery('product', [
             {'$match': {
+                'product_id': self._param_product_id(),
                 'is_active': True,
-                'categories.category_id': category_id,
             }},
-            {'$unwind': '$categories'},
-            {'$match': {'categories.category_id': category_id}},
-            {'$group': {
-                '_id': '$product_id',
-                'interest_score': {'$sum': 1},
+            {'$addFields': {
+                'rating_summary': {
+                    'avg': {
+                        '$ifNull': [{'$avg': '$reviews.rating'}, 0]
+                    },
+                    'count': {
+                        '$size': {'$ifNull': ['$reviews', []]}
+                    },
+                },
+                'top_reviews': {
+                    '$slice': [{
+                        '$sortArray': {
+                        'input': {'$ifNull': ['$reviews', []]},
+                        'sortBy': {'helpful_votes': -1, 'created_at': -1}
+                        }
+                    }, 50],
+                },
             }},
-            {'$project': {'_id': 0, 'product_id': '$_id', 'interest_score': 1}},
-            {'$sort': {'interest_score': -1}},
-            {'$limit': 200},
+            {'$project': {
+                '_id': 0,
+                'product_id': 1,
+                'title': 1,
+                'price_cents': 1,
+                'currency': 1,
+                'stock_qty': 1,
+                'seller': {
+                    'seller_id': '$seller.seller_id',
+                    'display_name': '$seller.display_name'
+                },
+                'rating_summary': 1,
+                'top_reviews': '$top_reviews'
+            }},
         ])
 
+    @query('test', 1.0, 'People also bought using shared orders (order, order_item)')
+    def _people_also_bought(self):
+        product_ids = self._param_product_ids(10, 50)
+
+        return MongoAggregateQuery('order', [
+            {'$match': {
+                'status': {'$in': ['paid', 'shipped']},
+                'items.product.product_id': {'$in': product_ids},
+            }},
+            {'$unwind': '$items'},
+            {'$match': {
+                'items.product.product_id': {'$nin': product_ids},
+            }},
+            {'$group': {
+                '_id': '$items.product.product_id',
+                'co_buy': {'$sum': 1},
+            }},
+            {'$sort': {'co_buy': -1}},
+            {'$limit': 20},
+        ])

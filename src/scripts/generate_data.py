@@ -30,8 +30,9 @@ def generate_tpch(config: Config, import_directory: str, scale: float):
     from datasets.tpch.data_generator import TpchDataGenerator
 
     try:
-        generator = TpchDataGenerator(config)
-        generator.run(import_directory, scale)
+        # generator = TpchDataGenerator(config)
+        generator = TpchDataGenerator(scale)
+        generator.run(import_directory)
     except Exception as e:
         exit_with_exception(e)
 
@@ -39,8 +40,9 @@ def generate_edbt(config: Config, import_directory: str, scale: float):
     from datasets.edbt.data_generator import EdbtDataGenerator
 
     try:
-        generator = EdbtDataGenerator(config)
-        generator.run(import_directory, scale)
+        # generator = EdbtDataGenerator(config)
+        generator = EdbtDataGenerator(scale)
+        generator.run(import_directory)
     except Exception as e:
         exit_with_exception(e)
 

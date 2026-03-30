@@ -39,7 +39,7 @@ class LatencyEstimator:
         Returns:
             Tuple of (estimated_latency_ms, query_plan)
         """
-        plan = self.extractor.explain_plan(query)
+        plan = self.extractor.explain_query(query)
 
         # Estimate latency using the trained model
         with torch.no_grad():

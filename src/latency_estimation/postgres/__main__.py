@@ -12,6 +12,8 @@ from latency_estimation.postgres.latency_estimator import LatencyEstimator
 from latency_estimation.postgres.model_evaluator import ModelEvaluator
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
 
+SCALE = 1.0 # FIXME
+
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Postgres QPP-Net')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -25,7 +27,7 @@ def main(rawArgs: list[str] | None = None):
     args = parser.parse_args(rawArgs)
 
     dataset = DatasetName.TPCH if args.command == 'train' or args.command == 'tsne' else DatasetName.EDBT
-    ctx = PostgresContext.create(dataset=dataset)
+    ctx = PostgresContext.create(SCALE, dataset=dataset)
 
     with auto_close(ctx):
         if args.command == 'train':
@@ -84,7 +86,7 @@ def test_run(args: argparse.Namespace, ctx: PostgresContext):
     config = TestConfig.from_arguments(args)
 
     if config.queries:
-        test_queries: list[QueryDef[str]] = []
+        test_queries = list[QueryDef[str]]()
         for i, content in enumerate(config.queries, 1):
             test_queries.append(QueryDef.create_from_content('custom', i, 1.0, 'Custom Query', content))
 
@@ -218,7 +220,7 @@ def tsne_run(args: argparse.Namespace, ctx: PostgresContext):
     for item in val_dataset:
         tsne_items.extend(model.get_tsne_data(item.plan))
 
-    tsne_by_operator: dict[str, list[TsneItem]] = {}
+    tsne_by_operator = dict[str, list[TsneItem]]()
     for item in tsne_items:
         key = item.operator.key()
         if key not in tsne_by_operator:

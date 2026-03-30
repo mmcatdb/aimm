@@ -6,8 +6,10 @@ from common.utils import auto_close, trim_to_block, exit_with_error
 from common.explainers.common import OperatorNameFormatter
 from common.query_registry import QueryDef
 from common.database import Database
-from datasets.databases import find_database_uncached, get_available_dataset_names
+from datasets.databases import DatabaseInfo, find_database, get_available_dataset_names
 from latency_estimation.context import BaseContext
+
+SCALE = 1.0  # FIXME
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Show a query plan visually.')
@@ -43,7 +45,8 @@ def _postgres_run(args: argparse.Namespace):
     from common.explainers.postgres_explainer import PostgresExplainer
 
     dataset = DatasetName(args.dataset[0])
-    database = find_database_uncached(dataset, DriverType.POSTGRES)
+    info = DatabaseInfo(dataset, DriverType.POSTGRES, SCALE)
+    database = find_database(info)
     queries = _get_queries_from_input(args, database)
 
     config = Config.load()
@@ -74,7 +77,8 @@ def _neo4j_run(args: argparse.Namespace):
     from common.explainers.neo4j_explainer import Neo4jExplainer
 
     dataset = DatasetName(args.dataset[0])
-    database = find_database_uncached(dataset, DriverType.NEO4J)
+    info = DatabaseInfo(dataset, DriverType.NEO4J, SCALE)
+    database = find_database(info)
     queries = _get_queries_from_input(args, database)
 
     config = Config.load()

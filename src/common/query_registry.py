@@ -1,9 +1,9 @@
 from collections.abc import Callable
-from datetime import datetime
 from math import ceil
 import random
 from typing import Any, Generic, TypeVar, cast
 from common.utils import print_warning
+from common.config import GLOBAL_RNG_SEED
 
 TQuery = TypeVar('TQuery')
 
@@ -63,7 +63,7 @@ class QueryRegistry(Generic[TQuery]):
     def __init__(self):
         self.__is_template = False
         self.__query_defs: dict[str, QueryDef[TQuery]] | None = None
-        self._rng = random.Random(datetime.now().timestamp())
+        self._rng = random.Random(GLOBAL_RNG_SEED)
 
     def get_query_defs(self) -> list[QueryDef[TQuery]]:
         """Returns all collected query definitions. Useful for final evaluation or debugging."""
@@ -74,6 +74,17 @@ class QueryRegistry(Generic[TQuery]):
         return self._query_defs().get(id)
 
     #region Generation
+
+    def generate_test_queries(self) -> tuple[QueryDefMap[TQuery], list[TQuery]]:
+        """Generates one query for each definition in the original order. Useful for testing and debugging."""
+        def_map = QueryDefMap[TQuery]()
+        queries = list[TQuery]()
+        for def_ in self._query_defs().values():
+            query = def_.generate()
+            queries.append(query)
+            def_map[id(query)] = def_
+
+        return def_map, queries
 
     def generate_queries(self, num_queries: int, train_split: float) -> tuple[QueryDefMap[TQuery], list[TQuery], list[TQuery]]:
         """
@@ -99,9 +110,9 @@ class QueryRegistry(Generic[TQuery]):
             total_weight = len(defs)
 
         queries_per_weight = num_queries / total_weight
-        map_output: QueryDefMap[TQuery] = {}
-        train_output: list[TQuery] = []
-        val_output: list[TQuery] = []
+        map_output = QueryDefMap[TQuery]()
+        train_output = list[TQuery]()
+        val_output = list[TQuery]()
 
         for group in groups.values():
             def_map, train, val = self.__generate_for_group(group, queries_per_weight, train_split)
@@ -157,8 +168,8 @@ class QueryRegistry(Generic[TQuery]):
         return train_map, train_queries, val_queries
 
     def __generate_list(self, defs: list[QueryDef[TQuery]], queries_per_weight: float) -> tuple[QueryDefMap[TQuery], list[TQuery]]:
-        output: list[TQuery] = []
-        def_map: QueryDefMap[TQuery] = {}
+        output = list[TQuery]()
+        def_map = QueryDefMap[TQuery]()
         for def_ in defs:
             for _ in range(max(ceil(queries_per_weight * def_.weight), 1)):
                 query = def_.generate()
@@ -193,8 +204,8 @@ class QueryRegistry(Generic[TQuery]):
         return cls.__dict__
 
     def __collect_queries(self) -> list[QueryDef[TQuery]]:
-        queries: list[QueryDef[TQuery]] = []
-        category_indexes: dict[str, int] = {}
+        queries = list[QueryDef[TQuery]]()
+        category_indexes = dict[str, int]()
 
         for index, attribute in enumerate(self.__get_attributes().values()):
             if not callable(attribute) or not getattr(attribute, '_is_query', False):

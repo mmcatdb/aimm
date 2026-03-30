@@ -15,7 +15,7 @@ class ModelEvaluator:
         self.model = model
 
     def evaluate_multiple_queries(self, queries: list[QueryDef[str]], num_runs: int) -> list['Result']:
-        results: list['Result'] = []
+        results = list['Result']()
 
         print(f'\nEvaluating {len(queries)} queries...')
         print('=' * 80)
@@ -36,9 +36,12 @@ class ModelEvaluator:
         result = Result(query.label())
 
         content = query.generate()
-        plan = self.extractor.explain_plan(content)
+        plan = self.extractor.explain_query(content)
         predicted_ms = self.__estimate_latency(plan)
-        actual_ms, times, _ = self.extractor.measure_query(content, num_runs)
+
+        times = self.extractor.measure_query_multiple(content, num_runs)
+
+        actual_ms = np.mean(times).item()
         result.std_latency = np.std(times).item()
 
         result.predicted_ms = predicted_ms

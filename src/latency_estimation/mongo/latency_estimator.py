@@ -3,7 +3,6 @@ from common.database import MongoAggregateQuery, MongoFindQuery, MongoQuery
 from latency_estimation.mongo.plan_extractor import PlanExtractor
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
 
-
 class LatencyEstimator:
     """
     Estimates query latency using a trained model without executing queries.
@@ -22,7 +21,7 @@ class LatencyEstimator:
         Returns:
             List of tuples (query, estimated_latency_ms, plan)
         """
-        results: list[tuple[MongoQuery, float | None, dict]] = []
+        results = list[tuple[MongoQuery, float | None, dict]]()
         for query in queries:
             try:
                 latency, plan = self.estimate(query)
@@ -40,12 +39,7 @@ class LatencyEstimator:
         Returns:
             Tuple of (estimated_latency_ms, query_plan)
         """
-        if isinstance(query, MongoFindQuery):
-            plan = self.extractor.explain_find(query, verbosity='queryPlanner')
-        elif isinstance(query, MongoAggregateQuery):
-            plan = self.extractor.explain_aggregate(query, verbosity='queryPlanner')
-        else:
-            raise ValueError(f'Unsupported Mongo query type: {type(query).__name__}')
+        plan = self.extractor.explain_query(query, verbosity='queryPlanner')
 
         with torch.no_grad():
             estimated_latency = self.model(plan, query.collection)

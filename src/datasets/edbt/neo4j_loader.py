@@ -35,7 +35,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
     def _load_data(self):
         # Load nodes first
 
-        self._load_csv('person', '''
+        self._load_csv('Person', 'person', '''
             CREATE (:Person {
                 person_id: toInteger(row[0]),
                 name: row[1],
@@ -47,7 +47,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('customer', '''
+        self._load_csv('Customer', 'customer', '''
             CREATE (:Customer {
                 customer_id: toInteger(row[0]),
                 person_id: toInteger(row[1]),
@@ -60,7 +60,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('seller', '''
+        self._load_csv('Seller', 'seller', '''
             CREATE (:Seller {
                 seller_id: toInteger(row[0]),
                 display_name: row[1],
@@ -70,7 +70,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('category', '''
+        self._load_csv('Category', 'category', '''
             CREATE (:Category {
                 category_id: toInteger(row[0]),
                 name: row[1],
@@ -78,7 +78,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('product', '''
+        self._load_csv('Product', 'product', '''
             CREATE (:Product {
                 product_id: toInteger(row[0]),
                 seller_id: toInteger(row[1]),
@@ -95,7 +95,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('order', '''
+        self._load_csv('Order', 'order', '''
             CREATE (:Order {
                 order_id: toInteger(row[0]),
                 customer_id: toInteger(row[1]),
@@ -110,7 +110,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
 
         # Load nodes and relationships for many-to-many tables
 
-        self._load_csv('order_item', '''
+        self._load_csv('HAS_ITEM', 'order_item', '''
             MATCH (o:Order {order_id: toInteger(row[1])}),
                 (p:Product {product_id: toInteger(row[2])})
             CREATE (o)-[:HAS_ITEM {
@@ -118,12 +118,11 @@ class EdbtNeo4jLoader(Neo4jLoader):
                 unit_price_cents: toInteger(row[3]),
                 quantity: toInteger(row[4]),
                 line_total_cents: toInteger(row[5]),
-                created_at: datetime(row[6]),
-                product_snapshot: row[7]
+                created_at: datetime(row[6])
             }]->(p)
         ''')
 
-        self._load_csv('review', '''
+        self._load_csv('REVIEWED', 'review', '''
             MATCH (p:Product {product_id: toInteger(row[1])}),
                 (u:Customer {customer_id: toInteger(row[2])})
             CREATE (u)-[:REVIEWED {
@@ -138,7 +137,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             }]->(p)
         ''')
 
-        self._load_csv('has_category', '''
+        self._load_csv('HAS_CATEGORY', 'has_category', '''
             MATCH (p:Product {product_id: toInteger(row[0])}),
                 (c:Category {category_id: toInteger(row[1])})
             CREATE (p)-[:HAS_CATEGORY {
@@ -146,7 +145,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             }]->(c)
         ''')
 
-        self._load_csv('has_interest', '''
+        self._load_csv('HAS_INTEREST', 'has_interest', '''
             MATCH (u:Person {person_id: toInteger(row[0])}),
                 (c:Category {category_id: toInteger(row[1])})
             CREATE (u)-[:HAS_INTEREST {
@@ -155,7 +154,7 @@ class EdbtNeo4jLoader(Neo4jLoader):
             }]->(c)
         ''')
 
-        self._load_csv('follows', '''
+        self._load_csv('FOLLOWS', 'follows', '''
             MATCH (a:Person {person_id: toInteger(row[0])}),
                 (b:Person {person_id: toInteger(row[1])})
             CREATE (a)-[:FOLLOWS {

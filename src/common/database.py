@@ -10,17 +10,22 @@ from common.query_registry import QueryRegistry, TQuery
 class DatabaseInfo:
     """Identifies a specific database."""
 
-    def __init__(self, dataset: DatasetName, type: DriverType):
+    def __init__(self, dataset: DatasetName, type: DriverType, scale: float | None):
         self.dataset = dataset
         self.type = type
+        self.scale = scale
 
     def id(self) -> str:
         """Get unique identifier for this database. Useful for caching."""
-        return f'{self.dataset.value}_{self.type.value}'
+        prefix = f'{self.dataset.value}_{self.type.value}'
+        if self.scale is not None:
+            prefix += f'_{self.scale:g}'
+        return prefix
 
     def label(self) -> str:
         """Get a human-readable label for this database."""
-        return f'{self.dataset.label()} ({self.type.value.capitalize()})'
+        scale_string = f', scale {self.scale:g}' if self.scale is not None else ''
+        return f'{self.dataset.label()} ({self.type.value.capitalize()}{scale_string})'
 
 class ValueType(Enum):
     STRING = 'string'
@@ -32,8 +37,8 @@ TListItem = TypeVar('TListItem')
 class Database(QueryRegistry[TQuery], DatabaseInfo):
     """Contains all dataset-specific logic for a single database in a dataset."""
 
-    def __init__(self, dataset: DatasetName, type: DriverType):
-        DatabaseInfo.__init__(self, dataset, type)
+    def __init__(self, dataset: DatasetName, type: DriverType, scale: float | None):
+        DatabaseInfo.__init__(self, dataset, type, scale)
         QueryRegistry.__init__(self)
 
     def _convert_scalar(self, value: Any, type: ValueType) -> Any:
@@ -80,6 +85,10 @@ class Database(QueryRegistry[TQuery], DatabaseInfo):
     def _param_month(self):
         return self._param_int('month', 1, 12)
 
+    def _param_date_minus_days(self, min_days: int, max_days: int):
+        days = self._rng_int(min_days, max_days)
+        return self._param('date', lambda: self._convert_date(datetime.now() - timedelta(days=days)))
+
     def _rng_int(self, min_value: int, max_value: int):
         return self._rng.randint(min_value, max_value)
 
@@ -88,6 +97,16 @@ class Database(QueryRegistry[TQuery], DatabaseInfo):
 
     def _param_float(self, name: str, min_value: float, max_value: float):
         return self._param(name, lambda: self._rng.uniform(min_value, max_value))
+
+    def _rng_int_array(self, min_value: int, max_value: int, min_count: int, max_count: int, is_unique: bool = False) -> list[int]:
+        """min_count is NOT quarranteed if is_unique is True (even if there are enough unique values)."""
+        count = self._rng_int(min_count, max_count)
+        output = [self._rng_int(min_value, max_value) for _ in range(count)]
+        if is_unique:
+            # If we removed some duplicates, we might end up with less than min_count items. In that case, we just return what we have.
+            output = list(set(output))
+
+        return output
 
     def _param_choice(self, name: str, choices: list[TListItem]):
         return self._param(name, lambda: self._rng.choice(choices))
@@ -101,13 +120,14 @@ class Database(QueryRegistry[TQuery], DatabaseInfo):
         return self._param_int('skip', min_value, max_value)
 
     def _param_int_array(self, name: str, max_value: int, min_count: int, max_count: int | None):
-        """Useful for ids with the IN operator."""
+        """Useful for ids with the IN operator. If max_count is None, it will be set to min_count (i.e. fixed length arrays)."""
         if max_count is None:
             max_count = min_count
 
-        return self._param(name, lambda: self._convert_array([
-            self._rng_int(1, max_value) for _ in range(self._rng_int(min_count, max_count))
-        ], ValueType.NUMBER))
+        return self._param(name, lambda: self._convert_array(
+            self._rng_int_array(min_value=1, max_value=max_value, min_count=min_count, max_count=max_count, is_unique=True),
+            ValueType.NUMBER,
+        ))
 
 
 class MongoFindQuery:

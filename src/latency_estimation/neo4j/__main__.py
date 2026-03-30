@@ -12,6 +12,8 @@ from latency_estimation.neo4j.latency_estimator import LatencyEstimator
 from latency_estimation.neo4j.model_evaluator import ModelEvaluator
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
+SCALE = 1.0 # FIXME
+
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Neo4j QPP-Net')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -24,7 +26,7 @@ def main(rawArgs: list[str] | None = None):
     args = parser.parse_args(rawArgs)
 
     dataset = DatasetName.TPCH if args.command == 'train' else DatasetName.EDBT
-    ctx = Neo4jContext.create(dataset=dataset)
+    ctx = Neo4jContext.create(SCALE, dataset=dataset)
 
     with auto_close(ctx):
         if args.command == 'train':
@@ -78,7 +80,7 @@ def test_run(args: argparse.Namespace, ctx: Neo4jContext):
     config = TestConfig.from_arguments(args)
 
     if config.queries:
-        test_queries: list[QueryDef[str]] = []
+        test_queries = list[QueryDef[str]]()
         for i, content in enumerate(config.queries, 1):
             test_queries.append(QueryDef.create_from_content('custom', i, 1.0, 'Custom Query', content))
 

@@ -57,7 +57,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
         Returns:
             Estimated latency (scalar tensor [1, 1])
         """
-        cache: dict[int, torch.Tensor] = {}
+        cache = dict[int, torch.Tensor]()
 
         output = self.__process_plan_node(plan, cache)
 
@@ -73,16 +73,16 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
         Returns:
             Dictionary mapping node IDs to estimated latencies
         """
-        cache: dict[int, torch.Tensor] = {}
+        cache = dict[int, torch.Tensor]()
 
         self.__process_plan_node(plan, cache)
 
         return cache
 
     def get_tsne_data(self, plan: dict) -> list['TsneItem']:
-        tsne_items: list[TsneItem] = []
+        tsne_items = list[TsneItem]()
 
-        cache: dict[int, torch.Tensor] = {}
+        cache = dict[int, torch.Tensor]()
 
         self.__process_plan_node(plan, cache, tsne_items)
 

@@ -208,7 +208,7 @@ def _node_label(operators: OperatorNameFormatter | None, node: dict) -> str:
         icon = op_type
     label = operators.format(op_type, num_children, icon) if operators else icon
 
-    extras: list[str] = []
+    extras = list[str]()
     args = node.get('arguments', {})
 
     # Label for scans

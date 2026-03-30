@@ -32,7 +32,7 @@ class TpchNeo4jLoader(Neo4jLoader):
     def _load_data(self):
         # Load nodes first
 
-        self._load_csv('region', '''
+        self._load_csv('Region', 'region', '''
             CREATE (:Region {
                 r_regionkey: toInteger(row[0]),
                 r_name: row[1],
@@ -40,7 +40,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('nation', '''
+        self._load_csv('Nation', 'nation', '''
             CREATE (:Nation {
                 n_nationkey: toInteger(row[0]),
                 n_name: row[1],
@@ -49,7 +49,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('part', '''
+        self._load_csv('Part', 'part', '''
             CREATE (:Part {
                 p_partkey: toInteger(row[0]),
                 p_name: row[1],
@@ -63,7 +63,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('supplier', '''
+        self._load_csv('Supplier', 'supplier', '''
             CREATE (:Supplier {
                 s_suppkey: toInteger(row[0]),
                 s_name: row[1],
@@ -75,7 +75,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('customer', '''
+        self._load_csv('Customer', 'customer', '''
             CREATE (:Customer {
                 c_custkey: toInteger(row[0]),
                 c_name: row[1],
@@ -88,7 +88,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             })
         ''')
 
-        self._load_csv('orders', '''
+        self._load_csv('Orders', 'orders', '''
             CREATE (:Orders {
                 o_orderkey: toInteger(row[0]),
                 o_custkey: toInteger(row[1]),
@@ -104,7 +104,7 @@ class TpchNeo4jLoader(Neo4jLoader):
 
         # Load nodes and relationships for many-to-many tables
 
-        self._load_csv('partsupp', '''
+        self._load_csv('FOR_PART', 'partsupp', '''
             MATCH (p:Part {p_partkey: toInteger(row[0])})
             MATCH (s:Supplier {s_suppkey: toInteger(row[1])})
             CREATE (p)<-[:FOR_PART]-(ps:PartSupp {
@@ -116,7 +116,7 @@ class TpchNeo4jLoader(Neo4jLoader):
             })-[:SUPPLIED_BY]->(s)
         ''', 'creating relationships to Part and Supplier')
 
-        self._load_csv('lineitem', '''
+        self._load_csv('HAS_ITEM', 'lineitem', '''
             MATCH (o:Orders {o_orderkey: toInteger(row[0])})
             MATCH (p:Part {p_partkey: toInteger(row[1])})
             MATCH (s:Supplier {s_suppkey: toInteger(row[2])})
@@ -150,7 +150,7 @@ class TpchNeo4jLoader(Neo4jLoader):
 
         # Custom tables (not part of the original TPC-H schema)
 
-        self._load_csv('knows', '''
+        self._load_csv('KNOWS', 'knows', '''
             MATCH (c1:Customer {c_custkey: toInteger(row[0])})
             MATCH (c2:Customer {c_custkey: toInteger(row[1])})
             CREATE (c1)-[:KNOWS {

@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import os
+import time
 from common.drivers import Neo4jDriver, cypher
-from common.utils import ProgressTracker, print_warning
+from common.utils import ProgressTracker, print_warning, time_quantity
 from common.config import DatasetName
 
 class Neo4jLoader(ABC):
@@ -36,6 +37,7 @@ class Neo4jLoader(ABC):
         print(f'Connecting to Neo4j at: {self._driver.config.host}:{self._driver.port}')
         print('-' * len(title) + '\n')
 
+        self.__times = dict[str, float]()
         self._import_directory = import_directory
 
         try:
@@ -61,6 +63,8 @@ class Neo4jLoader(ABC):
         self._load_data()
         print('Data loading completed.')
 
+        return self.__times
+
     def __check_files(self):
         """Verify that all files exist in the import directory."""
         print(f'Using .tbl files directly from the import directory: "{self._import_directory}"')
@@ -78,7 +82,14 @@ class Neo4jLoader(ABC):
             except Exception as e:
                 print_warning(f'Constraint not found or could not be dropped: {constraint}', e)
 
-        progress = ProgressTracker.unlimited()
+        total_nodes: int | None = None
+        try:
+            # Count all nodes and relationships before deletion for progress tracking
+            total_nodes = self.__execute_to_scalar('MATCH (n) RETURN count(n) AS count', key='count') or 0
+        except Exception as e:
+            print_warning('Could not count nodes before deletion.', e)
+
+        progress = ProgressTracker.limited(total_nodes) if total_nodes is not None else ProgressTracker.unlimited()
         progress.start('Deleting existing data... ')
 
         batch_size = 10_000
@@ -113,26 +124,30 @@ class Neo4jLoader(ABC):
             result = session.run(query)
             return [record['name'] for record in result]
 
-    def _load_csv(self, entity: str, content: str, note: str | None = None):
+    def _load_csv(self, entity: str, csv_name: str, content: str, note: str | None = None):
         if note:
             print(f'Loading {entity} and {note}...')
         else:
             print(f'Loading {entity}...')
 
+        start = time.perf_counter()
         self._driver.execute(f'''
-            LOAD CSV FROM 'file:///{entity}.tbl' AS row FIELDTERMINATOR '|'
+            LOAD CSV FROM 'file:///{csv_name}' AS row FIELDTERMINATOR '|'
             CALL (row) {{ {content} }} IN TRANSACTIONS OF 500 ROWS
         ''')
+        self.__times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')
 
     def _create_relationship(self, label: str, from_entity: str, from_key: str, to_entity: str, to_key: str):
         print(f'Creating {from_entity} -> {to_entity} relationships...')
 
+        start = time.perf_counter()
         self._driver.execute(f'''
             MATCH (from:{from_entity}), (to:{to_entity} {{{to_key}: from.{from_key}}})
             CALL (from, to) {{
                 CREATE (from)-[:{label}]->(to)
             }} IN TRANSACTIONS OF 1000 ROWS
         ''')
+        self.__times[label] = time_quantity.to_base(time.perf_counter() - start, 's')
 
     def __execute_to_scalar(self, query: str, parameters=None, key=None):
         """

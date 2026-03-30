@@ -55,7 +55,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             collection_name: name of the primary collection
         Returns: scalar predicted latency (ms)
         """
-        cache: dict[int, torch.Tensor] = {}
+        cache = dict[int, torch.Tensor]()
         output = self.__process_plan_node(plan_tree, collection_name, cache)
         return output[:, 0]  # latency
 

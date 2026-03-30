@@ -20,7 +20,7 @@ class EdbtDataGenerator(DataGenerator):
 
     @override
     def _generate_data(self):
-        c = self._generate_counts()
+        c = self.generate_counts()
         print('Counts:', c)
 
         # Base kinds
@@ -51,7 +51,7 @@ class EdbtDataGenerator(DataGenerator):
         # Reviews
         self._generate_reviews(c.review, customer_products)
 
-    def _generate_counts(self) -> 'Counts':
+    def generate_counts(self) -> 'Counts':
         """
         scale=1 aims for "several MB total" in csv.
         Bigger scale multiplies size.
@@ -73,7 +73,7 @@ class EdbtDataGenerator(DataGenerator):
         """
         f, w = self._open_csv_output('person', ['person_id', 'name', 'email', 'created_at', 'country_code', 'is_active', 'profile'])
 
-        persons: list[list] = []
+        persons = list[list]()
 
         for person_id in range(1, n_persons + 1):
             name = self._rng_full_name()
@@ -288,7 +288,7 @@ class EdbtDataGenerator(DataGenerator):
         """
         fc, wc = self._open_csv_output('customer', ['customer_id', 'person_id', 'snapshot_at', 'name', 'email', 'country_code', 'is_active', 'profile'])
         fo, wo = self._open_csv_output('order', ['order_id', 'customer_id', 'ordered_at', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
-        fi, wi = self._open_csv_output('order_item', ['order_item_id', 'order_id', 'product_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at', 'product_snapshot'])
+        fi, wi = self._open_csv_output('order_item', ['order_item_id', 'order_id', 'product_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at'])
 
         statuses = ['paid', 'shipped', 'canceled', 'refunded']
         status_w = [0.70, 0.20, 0.07, 0.03]
@@ -361,11 +361,6 @@ class EdbtDataGenerator(DataGenerator):
                     qty,
                     line,
                     iso(ts),
-                    json.dumps({
-                        'title': product[3],
-                        'price_cents': unit_price,
-                        'currency': product[6]
-                    }, ensure_ascii=False),
                 ])
                 order_item_id += 1
 

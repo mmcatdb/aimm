@@ -4,23 +4,27 @@ from datasets.edbt.edbt_database import EdbtDatabase
 
 class EdbtPostgresDatabase(EdbtDatabase[str]):
 
-    def __init__(self):
-        super().__init__(DriverType.POSTGRES)
+    def __init__(self, scale: float):
+        super().__init__(DriverType.POSTGRES, scale)
 
     # OLTP focused (mostly Postgres)
 
-    @query('test', 1.0, 'Order history for a person (join via customer)')
+    @query('test', 1.0, 'Order history for a person (order, customer)')
     def _order_history_for_person(self):
         return f'''
-            SELECT o.order_id, o.ordered_at, o.status, o.total_cents, o.currency
+            SELECT
+                o.order_id,
+                o.ordered_at,
+                o.status,
+                o.total_cents,
+                o.currency
             FROM "order" o
             JOIN customer c ON c.customer_id = o.customer_id
             WHERE c.person_id = '{self._param_person_id()}'
             ORDER BY o.ordered_at DESC
-            LIMIT 20
         '''
 
-    @query('test', 1.0, 'Order details view (now checks person via customer)')
+    @query('test', 1.0, 'Order details view (order, customer, order_item, product)')
     def _order_details(self):
         return f'''
             SELECT
@@ -29,7 +33,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                 o.status,
                 oi.order_item_id,
                 oi.product_id,
-                COALESCE(oi.product_snapshot->>'title', p.title) AS product_title,
+                p.title,
                 oi.unit_price_cents,
                 oi.quantity,
                 oi.line_total_cents
@@ -41,22 +45,28 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             ORDER BY oi.order_item_id
         '''
 
-    @query('test', 1.0, 'How many times did this person buy this product? (via customer snapshots)')
+    @query('test', 1.0, 'How many times did this person bought these products? (order, customer, order_item)')
     def _product_purchases_for_person(self):
+        person_ids = self._param_person_ids(100, 1000)
+        product_ids = self._param_product_ids(100, 1000)
+
         return f'''
             SELECT COUNT(*)
             FROM customer c
             JOIN "order" o ON o.customer_id = c.customer_id
             JOIN order_item oi ON oi.order_id = o.order_id
-            WHERE c.person_id = '{self._param_person_id()}'
-                AND oi.product_id = '{self._param_product_id()}'
+            WHERE c.person_id IN ({person_ids})
+                AND oi.product_id IN ({product_ids})
                 AND o.status IN ('paid', 'shipped')
         '''
 
     # OLAP focused (Postgres)
 
-    @query('test', 1.0, 'Seller daily revenue for last 30 days (Postgres, OLAP, medium weight)')
+    @query('test', 1.0, 'Seller daily revenue for last 30 days (order, order_item, product)')
     def _seller_daily_revenue(self):
+        date = self._param_date_minus_days(30, 120)
+        seller_ids = self._param_seller_ids(100, 1000)
+
         return f'''
             SELECT
                 date_trunc('day', o.ordered_at) AS day,
@@ -65,41 +75,44 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             FROM "order" o
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
-            WHERE p.seller_id = '{self._param_seller_id()}'
-                AND o.ordered_at >= now() - INTERVAL '30 days'
+            WHERE p.seller_id IN ({seller_ids})
+                AND o.ordered_at >= '{date}'
                 AND o.status IN ('paid', 'shipped')
             GROUP BY 1
             ORDER BY 1
         '''
 
-    @query('test', 1.0, 'Top products by revenue inside one category, last 7 days (Postgres, OLAP, high weight in sale)')
+    @query('test', 1.0, 'Top products by revenue inside one category, last 7-30 days (order, order_item, product, has_category)')
     def _top_products_by_revenue(self):
+        date = self._param_date_minus_days(7, 30)
+        category_ids = self._param_category_ids(10, 50)
+
         return f'''
             SELECT
                 oi.product_id,
-                MAX(p.title) AS title,
+                p.title,
                 SUM(oi.line_total_cents) AS revenue_cents,
                 SUM(oi.quantity) AS units
             FROM has_category hc
             JOIN product p ON p.product_id = hc.product_id
             JOIN order_item oi ON oi.product_id = hc.product_id
             JOIN "order" o ON o.order_id = oi.order_id
-            WHERE hc.category_id = '{self._param_category_id()}'
-                AND o.ordered_at >= now() - INTERVAL '7 days'
+            WHERE hc.category_id IN ({category_ids})
+                AND o.ordered_at >= '{date}'
                 AND o.status IN ('paid', 'shipped')
-            GROUP BY oi.product_id
+            GROUP BY oi.product_id, p.title
             ORDER BY revenue_cents DESC
-            LIMIT 50
+            LIMIT 200
         '''
 
-    @query('test', 1.0, 'Customer spend buckets (now per person)')
+    @query('test', 1.0, 'Customer spend buckets (order, customer)')
     def _customer_spend_buckets(self):
         return f'''
             WITH spend AS (
                 SELECT c.person_id, SUM(o.total_cents) AS spend_cents
                 FROM customer c
                 JOIN "order" o ON o.customer_id = c.customer_id
-                WHERE o.ordered_at >= now() - INTERVAL '90 days'
+                WHERE o.ordered_at >= '{self._param_date_minus_days(30, 180)}'
                     AND o.status IN ('paid', 'shipped')
                 GROUP BY c.person_id
             )
@@ -115,8 +128,11 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             ORDER BY 1
         '''
 
-    @query('test', 1.0, 'Fraud-ish pattern (now per person)')
+    @query('test', 1.0, 'Fraud-ish pattern (order, customer, order_item, product)')
     def _fraud_pattern(self):
+        date = self._param_date_minus_days(1, 7)
+        distinct_sellers_threshold = self._param_int('distinct_sellers_threshold', 10, 1000)
+
         return f'''
             SELECT
                 c.person_id,
@@ -126,15 +142,15 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             JOIN "order" o ON o.customer_id = c.customer_id
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
-            WHERE o.ordered_at >= now() - INTERVAL '24 hours'
+            WHERE o.ordered_at >= '{date}'
                 AND o.status IN ('paid', 'shipped')
             GROUP BY c.person_id
-            HAVING COUNT(DISTINCT p.seller_id) >= 10
+            HAVING COUNT(DISTINCT p.seller_id) >= {distinct_sellers_threshold}
             ORDER BY distinct_sellers DESC
             LIMIT 200
         '''
 
-    @query('test', 1.0, 'Who should I follow? (User -> Person)')
+    @query('test', 1.0, 'Who should I follow? (follows)')
     def _who_to_follow(self):
         person_id = self._param_person_id()
 
@@ -154,11 +170,11 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                 )
             GROUP BY f2.from_id
             ORDER BY paths DESC
-            LIMIT 50
+            LIMIT 200
         '''
 
 
-    @query('test', 1.0, 'Personalized feed candidates (User -> Product)')
+    @query('test', 1.0, 'Personalized feed candidates (product, has_category, has_interest)')
     def _personalized_feed_candidates(self):
         return f'''
             SELECT
@@ -167,7 +183,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             FROM has_interest hi
             JOIN has_category hc ON hc.category_id = hi.category_id
             JOIN product p ON p.product_id = hc.product_id
-            WHERE hi.person_id = '{self._param_person_id()}'
+            WHERE hi.person_id IN ({self._param_person_ids(2, 20)})
                 AND p.is_active = TRUE
             GROUP BY hc.product_id
             ORDER BY interest_score DESC
@@ -211,7 +227,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
     # Document focused (MongoDB)
     # These are built to avoid joins at read time. Put "product page bundle" in one document.
 
-    @query('test', 1.0, 'Product page read (Mongo, OLTP read-heavy, very high weight in sale)')
+    @query('test', 1.0, 'Product page read (product, seller, review)')
     def _product_page_read(self):
         product_id = self._param_product_id()
 
@@ -261,7 +277,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                     FROM review
                     WHERE product_id = '{product_id}'
                     ORDER BY helpful_votes DESC, created_at DESC
-                    LIMIT 5
+                    LIMIT 50
                 ) r
                 GROUP BY r.product_id
             ) tr ON tr.product_id = p.product_id
@@ -269,7 +285,7 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
                 AND p.is_active = TRUE
         '''
 
-    # @query('test', 1.0, 'Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)')
+    # Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)
     # def _bulk_fetch_product_pages(self):
     #     product_ids = self._param_product_ids(5, 20)
 
@@ -306,9 +322,9 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
 
 
 
-    @query('test', 1.0, 'Neo4j replacement for old "SIMILAR" query (since similar is removed) "People also bought" using shared orders:')
+    @query('test', 1.0, 'People also bought using shared orders (order, order_item)')
     def _people_also_bought(self):
-        product_id = self._param_product_id()
+        product_ids = self._param_product_ids(10, 50)
 
         return f'''
             SELECT
@@ -317,15 +333,13 @@ class EdbtPostgresDatabase(EdbtDatabase[str]):
             FROM order_item oi1
             JOIN order_item oi2 ON oi1.order_id = oi2.order_id
             JOIN "order" o ON o.order_id = oi1.order_id
-            WHERE oi1.product_id = '{product_id}'
-                AND oi2.product_id <> '{product_id}'
+            WHERE oi1.product_id IN ({product_ids})
+                AND oi2.product_id NOT IN ({product_ids})
                 AND o.status IN ('paid', 'shipped')
             GROUP BY oi2.product_id
             ORDER BY co_buy DESC
             LIMIT 20
         '''
-
-
 
     # One "multi-db" query (on purpose)
 

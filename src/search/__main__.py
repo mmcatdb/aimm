@@ -1,7 +1,7 @@
 from common.config import Config
 from common.driver_provider import DriverProvider
 from datasets.tpch.query_engine import TpchQueryEngine
-from search.mcts import MCTS
+from search.mcts_old import MCTS
 
 def main():
     tables = ('customer', 'orders', 'supplier', 'part', 'partsupp', 'lineitem')

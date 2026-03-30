@@ -1,12 +1,13 @@
 import csv
 from abc import ABC, abstractmethod
-import datetime
+from datetime import datetime
 from enum import Enum
 import json
 import os
 import re
+import time
 from pymongo import ASCENDING
-from common.utils import ProgressTracker, print_warning
+from common.utils import ProgressTracker, print_warning, time_quantity
 from common.loaders.postgres_loader import ColumnSchema
 from common.drivers import MongoDriver
 from common.config import DatasetName
@@ -38,8 +39,9 @@ class MongoLoader(ABC):
         print(f'Connecting to Mongo at: {self._driver.config.host}:{self._driver.config.port}')
         print('-' * len(title) + '\n')
 
+        self.__times = dict[str, float]()
         self._import_directory = import_directory
-        self._build_cache()
+        self.__check_files()
 
         if do_reset:
             print('\nResetting database...')
@@ -56,6 +58,30 @@ class MongoLoader(ABC):
         for schema in self._get_schemas():
             self.__populate_kind(schema)
         print('Data loading completed.')
+
+        return self.__times
+
+    def __check_files(self):
+        """Verify that all files exist in the import directory."""
+        kinds = set[str]()
+        for schema in self._get_schemas():
+            kinds.update(self.__find_required_kinds(schema))
+
+        # Verify that all files exist in the import directory.
+        for kind in kinds:
+            path = os.path.join(self._import_directory, kind + '.tbl')
+            if not os.path.isfile(path):
+                raise Exception(f'Required file not found in import directory: {path}')
+
+    def __find_required_kinds(self, schema: 'DocumentSchema') -> set[str]:
+        output = set[str]()
+        output.add(schema.source.kind)
+
+        for property in schema.properties.values():
+            if isinstance(property, ComplexProperty):
+                output.update(self.__find_required_kinds(property.schema))
+
+        return output
 
     def __reset_database(self):
         database = self._driver.database()
@@ -84,20 +110,45 @@ class MongoLoader(ABC):
 
     def __populate_kind(self, schema: 'DocumentSchema'):
         collection_name = schema.source.kind
+
+        print(f'Loading collection "{collection_name}"... ')
+        # We do this one collection at a time. This is somewhat wasteful, since we have to load some files multiple times, but it allows us to fit the whole process in memory.
+        cache = self.__build_cache(schema)
+
+        rows = cache[schema.source.kind].get_all()
+        documents = [self.__create_mongo_document(cache, schema, row) for row in rows]
+
         collection = self._driver.collection(collection_name)
-        rows = self._cache[schema.source.kind].get_all()
+        start = time.perf_counter()
+        print(f'Inserting {len(documents)} documents into collection "{collection_name}"... ')
+        collection.insert_many(documents)
+        self.__times[collection_name] = time_quantity.to_base(time.perf_counter() - start, 's')
+        print(f'Inserted {len(documents)} documents into collection "{collection_name}" in {self.__times[collection_name]} ms.')
 
-        progress = ProgressTracker.limited(len(rows))
-        progress.start(f'Loading collection "{collection_name}"... ')
+    def __build_cache(self, schema: 'DocumentSchema'):
+        cache = dict[str, CachedCsvTable]()
+        self.__find_kinds_to_cache(cache, schema, None, None)
 
-        for row in rows:
-            document = self.__create_mongo_document(schema, row)
-            collection.insert_one(document)
-            progress.track()
+        # Load all kinds. The order doesn't matter, since they will reference each other via the cache, not via the database.
+        for kind in cache.values():
+            kind.load(self._import_directory)
 
-        progress.finish()
+        return cache
 
-    def __create_mongo_document(self, schema: 'DocumentSchema', row: 'CsvRow') -> dict:
+    def __find_kinds_to_cache(self, cache: dict[str, 'CachedCsvTable'], schema: 'DocumentSchema', index_by: 'CsvJoin | None', is_array: bool | None):
+        table = cache.get(schema.source.kind)
+        if not table:
+            table = CachedCsvTable(schema.source)
+            cache[schema.source.kind] = table
+
+        if index_by is not None:
+            table.add_index(index_by, not is_array)
+
+        for property in schema.properties.values():
+            if isinstance(property, ComplexProperty):
+                self.__find_kinds_to_cache(cache, property.schema, property.child_join, property.is_array)
+
+    def __create_mongo_document(self, cache: dict[str, 'CachedCsvTable'], schema: 'DocumentSchema', row: 'CsvRow') -> dict:
         output = {}
 
         for key, property in schema.properties.items():
@@ -106,51 +157,20 @@ class MongoLoader(ABC):
                 continue
 
             child = property
-            table = self._cache[child.schema.source.kind]
+            table = cache[child.schema.source.kind]
 
             parent_index_key = get_index_key_for_row(child.parent_join, row)
 
             if child.is_array:
                 child_rows = table.get_non_unique(child.child_join, parent_index_key)
-                child_value = [self.__create_mongo_document(child.schema, child_row) for child_row in child_rows]
+                child_value = [self.__create_mongo_document(cache, child.schema, child_row) for child_row in child_rows]
             else:
                 child_row = table.get_unique(child.child_join, parent_index_key)
-                child_value = self.__create_mongo_document(child.schema, child_row)
+                child_value = self.__create_mongo_document(cache, child.schema, child_row)
 
             output[key] = child_value
 
         return output
-
-    def _build_cache(self):
-        self._cache: dict[str, CachedCsvTable] = {}
-
-        for schema in self._get_schemas():
-            self._find_required_tables(schema, None, None)
-
-        # Verify that all files exist in the import directory.
-        print(f'Using .tbl files directly from the import directory: "{self._import_directory}"\n')
-
-        for kind in self._cache.values():
-            path = os.path.join(self._import_directory, kind.schema.kind + '.tbl')
-            if not os.path.isfile(path):
-                raise Exception(f'Required file not found in import directory: {path}')
-
-        # Load all kinds. The order doesn't matter, since they will reference each other via the cache, not via the database.
-        for kind in self._cache.values():
-            kind.load(self._import_directory)
-
-    def _find_required_tables(self, schema: 'DocumentSchema', index_by: 'CsvJoin | None', is_array: bool | None):
-        table = self._cache.get(schema.source.kind)
-        if not table:
-            table = CachedCsvTable(schema.source)
-            self._cache[schema.source.kind] = table
-
-        if index_by is not None:
-            table.add_index(index_by, not is_array)
-
-        for property in schema.properties.values():
-            if isinstance(property, ComplexProperty):
-                self._find_required_tables(property.schema, property.child_join, property.is_array)
 
 class IndexSchema:
     def __init__(self, kind: str, keys: list[str], is_unique=False):
@@ -205,13 +225,14 @@ CsvIndex = dict[CsvIndexKey, CsvRow | list[CsvRow]]
 """Map of key -> value / values (depending whether the index is unique or not)."""
 
 class CachedCsvTable:
+
     """Stores flat data of the given csv table."""
-    def __init__(self, schema: CsvSchema):
-        self.schema = schema
-        self.__rows: list[CsvRow] = []
-        self.__indexes: dict[CsvJoin, CsvIndex] = {}
+    def __init__(self, csv_schema: CsvSchema):
+        self.csv_schema = csv_schema
+        self.__rows = list[CsvRow]()
+        self.__indexes = dict[CsvJoin, CsvIndex]()
         """Map of key column index -> index."""
-        self.__indexes_uniqueness: dict[CsvJoin, bool] = {}
+        self.__indexes_uniqueness = dict[CsvJoin, bool]()
         """Whether is the given index unique."""
 
     def add_index(self, columns: CsvJoin, is_unique: bool):
@@ -220,16 +241,16 @@ class CachedCsvTable:
 
     def load(self, import_directory: str):
         progress = ProgressTracker.unlimited()
-        progress.start(f'Loading data for kind "{self.schema.kind}"... ')
+        progress.start(f'Loading data for kind "{self.csv_schema.kind}"... ')
 
-        path = os.path.join(import_directory, self.schema.kind + '.tbl')
+        path = os.path.join(import_directory, self.csv_schema.kind + '.tbl')
 
         with open(path, 'r') as file:
             reader = csv.reader(file, delimiter='|')
 
             for row in reader:
                 data = []
-                for index, type in enumerate(self.schema.properties):
+                for index, type in enumerate(self.csv_schema.properties):
                     data.append(csv_value_to_mongo(row[index], type))
 
                 self.__rows.append(data)
@@ -238,9 +259,9 @@ class CachedCsvTable:
             progress.finish()
 
         for col_index in self.__indexes.keys():
-            self._create_index(col_index)
+            self.__create_index(col_index)
 
-    def _create_index(self, columns: CsvJoin):
+    def __create_index(self, columns: CsvJoin):
         values = self.__indexes[columns]
         is_unique = self.__indexes_uniqueness[columns]
 
@@ -252,7 +273,7 @@ class CachedCsvTable:
             if is_unique:
                 if key in values:
                     # Just to be sure we have consistent data.
-                    raise Exception(f'Duplicate key value "{key}" for unique index on "{self.schema.kind}"')
+                    raise Exception(f'Duplicate key value "{key}" for unique index on "{self.csv_schema.kind}"')
                 values[key] = row
             else:
                 values.setdefault(key, []).append(row)
@@ -278,32 +299,32 @@ def get_index_key_for_row(columns: CsvJoin, row: CsvRow) -> CsvIndexKey:
 TRUE_VALUES = { 'true', 't', '1', 'yes', 'y' }
 FALSE_VALUES = { 'false', 'f', '0', 'no', 'n' }
 
-def csv_value_to_mongo(value: str, typ: CsvType):
+def csv_value_to_mongo(value: str, type: CsvType):
     value = value.strip()
 
     if value == '':
         return None
-    if typ == CsvType.STRING:
+    if type == CsvType.STRING:
         return value
-    if typ == CsvType.INT:
+    if type == CsvType.INT:
         return int(value)
-    if typ == CsvType.FLOAT:
+    if type == CsvType.FLOAT:
         return float(value)
-    if typ == CsvType.BOOL:
+    if type == CsvType.BOOL:
         v = value.lower()
         if v in TRUE_VALUES:
             return True
         if v in FALSE_VALUES:
             return False
         raise ValueError(f'Invalid bool: {value}')
-    if typ == CsvType.DATETIME:
-        return datetime.datetime.fromisoformat(value)
-    if typ == CsvType.DATE:
+    if type == CsvType.DATETIME:
+        return datetime.fromisoformat(value)
+    if type == CsvType.DATE:
         # MongoDB doesn't have a separate date type, so we store dates as datetimes with time set to 00:00:00.
-        return datetime.datetime.fromisoformat(value)
-    if typ == CsvType.JSON:
+        return datetime.fromisoformat(value)
+    if type == CsvType.JSON:
         return json.loads(value)
-    if typ == CsvType.STRING_LIST:
+    if type == CsvType.STRING_LIST:
         return [x.strip() for x in value.split(',')]
 
 postgres_to_csv_types: dict[str, CsvType] = {
@@ -324,6 +345,7 @@ postgres_to_csv_types: dict[str, CsvType] = {
 #region Postgres builder
 
 class MongoPostgresBuilder:
+
     @staticmethod
     def create(postgres: dict[str, list[ColumnSchema]]) -> 'MongoPostgresBuilder':
         builder = MongoPostgresBuilder()
@@ -343,7 +365,7 @@ class MongoPostgresBuilder:
         """Convenience method to define document schemas from their csv source."""
         csv_schema = self.__get_csv_schema(csv_kind)
 
-        mapped_properties: dict[str, MongoProperty] = {}
+        mapped_properties = dict[str, MongoProperty]()
         for key, property in properties.items():
             mapped_properties[key] = self.__key_mapper.map_property(csv_kind, property)
 
@@ -394,7 +416,7 @@ def _postgres_to_csv_schema(kind: str, columns: list[ColumnSchema]) -> CsvSchema
 class KeyToIndexMap:
     """Enables using string keys (e.g., from postgres) instead of indexes."""
     def __init__(self):
-        self.__kinds: dict[str, dict[str, int]] = {}
+        self.__kinds = dict[str, dict[str, int]]()
 
     def add_kind(self, kind: str, columns: list[ColumnSchema]):
         map = {}

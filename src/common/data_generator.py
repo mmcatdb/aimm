@@ -4,15 +4,19 @@ import os
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from common.config import Config
+from common.config import Config, GLOBAL_RNG_SEED
 
 class DataGenerator(ABC):
     """Base class for data generators."""
-    def __init__(self, config: Config):
-        self._config = config
-        self._rng = random.Random(datetime.now().timestamp())
+    # TODO Add back the config and use it for stuff like rng seed
+    # def __init__(self, config: Config):
+    #     self._config = config
+    def __init__(self, scale: float):
+        self._rng = random.Random(GLOBAL_RNG_SEED)
         self._now = datetime.now(timezone.utc)
+        self._scale = scale
 
+        # TODO This should be scaled ...
         self._rng_word = create_word_generator(self._rng, [ 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 11, 11, 11, 12, 12 ], 10000)
         self._rng_name = create_word_generator(self._rng, [ 3, 4, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 10, 10 ], 2000)
         self._rng_subdomain = create_word_generator(self._rng, [ 4, 5, 5, 6, 6, 7, 7, 8 ], 200)
@@ -30,16 +34,15 @@ class DataGenerator(ABC):
         """Generates data at the specified scale and saves it to the import directory."""
         pass
 
-    def run(self, import_directory: str, scale: float):
+    def run(self, import_directory: str):
         self._import_directory = import_directory
-        self._scale = scale
 
         title = f'--- {self.name()} Data Generator ---'
         print(title)
-        print(f'Scale factor: {self._scale}')
+        print(f'Scale factor: {self._scale:g}')
         print('-' * len(title) + '\n')
 
-        print(f'Generating data at scale factor {self._scale}...')
+        print(f'Generating data at scale factor {self._scale:g}...')
         self._generate_data()
         print(f'Data generation completed. Data saved to: {self._import_directory}')
 

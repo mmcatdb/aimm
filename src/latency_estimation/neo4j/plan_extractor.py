@@ -1,6 +1,5 @@
 import time
 from typing_extensions import override
-import numpy as np
 from typing import Any
 from common.drivers import Neo4jDriver, cypher
 from common.utils import ProgressTracker, print_warning, time_quantity
@@ -8,17 +7,18 @@ from common.query_registry import QueryDefMap
 from latency_estimation.common import ArrayDataset
 from latency_estimation.feature_extractor import BaseDatasetItem
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
+from latency_estimation.plan_extractor import BasePlanExtractor
 
 class Neo4jItem(BaseDatasetItem):
-    def __init__(self, query: str, plan: dict, execution_time: float):
-        super().__init__(plan, execution_time)
+    def __init__(self, id: str, query: str, plan: dict, times: list[float]):
+        super().__init__(id, plan, times)
         self.query = query
 
     @override
     def query_string(self) -> str:
         return self.query
 
-class PlanExtractor:
+class PlanExtractor(BasePlanExtractor[str]):
     """
     Extract query execution plans and execution times from Neo4j.
     This module handles:
@@ -29,7 +29,7 @@ class PlanExtractor:
     def __init__(self, driver: Neo4jDriver):
         self.driver = driver
 
-    def create_dataset(self, queries: list[str], num_runs: int, def_map: QueryDefMap[str] | None = None) -> ArrayDataset[Neo4jItem]:
+    def create_dataset(self, queries: list[str], num_runs: int, def_map: QueryDefMap[str]) -> ArrayDataset[Neo4jItem]:
         """
         Collect a workload of query plans and execution times.
         Args:
@@ -39,14 +39,14 @@ class PlanExtractor:
         progress = ProgressTracker.limited(len(queries))
         progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
 
-        items: list[Neo4jItem] = []
+        items = list[Neo4jItem]()
 
         for i, query in enumerate(queries):
             try:
                 # Get plan and execution time
-                plan = self.explain_plan(query)
-                execution_time, _, _ = self.measure_query(query, num_runs)
-                items.append(Neo4jItem(query, plan, execution_time))
+                plan = self.explain_query(query)
+                times = self.measure_query_multiple(query, num_runs)
+                items.append(Neo4jItem(def_map[id(query)].id, query, plan, times))
                 progress.track()
 
             except Exception as e:
@@ -63,7 +63,7 @@ class PlanExtractor:
         print(f'\nCollected {len(dataset)} query plans.')
         return dataset
 
-    def explain_plan(self, query: str) -> dict:
+    def explain_query(self, query: str) -> dict:
         """
         Get query execution plan using EXPLAIN (no execution).
         Args:
@@ -78,28 +78,17 @@ class PlanExtractor:
 
             return plan
 
-    def measure_query(self, query: str, num_runs: int) -> tuple[float, list[float], int]:
-        """
-        Execute a query multiple times and return average execution time.
-        Args:
-            query: Cypher query string
-            num_runs: Number of executions for averaging
-        Returns:
-            Tuple of (mean_time_ms, times_ms, num_results)
-        """
-        times_ms = []
-        num_results = -1
-
+    @override
+    def measure_query(self, query: str) -> tuple[float, int]:
         with self.driver.session() as session:
-            for _ in range(num_runs):
-                start = time.perf_counter()
-                result = session.run(cypher(query))
-                num_results = len(result.data())
-                result.consume()  # Ensure full execution
-                elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
-                times_ms.append(elapsed_ms)
+            session.run(cypher('CALL db.clearQueryCaches()'))  # Clear caches for more realistic timing
+            start = time.perf_counter()
+            result = session.run(cypher(query))
+            num_results = len(result.data())
+            result.consume()  # Ensure full execution
+            elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
 
-        return np.mean(times_ms).item(), times_ms, num_results
+            return elapsed_ms, num_results
 
     def get_plan_statistics(self, plans: list[dict]) -> dict[str, Any]:
         """

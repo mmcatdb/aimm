@@ -38,9 +38,9 @@ python -m path.to.file
 - Use a small scale (like 0.01) for testing. Then continue with larger scales (like 10) for experiments. Be careful with larger scales.
 ```bash
 python -m scripts.generate_data edbt --scale 0.01
-python -m scripts.populate_db postgres edbt
-python -m scripts.populate_db mongo edbt
-python -m scripts.populate_db neo4j edbt
+python -m scripts.populate_db postgres edbt --scale 0.01
+python -m scripts.populate_db mongo edbt --scale 0.01
+python -m scripts.populate_db neo4j edbt --scale 0.01
 ```
 
 ### TPC-H (downloaded)

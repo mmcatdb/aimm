@@ -17,7 +17,7 @@ class ModelEvaluator:
         self.model = model
 
     def evaluate_multiple_queries(self, queries: list[QueryDef[MongoQuery]], num_runs: int) -> list['Result']:
-        results: list['Result'] = []
+        results = list['Result']()
 
         print('=' * 80)
         print(f'EVALUATING {len(queries)} QUERIES')
@@ -36,10 +36,7 @@ class ModelEvaluator:
         print(f'\nEvaluating: {query.label()}')
 
         content = query.generate()
-        if isinstance(content, MongoFindQuery):
-            result = self.__evaluate_find(content, num_runs=num_runs, label=query.label())
-        else:
-            result = self.__evaluate_aggregate(content, num_runs=num_runs, label=query.label())
+        result = self.__evaluate_query(content, num_runs=num_runs, label=query.label())
 
         status = 'OK' if result.r_value <= 2.0 else ('WARN' if result.r_value <= 5.0 else 'BAD')
 
@@ -49,23 +46,14 @@ class ModelEvaluator:
 
         return result
 
-    def __evaluate_find(self, query: MongoFindQuery, num_runs: int, label: str) -> 'Result':
+    def __evaluate_query(self, query: MongoQuery, num_runs: int, label: str) -> 'Result':
         """Evaluate a single find query."""
         # 1. Get plan without executing
-        plan = self.extractor.explain_find(query, verbosity='queryPlanner')
+        plan = self.extractor.explain_query(query, verbosity='queryPlanner')
         predicted_ms = self.__estimate_latency(plan, query.collection)
 
         # 2. Measure actual execution time
-        times = self.extractor.measure_find(query, num_runs)
-
-        return self.__create_result(label, predicted_ms, times)
-
-    def __evaluate_aggregate(self, query: MongoAggregateQuery, num_runs: int, label: str) -> 'Result':
-        """Evaluate a single aggregate query."""
-        plan = self.extractor.explain_aggregate(query, verbosity='queryPlanner')
-        predicted_ms = self.__estimate_latency(plan, query.collection)
-
-        times = self.extractor.measure_aggregate(query, num_runs)
+        times = self.extractor.measure_query_multiple(query, num_runs)
 
         return self.__create_result(label, predicted_ms, times)
 
