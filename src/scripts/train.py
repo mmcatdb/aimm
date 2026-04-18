@@ -4,7 +4,7 @@ from core.utils import exit_with_exception
 from latency_estimation.config import ModelConfig, TrainerConfig
 from latency_estimation.dataset import create_dataset_id, load_dataset, parse_dataset_id, prune_dataset
 from latency_estimation.model_provider import ModelProvider
-from latency_estimation.plan_structured_network import ModelId, OperatorCollector
+from latency_estimation.model import ModelId, OperatorCollector
 from ..providers.path_provider import PathProvider
 
 def main(rawArgs: list[str] | None = None):

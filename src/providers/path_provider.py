@@ -2,7 +2,7 @@ import os
 from core.config import Config
 from core.query import DatabaseId, SchemaId
 from latency_estimation.dataset import DatasetId
-from latency_estimation.plan_structured_network import CheckpointId, ModelId
+from latency_estimation.model import CheckpointId, ModelId
 from latency_estimation.trainer import EPOCH_DIRECTORY
 
 class PathProvider:

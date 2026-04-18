@@ -7,7 +7,7 @@ from core.nn_operator import NnOperator
 from core.query import QueryInstanceId
 from core.utils import print_warning
 from .feature_extractor import PlanNode
-from .plan_structured_network import BasePlanStructuredNetwork
+from .model import BaseModel
 
 DatasetName = str
 """Identifies a training dataset (within a specific driver).
@@ -64,7 +64,7 @@ class ArrayDataset(IterableDataset[DatasetItem]):
     def __iter__(self):
         return iter(self.items)
 
-def prune_dataset(dataset: Dataset[DatasetItem], model: BasePlanStructuredNetwork) -> ArrayDataset:
+def prune_dataset(dataset: Dataset[DatasetItem], model: BaseModel) -> ArrayDataset:
     """Removes all query items that are not supported by the model (e.g., contain operators that are not in the model)."""
     pruned = set[str]()
     output = []

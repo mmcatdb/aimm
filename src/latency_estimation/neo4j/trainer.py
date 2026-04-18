@@ -8,11 +8,11 @@ from core.utils import EPSILON, print_warning
 from latency_estimation.config import TrainerConfig
 from latency_estimation.dataset import DatasetItem
 from latency_estimation.trainer import BaseTrainer, TrainerMetrics
-from latency_estimation.neo4j.plan_structured_network import PlanStructuredNetwork
+from latency_estimation.neo4j.model import Model
 
 class Trainer(BaseTrainer):
 
-    def __init__(self, model: PlanStructuredNetwork, config: TrainerConfig):
+    def __init__(self, model: Model, config: TrainerConfig):
         super().__init__(
             main_metric='mse',
             train_metrics=['mse', 'rmse', 'mae', 'mean_q', 'median_q'],
@@ -25,7 +25,7 @@ class Trainer(BaseTrainer):
         self.criterion = nn.MSELoss()
 
     @override
-    def model(self) -> PlanStructuredNetwork:
+    def model(self) -> Model:
         return self.__model
 
     @override

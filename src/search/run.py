@@ -7,7 +7,7 @@ from latency_estimation.class_provider import get_plan_extractor
 from latency_estimation.dataset import create_dataset_id
 from latency_estimation.feature_extractor import load_feature_extractor
 from latency_estimation.latency_estimator import LatencyEstimator
-from latency_estimation.plan_structured_network import create_checkpoint_id, create_model_id
+from latency_estimation.model import create_checkpoint_id, create_model_id
 from providers.contex import Context
 from .kind_extractor import get_kind_extractor
 from .mcts import MCTS, StateMapping

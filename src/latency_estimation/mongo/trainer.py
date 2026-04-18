@@ -8,11 +8,11 @@ from core.utils import EPSILON, print_warning
 from latency_estimation.config import TrainerConfig
 from latency_estimation.dataset import DatasetItem
 from latency_estimation.trainer import BaseTrainer, TrainerMetrics
-from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
+from latency_estimation.mongo.model import Model
 
 class Trainer(BaseTrainer):
 
-    def __init__(self, model: PlanStructuredNetwork, config: TrainerConfig):
+    def __init__(self, model: Model, config: TrainerConfig):
         super().__init__(
             main_metric='geo_mean_q', # Use geometric mean Q-error as primary criterion (more robust than MAE)
             train_metrics=['mae', 'median_q', 'r_within_2.0', 'geo_mean_q'],
@@ -25,7 +25,7 @@ class Trainer(BaseTrainer):
         self.__warmup_epochs = config.warmup_epochs
 
     @override
-    def model(self) -> PlanStructuredNetwork:
+    def model(self) -> Model:
         return self.__model
 
     @override

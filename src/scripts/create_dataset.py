@@ -7,7 +7,7 @@ from core.utils import exit_with_exception
 from latency_estimation.class_provider import BaseFeatureExtractor, get_feature_extractor
 from latency_estimation.dataset import ArrayDataset, DatasetId, DatasetItem, parse_dataset_id, save_dataset, try_save_available_operators
 from latency_estimation.feature_extractor import save_feature_extractor
-from latency_estimation.plan_structured_network import OperatorCollector
+from latency_estimation.model import OperatorCollector
 from ..providers.path_provider import PathProvider
 from .measure_queries import MeasuredQueries
 

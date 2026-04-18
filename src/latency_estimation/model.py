@@ -49,7 +49,7 @@ def parse_checkpoint_id(checkpoint_id: CheckpointId) -> tuple[DriverType, ModelN
     driver_type = DriverType(driver_type_str)
     return driver_type, model_name, checkpoint_name
 
-class BasePlanStructuredNetwork(nn.Module, ABC):
+class BaseModel(nn.Module, ABC):
     """
     Plan-structured neural network for query performance estimation.
     Maintains a library of neural units (one per operator type).

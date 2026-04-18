@@ -2,7 +2,7 @@ from typing import Generic
 from core.query import  DatabaseId, DriverType, QueryInstance, QueryInstanceId, QueryMeasurement, TQuery, parse_database_id, parse_query_instance_id
 from .feature_extractor import BaseFeatureExtractor
 from .plan_extractor import BasePlanExtractor
-from .plan_structured_network import BasePlanStructuredNetwork
+from .model import BaseModel
 
 class LatencyEstimator(Generic[TQuery]):
     """Estimates query latency using a trained model without executing queries.
@@ -11,7 +11,7 @@ class LatencyEstimator(Generic[TQuery]):
     """
 
     def __init__(self):
-        self.__per_driver_type = dict[DriverType, tuple[BaseFeatureExtractor, BasePlanStructuredNetwork]]()
+        self.__per_driver_type = dict[DriverType, tuple[BaseFeatureExtractor, BaseModel]]()
         """Contains tuples of (feature_extractor, model) for each registered driver type."""
         self.__per_database = dict[DatabaseId, tuple[BasePlanExtractor, dict, DriverType]]()
         """Contains tuples of (plan_extractor, global_stats, driver_type) for each registered database. Used for caching the global stats to avoid redundant collection."""
@@ -21,7 +21,7 @@ class LatencyEstimator(Generic[TQuery]):
         self.__measure_cache = dict[QueryInstanceId, QueryMeasurement]()
         """Cache for measured latencies of queries."""
 
-    def register_driver_type(self, driver_type: DriverType, feature_extractor: BaseFeatureExtractor, model: BasePlanStructuredNetwork):
+    def register_driver_type(self, driver_type: DriverType, feature_extractor: BaseFeatureExtractor, model: BaseModel):
         """Each driver type has to be registered so that the corresponding feature extractor and model can be used for estimation."""
         self.__per_driver_type[driver_type] = (feature_extractor, model)
 

@@ -8,11 +8,11 @@ from core.utils import EPSILON, print_warning
 from latency_estimation.config import TrainerConfig
 from latency_estimation.dataset import DatasetItem
 from latency_estimation.trainer import BaseTrainer, TrainerMetrics
-from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
+from latency_estimation.postgres.model import Model
 
 class Trainer(BaseTrainer):
 
-    def __init__(self, model: PlanStructuredNetwork, config: TrainerConfig):
+    def __init__(self, model: Model, config: TrainerConfig):
         super().__init__(
             main_metric='mae',
             train_metrics=['mae', 'mre', 'r_within_1.5', 'r_within_2.0'],
@@ -22,7 +22,7 @@ class Trainer(BaseTrainer):
         self.__optimizer = optim.SGD(model.parameters(), lr=config.learning_rate, momentum=0.9)
 
     @override
-    def model(self) -> PlanStructuredNetwork:
+    def model(self) -> Model:
         return self.__model
 
     @override

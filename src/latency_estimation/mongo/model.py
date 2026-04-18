@@ -5,9 +5,9 @@ from core.nn_operator import NnOperator
 from core.drivers import DriverType
 from ..config import ModelConfig
 from ..feature_extractor import PlanNode
-from ..plan_structured_network import BasePlanStructuredNetwork, ModelName, create_model_id
+from ..model import BaseModel, ModelName, create_model_id
 
-class PlanStructuredNetwork(BasePlanStructuredNetwork):
+class Model(BaseModel):
 
     def __init__(self, config: ModelConfig, model_name: ModelName):
         super().__init__(config, create_model_id(DriverType.MONGO, model_name))

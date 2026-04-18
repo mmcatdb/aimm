@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 from core.utils import INFO_TEXT, BOLD_TEXT, RESET_TEXT, CLEAR_TEXT_LINE, exit_with_error, print_warning
 from .config import TrainerConfig
 from .dataset import DatasetItem
-from .plan_structured_network import BasePlanStructuredNetwork, CheckpointId, CheckpointName, create_checkpoint_id
+from .model import BaseModel, CheckpointId, CheckpointName, create_checkpoint_id
 
 TrainerMetrics = dict[str, float | int]
 
@@ -40,7 +40,7 @@ class BaseTrainer(ABC):
         self.__is_checkpoint_saved = False
 
     @abstractmethod
-    def model(self) -> BasePlanStructuredNetwork:
+    def model(self) -> BaseModel:
         """Return the underlying model being trained."""
         pass
 
