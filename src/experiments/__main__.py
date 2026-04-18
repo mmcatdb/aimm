@@ -1,14 +1,9 @@
 import argparse
-import numpy as np
-from common.utils import auto_close, data_size_quantity, pretty_print_int, print_warning, print_info, exit_with_error
-from common.config import DatasetName
-from common.drivers import DriverType
-from common.nn_operator import NnOperator
-from latency_estimation.exceptions import NeuralUnitNotFoundException
+from core.utils import auto_close, data_size_quantity, pretty_print_int
 
 NUM_RUNS = 1
 # FIXME this
-TEST_DATASET = DatasetName.EDBT
+TEST_SCHEMA = 'todo'
 SCALE = 1.0
 
 def main(rawArgs: list[str] | None = None):
@@ -16,23 +11,20 @@ def main(rawArgs: list[str] | None = None):
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     subparsers.add_parser('check', help='Check database connections and sizes')
-    test_args(subparsers.add_parser('test', help='Test models'))
 
     args = parser.parse_args(rawArgs)
 
     if args.command == 'check':
         check_run()
-    elif args.command == 'test':
-        test_run(args)
 
 def check_run():
-    from common.config import Config
-    from common.drivers import MongoDriver, Neo4jDriver, PostgresDriver
+    from core.config import Config
+    from core.drivers import MongoDriver, Neo4jDriver, PostgresDriver
 
     config = Config.load()
-    postgres = PostgresDriver(config.postgres, TEST_DATASET.value)
-    mongo = MongoDriver(config.mongo, TEST_DATASET.value)
-    neo4j = Neo4jDriver(config.neo4j, TEST_DATASET.value)
+    postgres = PostgresDriver(config.postgres, TEST_SCHEMA)
+    mongo = MongoDriver(config.mongo, TEST_SCHEMA)
+    neo4j = Neo4jDriver(config.neo4j, TEST_SCHEMA)
 
     print('Checking database connections and sizes ...')
 
@@ -76,134 +68,6 @@ def check_run():
         print(pretty_print_int(count))
 
     print('Done.')
-
-AVAILABLE_DATABASES = [type.value for type in [DriverType.POSTGRES, DriverType.NEO4J, DriverType.MONGO]]
-
-def test_args(parser: argparse.ArgumentParser):
-    parser.add_argument('database', nargs=1, choices=AVAILABLE_DATABASES, help='Type of database to test.')
-    # The checkpoint is required since we usually want to test on a different dataset than we trained on, so we can't rely on the default checkpoint path.
-    parser.add_argument('--checkpoint', '-c', type=str, required=True,     help='Path to model checkpoint.')
-
-def test_run(args: argparse.Namespace):
-    type = DriverType(args.database[0])
-
-    print(f'Testing {type.value} model')
-
-    if type == DriverType.POSTGRES:
-        test_postgres(args.checkpoint)
-    elif type == DriverType.NEO4J:
-        test_neo4j(args.checkpoint)
-    elif type == DriverType.MONGO:
-        test_mongo(args.checkpoint)
-    else:
-        print(f'Unsupported database type: {type.value}')
-
-def test_mongo(checkpoint: str):
-    from latency_estimation.mongo.context import MongoContext
-    from latency_estimation.mongo.latency_estimator import LatencyEstimator
-
-    missing_operators: set[str] = set()
-
-    ctx = MongoContext.create(SCALE, dataset=TEST_DATASET)
-    with auto_close(ctx):
-        model = ctx.load_model(checkpoint)
-        estimator = LatencyEstimator(ctx.extractor, model)
-
-        for query in ctx.database().get_query_defs():
-            try:
-                print(f'Executing query {query.label()}...')
-                content = query.generate()
-                estimated, _ = estimator.estimate(content)
-
-                times = ctx.extractor.measure_query_multiple(content, NUM_RUNS)
-                actual = np.mean(times).item()
-
-                print_query_results(estimated, actual)
-            except NeuralUnitNotFoundException as e:
-                missing_operators.add(e.operator.key())
-                print_warning(str(e))
-            except Exception as e:
-                print_warning('Could not execute query.', e)
-
-            print()
-
-        try_print_missing_operators(missing_operators, model.get_units())
-
-def test_postgres(checkpoint: str):
-    from latency_estimation.postgres.context import PostgresContext
-    from latency_estimation.postgres.latency_estimator import LatencyEstimator
-
-    missing_operators: set[str] = set()
-
-    ctx = PostgresContext.create(SCALE, dataset=TEST_DATASET)
-    with auto_close(ctx):
-        model = ctx.load_model(checkpoint)
-        estimator = LatencyEstimator(ctx.extractor, model)
-
-        for query in ctx.database().get_query_defs():
-            try:
-                print(f'Executing query {query.label()}...')
-                content = query.generate()
-                estimated, _ = estimator.estimate(content)
-
-                times = ctx.extractor.measure_query_multiple(content, NUM_RUNS)
-                actual = np.mean(times).item()
-
-                print_query_results(estimated, actual)
-            except NeuralUnitNotFoundException as e:
-                missing_operators.add(e.operator.key())
-                print_warning(str(e))
-            except Exception as e:
-                print_warning('Could not execute query.', e)
-
-            print()
-
-    try_print_missing_operators(missing_operators, model.get_units())
-
-def test_neo4j(checkpoint: str):
-    from latency_estimation.neo4j.context import Neo4jContext
-    from latency_estimation.neo4j.latency_estimator import LatencyEstimator
-
-    missing_operators: set[str] = set()
-
-    ctx = Neo4jContext.create(SCALE, dataset=TEST_DATASET)
-    with auto_close(ctx):
-        model = ctx.load_model(checkpoint)
-        estimator = LatencyEstimator(ctx.extractor, model)
-
-        for query in ctx.database().get_query_defs():
-            try:
-                print(f'Executing query {query.label()}...')
-                content = query.generate()
-                estimated, _ = estimator.estimate(content)
-
-                times = ctx.extractor.measure_query_multiple(content, NUM_RUNS)
-                actual = np.mean(times).item()
-
-                print_query_results(estimated, actual)
-            except NeuralUnitNotFoundException as e:
-                missing_operators.add(e.operator.key())
-                print_warning(str(e))
-            except Exception as e:
-                print_warning('Could not execute query.', e)
-
-            print()
-
-        try_print_missing_operators(missing_operators, model.get_units())
-
-def print_query_results(estimated: float, actual: float):
-    print(f'Estimated: {estimated:.2f} ms, Actual: {actual:.2f} ms.')
-
-def try_print_missing_operators(missing: set[str], available: list[NnOperator]):
-    if not missing:
-        return
-
-    print('Missing neural units for the following operators:')
-    for operator in missing:
-        print(f'  - {operator}')
-    print('\nAvailable operators:')
-    for operator in available:
-        print(f'  - {operator.key()}')
 
 if __name__ == '__main__':
     main()

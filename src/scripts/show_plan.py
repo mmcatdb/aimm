@@ -1,69 +1,59 @@
 import sys
 import argparse
-from common.config import Config, DatasetName
-from common.drivers import PostgresDriver, Neo4jDriver, DriverType
-from common.utils import auto_close, trim_to_block, exit_with_error
-from common.explainers.common import OperatorNameFormatter
-from common.query_registry import QueryDef
-from common.database import Database
-from datasets.databases import DatabaseInfo, find_database, get_available_dataset_names
-from latency_estimation.context import BaseContext
+from typing_extensions import deprecated
+from core.config import Config
+from core.driver_provider import DriverProvider
+from core.drivers import PostgresDriver, Neo4jDriver, DriverType
+from core.dynamic_provider import get_dynamic_class_instance
+from core.explainers.neo4j_explainer import Neo4jExplainer
+from core.explainers.postgres_explainer import PostgresExplainer
+from core.utils import auto_close, exit_with_exception, trim_to_block, exit_with_error
+from core.explainers.common import OperatorNameFormatter
+from core.query import QueryRegistry, QueryInstance, parse_database_id, DatabaseId
+from latency_estimation.dataset import try_load_available_operators
+from ..providers.path_provider import PathProvider
 
 SCALE = 1.0  # FIXME
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Show a query plan visually.')
-    subparsers = parser.add_subparsers(dest='database', required=True)
-
-    _common_args(subparsers.add_parser(DriverType.POSTGRES.value), DriverType.POSTGRES)
-    _common_args(subparsers.add_parser(DriverType.NEO4J.value), DriverType.NEO4J)
-
+    add_args(parser)
     args = parser.parse_args(rawArgs)
-    type = DriverType(args.database)
 
-    if type == DriverType.POSTGRES:
-        _postgres_run(args)
-    elif type == DriverType.MONGO:
-        raise NotImplementedError('MongoDB is not supported yet.')
-    elif type == DriverType.NEO4J:
-        _neo4j_run(args)
+    database_id = args.database_id[0]
 
-def _common_args(parser: argparse.ArgumentParser, type: DriverType):
-    parser.add_argument('dataset', nargs=1, choices=get_available_dataset_names(), help=f'Name of the dataset. Needed to select the database.')
-    parser.add_argument('query', nargs='?', help='Query string or a query ID (if such query exists). Read from stdin if omitted.')
+    try:
+        run(Config.load(), args, database_id)
+    except Exception as e:
+        exit_with_exception(e)
+
+def add_args(parser: argparse.ArgumentParser):
+    parser.add_argument('database_id', nargs=1, help='Id of the database. Pattern: {driver_type}/{schema_name}-{scale}')
+    parser.add_argument('query', nargs='?', help='Query string or a query template name (if such query exists). Read from stdin if omitted.')
     parser.add_argument('--tree', action=argparse.BooleanOptionalAction, default=True, help='Print the visual tree.')
     parser.add_argument('--json', action='store_true', help='Print the raw JSON.')
-    parser.add_argument('--all-queries', action='store_true', help='Use all queries from the provided dataset. The query argument is ignored.')
+    parser.add_argument('--all-queries', action='store_true', help='Use all queries from the provided schema. The query argument is ignored.')
+    parser.add_argument('--operators', type=str, help='Id of a dataset to load the available operators from. Pattern: {driver_type}/{dataset_name}. If not provided, no operator information will be displayed.')
+    parser.add_argument('--profile', action='store_true', help='Use EXPLAIN ANALYZE / PROFILE.')
 
-    if type == DriverType.POSTGRES:
-        parser.add_argument('--profile', action='store_true', help='Use EXPLAIN ANALYZE (actually runs the query; DML is rolled back).')
-        parser.add_argument('--no-cache', action='store_true', help='Issue DISCARD ALL before running (requires --profile).')
-    elif type == DriverType.NEO4J:
-        parser.add_argument('--profile', action='store_true', help='Use PROFILE instead of EXPLAIN (actually runs the query; DML is rolled back).')
+def run(config: Config, args: argparse.Namespace, database_id: DatabaseId):
+    pp = PathProvider(config)
 
-def _postgres_run(args: argparse.Namespace):
-    from common.explainers.postgres_explainer import PostgresExplainer
+    driver_type, schema, scale = parse_database_id(database_id)
+    registry = get_dynamic_class_instance(QueryRegistry, driver_type, schema)
+    queries = _get_queries_from_input(args, registry, scale)
 
-    dataset = DatasetName(args.dataset[0])
-    info = DatabaseInfo(dataset, DriverType.POSTGRES, SCALE)
-    database = find_database(info)
-    queries = _get_queries_from_input(args, database)
-
-    config = Config.load()
-    operators = _try_get_available_operators(config, database)
-    driver = PostgresDriver(config.postgres, dataset.value)
+    operators = _try_get_available_operators(pp.operators(args.operators)) if args.operators else None
+    driver, explainer = _get_explainer(config, database_id, operators)
 
     with auto_close(driver):
-        explainer = PostgresExplainer(driver, operators)
-
         for query in queries:
             if args.all_queries:
-                print(f'{query.label()}:')
+                print(f'{query.label}:')
 
-            content = query.generate()
-            print(trim_to_block(content) + '\n')
+            print(trim_to_block(str(query.content)) + '\n')
 
-            plan = explainer.fetch_plan(content, do_profile=args.profile, do_discard=args.no_cache)
+            plan = explainer.fetch_plan(query.content, do_profile=args.profile)
 
             if args.tree:
                 explainer.print_tree(plan)
@@ -73,53 +63,23 @@ def _postgres_run(args: argparse.Namespace):
 
     _try_print_missing_operators(operators)
 
-def _neo4j_run(args: argparse.Namespace):
-    from common.explainers.neo4j_explainer import Neo4jExplainer
-
-    dataset = DatasetName(args.dataset[0])
-    info = DatabaseInfo(dataset, DriverType.NEO4J, SCALE)
-    database = find_database(info)
-    queries = _get_queries_from_input(args, database)
-
-    config = Config.load()
-    operators = _try_get_available_operators(config, database)
-    driver = Neo4jDriver(config.neo4j, dataset.value)
-
-    with auto_close(driver):
-        explainer = Neo4jExplainer(driver, operators)
-
-        for query in queries:
-            if args.all_queries:
-                print(f'{query.label()}:')
-
-            content = query.generate()
-            print(trim_to_block(content) + '\n')
-
-            plan = explainer.fetch_plan(content, do_profile=args.profile)
-
-            if args.tree:
-                explainer.print_tree(plan)
-            if args.json:
-                print()
-                explainer.print_json(plan)
-
-    _try_print_missing_operators(operators)
-
-def _get_queries_from_input(args: argparse.Namespace, database: Database) -> list[QueryDef]:
+@deprecated('unify')
+def _get_queries_from_input(args: argparse.Namespace, registry: QueryRegistry, scale: float) -> list[QueryInstance]:
     """Returns a list of (query_id, query_content) tuples. The query_id is empty if the query was provided directly rather than by ID."""
     if args.all_queries:
-        return database.get_query_defs()
+        return registry.generate_queries(scale, 0)
 
-    query_or_id = _get_query_or_id_from_input(args)
+    content_or_name = _get_query_content_or_name_from_input(args)
 
-    query = database.get_query_def(query_or_id)
-    if query is not None:
-        print(f'Found query with ID "{query.id}".')
-        return [query]
+    template = registry.get_template(content_or_name)
+    if template is not None:
+        print(f'Found query template with name "{template.name}".')
+        return [template.generate(scale, 0)]
 
-    return [QueryDef.create_from_content('custom', 0, 1.0, 'Custom Query', query_or_id)]
+    return [QueryInstance.create_custom(registry.driver, registry.schema, scale, 0, content_or_name)]
 
-def _get_query_or_id_from_input(args: argparse.Namespace) -> str:
+@deprecated('unify')
+def _get_query_content_or_name_from_input(args: argparse.Namespace) -> str:
     if args.query:
         query = args.query
     elif not sys.stdin.isatty():
@@ -139,8 +99,8 @@ def _get_query_or_id_from_input(args: argparse.Namespace) -> str:
 
     return query
 
-def _try_get_available_operators(config: Config, database: Database) -> OperatorNameFormatter | None:
-    operator_list = BaseContext.load_available_operators(config, database)
+def _try_get_available_operators(path: str) -> OperatorNameFormatter | None:
+    operator_list = try_load_available_operators(path)
     if operator_list is None:
         return None
 
@@ -149,6 +109,23 @@ def _try_get_available_operators(config: Config, database: Database) -> Operator
         operators.add(operator)
 
     return operators
+
+def _get_explainer(config: Config, database_id: DatabaseId, operators: OperatorNameFormatter | None) -> tuple[PostgresDriver, PostgresExplainer] | tuple[Neo4jDriver, Neo4jExplainer]:
+    driver_type, schema, scale = parse_database_id(database_id)
+    dp = DriverProvider.default(config)
+
+    if driver_type == DriverType.POSTGRES:
+        from core.explainers.postgres_explainer import PostgresExplainer
+        driver = dp.get_typed(PostgresDriver, schema, scale)
+        return driver, PostgresExplainer(driver, operators)
+    elif driver_type == DriverType.MONGO:
+        raise NotImplementedError('MongoDB is not supported yet.')
+    elif driver_type == DriverType.NEO4J:
+        from core.explainers.neo4j_explainer import Neo4jExplainer
+        driver = dp.get_typed(Neo4jDriver, schema, scale)
+        return driver, Neo4jExplainer(driver, operators)
+    else:
+        raise ValueError(f'Unsupported driver type: {driver_type.value}')
 
 def _try_print_missing_operators(operators: OperatorNameFormatter | None):
     if operators is None:

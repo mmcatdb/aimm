@@ -1,28 +1,73 @@
 from abc import ABC, abstractmethod
 from typing import Generic
-from common.query_registry import TQuery
-from common.query_registry import QueryDef
+from core.query import QueryInstance, QueryMeasurement, TQuery
+from core.utils import ProgressTracker, print_warning
 
 class BasePlanExtractor(ABC, Generic[TQuery]):
 
     @abstractmethod
     def measure_query(self, query: TQuery) -> tuple[float, int]:
-        """Measures single query execution. Returns tuple of (time_ms, num_results)."""
+        """Measures single query execution. Returns tuple of (time, num_results)."""
         pass
 
-    def measure_query_multiple(self, query: TQuery, num_runs: int) -> list[float]:
-        """Measures the query multiple times and returns list of time_ms."""
-        return self.__measure_queries([query] * num_runs)
+    @abstractmethod
+    def explain_query(self, query: TQuery, do_profile: bool) -> dict:
+        """Gets query execution plan. Returns plan as dict.
 
-    def measure_query_generated(self, query_def: QueryDef[TQuery], num_runs: int) -> list[float]:
-        """Generates a new query each time and measures it. Returns list of time_ms."""
-        return self.__measure_queries([query_def.generate() for _ in range(num_runs)])
+        Args:
+            do_profile: Whether to include execution statistics in the plan (e.g., PostgreSQL ANALYZE).
+        """
 
-    def __measure_queries(self, queries: list[TQuery]) -> list[float]:
-        """Measures multiple queries and returns list of time_ms."""
-        times = []
+        # The execution statistics are important for training the model, but they are not used when extracting features. So, we don't need them when evaluating the model.
+
+        pass
+
+    @abstractmethod
+    def collect_global_stats(self) -> dict:
+        """Collects global statistics about the database that are not specific to any single query, but might be relevant for feature extraction."""
+
+        # Global stats might contain information about the kinds / database that are not present in the plans, but are still relevant for feature extraction.
+        # They should be extracted together with the plans to ensure accurate values.
+
+        pass
+
+    def measure_and_explain_queries(self, queries: list[QueryInstance[TQuery]], num_runs: int) -> list[QueryMeasurement[TQuery]]:
+        """Generates and measures queries.
+
+        Args:
+            num_queries: Total number of queries to generate and measure. Should be larger than the number of templates.
+            num_runs: Number of executions per query for averaging
+        """
+
+        progress = ProgressTracker.limited(len(queries))
+        progress.start(f'Measuring {len(queries)} queries ({num_runs} runs each) ... ')
+
+        measurements = list[QueryMeasurement[TQuery]]()
         for query in queries:
-            time, _ = self.measure_query(query)
+            try:
+                measurement = self.measure_and_explain_query(query, num_runs)
+                measurements.append(measurement)
+            except Exception as e:
+                print_warning(f'\nCould not execute query {query.label}.', e)
+
+            progress.track()
+
+        progress.finish()
+        print(f'\nCollected {len(measurements)} measurements successfully.')
+
+        return measurements
+
+    def measure_and_explain_query(self, query: QueryInstance[TQuery], num_runs: int) -> QueryMeasurement[TQuery]:
+        """Returns a comprehensive measurement of the query, including the execution plan and latency.
+
+        The query is run `num_runs` times to get a more stable latency measurement.
+        After that, the plan is extracted, ensuring that the best possible plan is captured.
+        """
+        times = list[float]()
+        for _ in range(num_runs):
+            time, _ = self.measure_query(query.content)
             times.append(time)
 
-        return times
+        plan = self.explain_query(query.content, do_profile=True)
+
+        return QueryMeasurement(query.id, query.content, plan, times)

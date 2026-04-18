@@ -1,7 +1,7 @@
 import math
 import random
 from typing import Protocol
-from common.drivers import DriverType
+from core.drivers import DriverType
 
 QueryState = list[str]
 StateMatrix = tuple[tuple[int, ...], ...]

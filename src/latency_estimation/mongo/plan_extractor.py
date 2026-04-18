@@ -1,21 +1,9 @@
 import time
 from typing_extensions import override
-from common.database import MongoQuery, MongoFindQuery, MongoAggregateQuery
-from common.drivers import MongoDriver
-from common.utils import ProgressTracker, print_warning, time_quantity
-from common.query_registry import QueryDefMap
-from latency_estimation.common import ArrayDataset
-from latency_estimation.feature_extractor import BaseDatasetItem
+from core.query import MongoQuery, MongoFindQuery, MongoAggregateQuery
+from core.drivers import MongoDriver
+from core.utils import time_quantity
 from latency_estimation.plan_extractor import BasePlanExtractor
-
-class MongoItem(BaseDatasetItem):
-    def __init__(self, id: str, query: MongoQuery, plan: dict, times: list[float]):
-        super().__init__(id, plan, times)
-        self.query = query
-
-    @override
-    def query_string(self) -> str:
-        return str(self.query)
 
 class PlanExtractor(BasePlanExtractor[MongoQuery]):
     """Extracts query plans and execution statistics from MongoDB."""
@@ -23,85 +11,69 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
     def __init__(self, driver: MongoDriver):
         self.config = driver
         self.db = driver.database()
+        self._collection_stats_cache = dict[str, dict]()
 
-    def create_dataset(self, queries: list[MongoQuery], num_runs: int, def_map: QueryDefMap[MongoQuery]) -> ArrayDataset[MongoItem]:
-        """
-        Collect training dataset: explain plans + actual execution times.
-        For each query, we collect:
-        - explain('executionStats') for the plan tree + per-stage stats
-        - Wall-clock execution time averaged over num_runs
-        """
-        progress = ProgressTracker.limited(len(queries))
-        progress.start(f'Collecting {len(queries)} query plans ({num_runs} runs each) ... ')
-
-        items = list[MongoItem]()
-
-        for i, query in enumerate(queries):
-            try:
-                plan = self.explain_query(query, verbosity='executionStats')
-                times = self.measure_query_multiple(query, num_runs)
-                items.append(MongoItem(def_map[id(query)].id, query, plan, times))
-                progress.track()
-
-            except Exception as e:
-                query_def = def_map.get(id(query)) if def_map else None
-                if query_def:
-                    print_warning(f'\nCould not execute query {query_def.label()}.', e)
-                else:
-                    print_warning(f'\nCould not execute query on index {i}.', e)
-                print()
-
-        dataset = ArrayDataset(items)
-        progress.finish()
-
-        print(f'\nCollected {len(dataset)} samples successfully')
-        return dataset
-
-    # ------------------------------------------------------------------
-    # Explain helpers
-    # ------------------------------------------------------------------
-
-    def explain_query(self, query: MongoQuery, verbosity: str) -> dict:
+    @override
+    def explain_query(self, query: MongoQuery, do_profile: bool) -> dict:
         if isinstance(query, MongoFindQuery):
-            return self.__explain_find(query, verbosity)
+            return self.__explain_find(query, do_profile)
+        elif isinstance(query, MongoAggregateQuery):
+            return self.__explain_aggregate(query, do_profile)
         else:
-            return self.__explain_aggregate(query, verbosity)
+            raise ValueError(f'Unsupported query type for explain: {type(query)}')
 
-    def __explain_find(self, query: MongoFindQuery, verbosity: str) -> dict:
-        cmd: dict = {
-            'find': query.collection,
-        }
+    def __explain_find(self, query: MongoFindQuery, do_profile: bool) -> dict:
+        cmd = query.to_dict()
+        return self.__explain_common(cmd, do_profile, query.collection)
 
-        if query.filter:
-            cmd['filter'] = query.filter
-        if query.projection:
-            cmd['projection'] = query.projection
-        if query.sort:
-            cmd['sort'] = query.sort
-        if query.limit:
-            cmd['limit'] = query.limit
-        if query.skip:
-            cmd['skip'] = query.skip
+    def __explain_aggregate(self, query: MongoAggregateQuery, do_profile: bool) -> dict:
+        cmd = query.to_dict()
+        cmd['cursor'] = {} # Yes, this is required.
+        return self.__explain_common(cmd, do_profile, query.collection)
 
+    GLOBAL_STATS_COLLECTION_KEY = '$collection'
+
+    def __explain_common(self, cmd: dict, do_profile: bool, collection: str) -> dict:
+        verbosity = 'executionStats' if do_profile else 'queryPlanner'
         explain = self.db.command('explain', cmd, verbosity=verbosity)
-        return self.extract_plan(explain)
 
-    def __explain_aggregate(self, query: MongoAggregateQuery, verbosity: str) -> dict:
-        cmd: dict = {
-            'aggregate': query.collection,
-            'pipeline': query.pipeline,
-            'cursor': {}
-        }
+        # FIXME This is probably not correct. The winning plan is just a small part of the explain output. Moreover, the explain output for aggregation pipelines contains multiple stages from which only the first one is currently extracted. Explain doesn't even provide plans for the other stages ...
+        # We whould probably create our own plan structure. Some of the stages can be further explored by running explain on them (resp. their corresponding queries) separately.
 
-        explain = self.db.command('explain', cmd, verbosity=verbosity)
-        return self.extract_plan(explain)
+        plan = self.__extract_plan(explain)
+        # Add collection name to the root node.
+        plan[self.GLOBAL_STATS_COLLECTION_KEY] = collection
+
+        return plan
+
+    def __extract_plan(self, explain_output: dict) -> dict:
+        """Extracts the plan tree from an explain output.
+
+        Handles both explainVersion 1 (classic) and 2 (SBE / aggregation).
+        """
+        # The output we are interested in might not depend on the version?
+        # version = explain_output.get('explainVersion', '1')
+
+        stage = self.__extract_plan_stage(explain_output)
+        # Slot-based Execution Engine will have `queryPlan`. Otherwise, it should be the winning plan directly.
+        wp = stage['queryPlanner']['winningPlan']
+        return wp.get('queryPlan', wp)
+
+    def __extract_plan_stage(self, explain_output: dict) -> dict:
+        if 'stages' in explain_output:
+            # Aggregate: may have stages[] with $cursor
+            return explain_output['stages'][0]['$cursor']
+
+        return explain_output
 
     @override
     def measure_query(self, query: MongoQuery) -> tuple[float, int]:
         if isinstance(query, MongoFindQuery):
             return self.__measure_find(query)
-        else:
+        elif isinstance(query, MongoAggregateQuery):
             return self.__measure_aggregate(query)
+        else:
+            raise ValueError(f'Unsupported query type for measurement: {type(query)}')
 
     def __measure_find(self, query: MongoFindQuery) -> tuple[float, int]:
         collection = self.db[query.collection]
@@ -120,38 +92,35 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
 
         start = time.perf_counter()
         results = list(cursor)  # force materialization
-        elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
+        elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
 
-        return elapsed_ms, len(results)
+        return elapsed, len(results)
 
     def __measure_aggregate(self, query: MongoAggregateQuery) -> tuple[float, int]:
         collection = self.db[query.collection]
 
         start = time.perf_counter()
         results = list(collection.aggregate(query.pipeline))
-        elapsed_ms = time_quantity.to_base(time.perf_counter() - start, 's')
+        elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
 
-        return elapsed_ms, len(results)
+        return elapsed, len(results)
 
-    @staticmethod
-    def extract_plan(explain_output: dict) -> dict:
-        """
-        Extract the plan tree from an explain output.
-        Handles both explainVersion 1 (classic) and 2 (SBE / aggregation).
-        """
-        version = explain_output.get('explainVersion', '1')
+    @override
+    def collect_global_stats(self) -> dict:
+        stats = dict[str, dict]()
+        for collection in self.db.list_collection_names():
+            if not collection.startswith("system."):
+                stats[collection] = self.__fetch_global_stats(collection)
 
-        if version == '2':
-            # SBE or aggregate: may have stages[] or queryPlanner.winningPlan.queryPlan
-            if 'stages' in explain_output:
-                # Aggregate pipeline: get the cursor's queryPlan
-                cursor_stage = explain_output['stages'][0]
-                if '$cursor' in cursor_stage:
-                    wp = cursor_stage['$cursor']['queryPlanner']['winningPlan']
-                    return wp.get('queryPlan', wp)
-            wp = explain_output.get('queryPlanner', {}).get('winningPlan', {})
-            return wp.get('queryPlan', wp)
-        else:
-            # Classic engine
-            wp = explain_output.get('queryPlanner', {}).get('winningPlan', {})
-            return wp
+        return stats
+
+    def __fetch_global_stats(self, collection: str) -> dict:
+        stats = self.db.command("collStats", collection)
+        return {
+            'count': stats.get('count', 0),
+            'size': stats.get('size', 0),
+            'avgObjSize': stats.get('avgObjSize', 0),
+            'storageSize': stats.get('storageSize', 0),
+            'nindexes': stats.get('nindexes', 0),
+            'totalIndexSize': stats.get('totalIndexSize', 0),
+        }

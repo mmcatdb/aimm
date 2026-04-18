@@ -14,7 +14,7 @@ docker compose up -d
 
 ## Python stuff
 
-- Create virtual environment (needs to be done only once):
+- Create virtual environment (should be done only once):
 ```bash
 python -m venv .venv
 ```
@@ -37,10 +37,10 @@ python -m path.to.file
 
 - Use a small scale (like 0.01) for testing. Then continue with larger scales (like 10) for experiments. Be careful with larger scales.
 ```bash
-python -m scripts.generate_data edbt --scale 0.01
-python -m scripts.populate_db postgres edbt --scale 0.01
-python -m scripts.populate_db mongo edbt --scale 0.01
-python -m scripts.populate_db neo4j edbt --scale 0.01
+python -m scripts.generate_data edbt-0.01
+python -m scripts.populate_db postgres/edbt-0.01
+python -m scripts.populate_db mongo/edbt-0.01
+python -m scripts.populate_db neo4j/edbt-0.01
 ```
 
 ### TPC-H (downloaded)
@@ -66,8 +66,8 @@ python -m latency_estimation.mongo test
 
 - Explain query plan:
 ```bash
-python -m scripts.show_plan postgres tpch "UPDATE orders SET o_totalprice = 0 WHERE o_orderkey = 1"
-python -m scripts.show_plan postgres tpch Q7
+python -m scripts.show_plan postgres/tpch-1 "UPDATE orders SET o_totalprice = 0 WHERE o_orderkey = 1"
+python -m scripts.show_plan postgres/tpch-1 basic-0
 ```
 
 ```bash

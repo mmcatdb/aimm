@@ -4,30 +4,22 @@ import torch
 import torch.optim as optim
 from torch.utils.data import Dataset
 import numpy as np
-from collections import defaultdict
-from common.utils import EPSILON, print_warning
+from core.utils import EPSILON, print_warning
+from latency_estimation.config import TrainerConfig
+from latency_estimation.dataset import DatasetItem
 from latency_estimation.trainer import BaseTrainer, TrainerMetrics
-from latency_estimation.postgres.plan_extractor import PostgresItem
-from latency_estimation.postgres.feature_extractor import FeatureExtractor
 from latency_estimation.postgres.plan_structured_network import PlanStructuredNetwork
 
-class Trainer(BaseTrainer[PostgresItem]):
+class Trainer(BaseTrainer):
 
-    def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int):
+    def __init__(self, model: PlanStructuredNetwork, config: TrainerConfig):
         super().__init__(
             main_metric='mae',
             train_metrics=['mae', 'mre', 'r_within_1.5', 'r_within_2.0'],
-            batch_size=batch_size,
+            config=config,
         )
         self.__model = model
-        self.__optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
-
-    @staticmethod
-    def load_from_checkpoint(model: PlanStructuredNetwork, checkpoint: dict, learning_rate: float, batch_size: int) -> 'Trainer':
-        trainer = Trainer(model, learning_rate, batch_size)
-        trainer.__optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        trainer._loss_history = checkpoint['loss_history']
-        return trainer
+        self.__optimizer = optim.SGD(model.parameters(), lr=config.learning_rate, momentum=0.9)
 
     @override
     def model(self) -> PlanStructuredNetwork:
@@ -35,33 +27,31 @@ class Trainer(BaseTrainer[PostgresItem]):
 
     @override
     def to_checkpoint(self) -> dict:
-        return self._to_common_checkpoint() | {
-            # We don't save the learning rate as it can be changed between sessions.
+        return super().to_checkpoint() | {
             # Momentum should be saved automatically.
             'optimizer_state_dict': self.__optimizer.state_dict(),
         }
 
-    def evaluate(self, dataset: Dataset[PostgresItem]) -> TrainerMetrics:
-        """
-        Evaluate model on a dataset.
-        Returns:
-            Dictionary of metrics (MAE, relative error, etc.)
-        """
+    @override
+    def load_from_checkpoint(self, checkpoint: dict):
+        self.__optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    @override
+    def evaluate(self, dataset: Dataset[DatasetItem]) -> TrainerMetrics:
         self.__model.eval()
 
         estimations = []
         actuals = []
 
-        with torch.no_grad():
-            for item in dataset:
-                try:
-                    predicted_ms = self.__model(item.plan).item()
-                except Exception as e:
-                    print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
-                    continue
+        for item in dataset:
+            try:
+                predicted = self.__model.evaluate(item.plan)
+            except Exception as e:
+                print_warning(f'Could not compute model outputs for a query: \n{item.query_id}', e)
+                continue
 
-                estimations.append(predicted_ms)
-                actuals.append(item.execution_time)
+            estimations.append(predicted)
+            actuals.append(item.latency)
 
         # Convert to numpy arrays
         estimations = np.array(estimations)
@@ -86,18 +76,18 @@ class Trainer(BaseTrainer[PostgresItem]):
             'r_within_2.0': np.mean(r_values <= 2.0).item(),
         }
 
-    def _train_batch(self, batch: list[PostgresItem]) -> float:
+    def _train_batch(self, batch: list[DatasetItem]) -> float:
         """Returns the loss for the batch."""
         self.__model.train()
         self.__optimizer.zero_grad()
 
-        groups = group_plans_by_structure(batch)
+        groups = self._group_plans_by_structure(batch)
 
         # Compute gradient for each group
         total_loss = 0.0
         total_weight = 0
 
-        for struct_hash, indexes in groups.items():
+        for indexes in groups.values():
             group_batch = [batch[i] for i in indexes]
             group_size = len(group_batch)
 
@@ -123,7 +113,7 @@ class Trainer(BaseTrainer[PostgresItem]):
         # Return average loss
         return total_loss / total_weight if total_weight > 0 else 0.0
 
-    def __compute_loss(self, batch: list[PostgresItem]) -> torch.Tensor:
+    def __compute_loss(self, batch: list[DatasetItem]) -> torch.Tensor:
         """
         Compute L2 loss over all operators in all plans (Equation 7).
         Args:
@@ -138,14 +128,14 @@ class Trainer(BaseTrainer[PostgresItem]):
             try:
                 all_outputs = self.__model.estimate_plan_latency_all_nodes(item.plan)
             except Exception as e:
-                print_warning(f'Could not compute model outputs for a query: \n{item.query}', e)
+                print_warning(f'Could not compute model outputs for a query: \n{item.query_id}', e)
                 continue
 
             # Compute squared errors for all nodes
-            for node_id, output_tensor in all_outputs.items():
+            for output_tensor in all_outputs.values():
                 predicted = output_tensor[0, 0] # Get latency (first element)
 
-                actual = FeatureExtractor.extract_node_latency(item.plan)
+                actual = item.plan.latency_checked()
                 actual_tensor = torch.tensor(actual, dtype=predicted.dtype, device=predicted.device)
 
                 squared_error = (predicted - actual_tensor) ** 2
@@ -160,34 +150,3 @@ class Trainer(BaseTrainer[PostgresItem]):
 
         # Return a 0.0 tensor that still requires gradients
         return torch.tensor(0.0, requires_grad=True)
-
-def group_plans_by_structure(batch: list[PostgresItem]) -> dict[str, list[int]]:
-    """
-    Group plans in a batch by their structure.
-    Returns mapping from structure hash to indexes in batch.
-    """
-    groups = defaultdict(list)
-
-    for index, item in enumerate(batch):
-        struct_hash = compute_plan_structure_hash(item.plan)
-        groups[struct_hash].append(index)
-
-    return groups
-
-def compute_plan_structure_hash(plan: dict) -> str:
-    """
-    Compute a hash representing the structure of a query plan.
-    Plans with identical structure can be batched together.
-    """
-    def structure_sig(node):
-        op_type = FeatureExtractor.get_node_type(node)
-        children = FeatureExtractor.get_node_children(node)
-        num_children = len(children)
-
-        children_sig = []
-        for child in children:
-            children_sig.append(structure_sig(child))
-
-        return f'{op_type}_{num_children}_{"_".join(sorted(children_sig))}'
-
-    return structure_sig(plan)

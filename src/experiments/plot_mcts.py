@@ -2,10 +2,10 @@ import os
 from matplotlib import pyplot as plt, ticker
 import numpy as np
 from scipy.optimize import curve_fit
-from common.config import Config, DatasetName
+from core.config import Config
 from experiments.mcts import find_stats, load_stats, IterationStats, LoadedAdaptationSolution
 
-DATASET = DatasetName.EDBT
+SCHEMA = 'TODO' # FIXME
 
 def main():
     config = Config.load()

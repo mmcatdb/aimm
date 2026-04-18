@@ -3,8 +3,8 @@ import numpy as np
 from typing import Any
 from collections import defaultdict
 import re
-from common.utils import EPSILON
-from latency_estimation.feature_extractor import BaseFeatureExtractor
+from core.utils import EPSILON
+from ..feature_extractor import PlanNode, BaseFeatureExtractor
 
 class FeatureExtractor(BaseFeatureExtractor):
     """
@@ -16,37 +16,21 @@ class FeatureExtractor(BaseFeatureExtractor):
     Maintains vocabularies for categorical features across the dataset.
     """
 
+    #region Setup
+
     def __init__(self):
         self.identifiers_vocab = set()
 
         # Statistics for normalization
         # Changed from lambda to dict to enable pickling
-        self.stats = defaultdict(self._default_stats)
+        self.stats = defaultdict(self.__default_stats)
 
-    @staticmethod
-    @override
-    def get_node_type(node: dict) -> str:
-        return node.get('operatorType', 'Unknown').replace('@neo4j', '')
-
-    @staticmethod
-    @override
-    def get_node_children(node: dict) -> list[dict]:
-        return node.get('children', [])
-
-    def _default_stats(self):
+    def __default_stats(self):
         """Default statistics dictionary for normalization."""
         return {'min': float('inf'), 'max': float('-inf'), 'mean': 0, 'count': 0}
 
-    def build_vocabularies(self, plans: list[dict]):
-        """
-        Build vocabularies and statistics from a list of query plans.
-        This must be called before extracting features.
-
-        Args:
-            plans: List of Neo4j query plan dictionaries
-        """
-        print('Building vocabularies from plans...')
-
+    @override
+    def extend_vocabularies(self, plans: list[dict], global_stats: dict):
         all_numeric_features = defaultdict(list)
 
         def traverse(node):
@@ -93,9 +77,23 @@ class FeatureExtractor(BaseFeatureExtractor):
                 self.stats[feature_name]['mean'] = float(np.mean(values))
                 self.stats[feature_name]['count'] = len(values)
 
-        print(f'  Found {len(self.identifiers_vocab)} unique identifiers')
+    #endregion
 
-    def extract_features(self, node: dict) -> np.ndarray:
+    @override
+    def extract_plan(self, plan: dict) -> PlanNode:
+        node_type = self.get_node_type(plan)
+        features = self.__extract_node_features(plan)
+        node = PlanNode(node_type, features, None)
+
+        for child in self.get_node_children(plan):
+            child_node = self.extract_plan(child)
+            node.add_child(child_node)
+
+        return node
+
+    #region Features
+
+    def __extract_node_features(self, node: dict) -> np.ndarray:
         """
         Extract and encode features from a single operator node.
         Args:
@@ -119,7 +117,7 @@ class FeatureExtractor(BaseFeatureExtractor):
         # Identifiers (multi-hot encoded)
         identifiers = node.get('identifiers', [])
         if self.identifiers_vocab:
-            identifiers_vec = self.__encode_multi_hot(identifiers, self.identifiers_vocab)
+            identifiers_vec = self._multi_hot(identifiers, self.identifiers_vocab)
             features.append(identifiers_vec)
 
         # Number of identifiers (normalized)
@@ -159,41 +157,8 @@ class FeatureExtractor(BaseFeatureExtractor):
 
         # Concatenate all features
         feature_vector = np.concatenate(features)
-        # print('Extracted feature vector:', feature_vector)
-        # print('---')
 
         return feature_vector
-
-    @override
-    def get_feature_dim(self, op_type: str) -> int:
-        # In Neo4j, all operators have the same feature vector size (unlike Postgres where different operators had different features).
-
-        # Calculate total dimension
-        dim = 0
-
-        # EstimatedRows (1)
-        dim += 1
-
-        # Identifiers (multi-hot) - only if vocabulary exists
-        if self.identifiers_vocab:
-            dim += len(self.identifiers_vocab)
-
-        # Number of identifiers (1)
-        dim += 1
-
-        # Number of children (1)
-        dim += 1
-
-        # Details parsing (5 boolean features)
-        dim += 5
-
-        # Details length (1)
-        dim += 1
-
-        # Number of variables (1)
-        dim += 1
-
-        return dim
 
     def __parse_details(self, details: str) -> dict[str, Any]:
         """
@@ -235,35 +200,6 @@ class FeatureExtractor(BaseFeatureExtractor):
 
         return info
 
-    def __encode_one_hot(self, value: str, vocabulary: set) -> np.ndarray:
-        """
-        One-hot encode a categorical value.
-        Returns a binary vector of length len(vocabulary).
-        """
-        vocab_list = sorted(list(vocabulary))
-        vector = np.zeros(len(vocab_list), dtype=np.float32)
-
-        if value in vocab_list:
-            index = vocab_list.index(value)
-            vector[index] = 1.0
-
-        return vector
-
-    def __encode_multi_hot(self, values: list[str], vocabulary: set) -> np.ndarray:
-        """
-        Multi-hot encode a list of categorical values.
-        Returns a binary vector where multiple positions can be 1.
-        """
-        vocab_list = sorted(list(vocabulary))
-        vector = np.zeros(len(vocab_list), dtype=np.float32)
-
-        for value in values:
-            if value in vocab_list:
-                index = vocab_list.index(value)
-                vector[index] = 1.0
-
-        return vector
-
     def __normalize_numeric(self, value: float, feature_name: str) -> float:
         """
         Normalize a numeric feature using min-max normalization.
@@ -290,13 +226,14 @@ class FeatureExtractor(BaseFeatureExtractor):
         normalized = (value - min_val) / (max_val - min_val + EPSILON)
         return float(np.clip(normalized, 0, 1))
 
-    # TODO Make this abstract (or move it elsewhere)?
-    def extract_query_kinds(self, query: str) -> set[str]:
-        labels = NODE_PATTERN.findall(query)
-        edges = EDGE_PATTERN.findall(query)
+    #endregion
 
-        return set(labels + edges)
+    @staticmethod
+    @override
+    def get_node_type(node: dict) -> str:
+        return node.get('operatorType', 'Unknown').replace('@neo4j', '')
 
-NODE_PATTERN = re.compile(r'\(\s*\w*\s*:\s*([A-Za-z0-9_]+)')
-# FIXME Check this ...
-EDGE_PATTERN = re.compile(r'\[\s*\w*\s*:\s*(FOLLOWS|HAS_CATEGORY)\b')
+    @staticmethod
+    @override
+    def get_node_children(node: dict) -> list[dict]:
+        return node.get('children', [])

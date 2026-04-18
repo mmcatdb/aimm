@@ -1,10 +1,8 @@
-import re
-
 from typing_extensions import override
 import numpy as np
 from collections import defaultdict
-from common.utils import EPSILON
-from latency_estimation.feature_extractor import BaseFeatureExtractor
+from core.utils import EPSILON
+from ..feature_extractor import PlanNode, BaseFeatureExtractor
 
 class FeatureExtractor(BaseFeatureExtractor):
     """
@@ -16,6 +14,8 @@ class FeatureExtractor(BaseFeatureExtractor):
     Extracts and encodes features from query plan operators.
     Maintains vocabularies for categorical features across the dataset.
     """
+
+    #region Setup
 
     def __init__(self):
         # Vocabularies for one-hot encoding
@@ -33,24 +33,8 @@ class FeatureExtractor(BaseFeatureExtractor):
         # Statistics for normalization (mean, std)
         self.numeric_stats = {}
 
-    @staticmethod
     @override
-    def get_node_type(node: dict) -> str:
-        type = node.get('Node Type', '')
-
-        # Normalize node type for neural unit lookup. All scan types (Seq Scan, Index Scan, etc.) are unified to 'Scan'.
-        return 'Scan' if 'Scan' in type else type
-
-    @staticmethod
-    @override
-    def get_node_children(node: dict) -> list[dict]:
-        return node.get('Plans', [])
-
-    def build_vocabularies(self, plans: list[dict]):
-        """
-        Build vocabularies from training data for one-hot encoding.
-        Also compute statistics for numeric feature normalization.
-        """
+    def extend_vocabularies(self, plans: list[dict], global_stats: dict):
         numeric_features = defaultdict(list)
 
         def traverse_plan(node):
@@ -101,15 +85,24 @@ class FeatureExtractor(BaseFeatureExtractor):
                 'std': np.std(values) + EPSILON,
             }
 
-        print(f'Built vocabularies:')
-        print(f'- Node types: {len(self.op_type_vocab)}')
-        print(f'- Scan types: {len(self.scan_type_vocab)}')
-        print(f'- Join types: {len(self.join_type_vocab)}')
-        print(f'- Relations: {len(self.scan_relation_vocab)}')
-        print(f'- Sort Keys: {len(self.sort_key_vocab)}')
-        print(f'- Agg Operators: {len(self.agg_operator_vocab)}')
+    #endregion
 
-    def extract_features(self, node: dict) -> np.ndarray:
+    @override
+    def extract_plan(self, plan: dict) -> PlanNode:
+        node_type = self.get_node_type(plan)
+        features = self.__extract_node_features(plan)
+        latency = self.__extract_node_latency(plan)
+        node = PlanNode(node_type, features, latency)
+
+        for child in self.get_node_children(plan):
+            child_node = self.extract_plan(child)
+            node.add_child(child_node)
+
+        return node
+
+    #region Features
+
+    def __extract_node_features(self, node: dict) -> np.ndarray:
         """
         Extract features for any operator node based on its type.
         Routes to specific extraction methods.()
@@ -133,50 +126,6 @@ class FeatureExtractor(BaseFeatureExtractor):
             return self.__extract_sort_features(node)
         else:
             return self.__extract_common_features(node)
-
-    @override
-    def get_feature_dim(self, op_type: str) -> int:
-        # NOTE: Everything except 'Node Type' isn't necessary to be here, but it gives better overview of the features.
-        # - This is because `__extract_common_features` doesn't care if 'Plan Width', 'Plan Rows', etc. are in the node or not.
-        dummy_node = {
-            'Node Type': op_type,
-            'Plan Width': 0,
-            'Plan Rows': 0,
-            'Total Cost': 0,
-            'Startup Cost': 0,
-            'Plan Buffers': 0,
-            'Estimated I/Os': 0
-        }
-
-        if 'Scan' in op_type:
-            dummy_node['Node Type'] = next(iter(self.scan_type_vocab)) if self.scan_type_vocab else op_type
-            dummy_node['Relation Name'] = 'dummy'
-            dummy_node['Index Name'] = 'dummy_idx'
-        elif 'Join' in op_type:
-            dummy_node['Join Type'] = 'Inner'
-            dummy_node['Parent Relationship'] = 'Inner'
-        elif 'Hash' == op_type: # Be specific
-            dummy_node['Hash Buckets'] = 0
-            dummy_node['Hash Algorithm'] = 'dummy_alg'
-        elif 'Aggregate' in op_type or 'Group' in op_type:
-            dummy_node['Strategy'] = 'Plain'
-            dummy_node['Operator'] = 'dummy_op'
-        elif 'Sort' in op_type:
-            dummy_node['Sort Method'] = 'quicksort'
-            dummy_node['Sort Key'] = 'dummy_key'
-            dummy_node['Sort Space Used'] = 0
-
-        features = self.extract_features(dummy_node)
-        return len(features)
-
-    def __encode_one_hot(self, value: str, vocabulary: set) -> np.ndarray:
-        """Encode a categorical value as a one-hot vector."""
-        vocab_list = sorted(list(vocabulary))
-        vector = np.zeros(len(vocab_list))
-        if value in vocab_list:
-            index = vocab_list.index(value)
-            vector[index] = 1.0
-        return vector
 
     def __extract_common_features(self, node: dict) -> np.ndarray:
         """
@@ -203,18 +152,18 @@ class FeatureExtractor(BaseFeatureExtractor):
         features.extend(self.__extract_common_features(node))
 
         op_type = node.get('Node Type', '')
-        scan_type_vec = self.__encode_one_hot(op_type, self.scan_type_vocab)
+        scan_type_vec = self._one_hot(op_type, self.scan_type_vocab)
         features.extend(scan_type_vec)
 
         # Relation name (one-hot)
         if 'Relation Name' in node:
-            relation_vec = self.__encode_one_hot(node['Relation Name'], self.scan_relation_vocab)
+            relation_vec = self._one_hot(node['Relation Name'], self.scan_relation_vocab)
             features.extend(relation_vec)
         else:
             features.extend(np.zeros(len(self.scan_relation_vocab)))
 
         if 'Index Name' in node:
-            index_vec = self.__encode_one_hot(node['Index Name'], self.index_name_vocab)
+            index_vec = self._one_hot(node['Index Name'], self.index_name_vocab)
             features.extend(index_vec)
         else:
             features.extend(np.zeros(len(self.index_name_vocab)))
@@ -235,7 +184,7 @@ class FeatureExtractor(BaseFeatureExtractor):
 
         # Join type (one-hot)
         if 'Join Type' in node:
-            join_vec = self.__encode_one_hot(node['Join Type'], self.join_type_vocab)
+            join_vec = self._one_hot(node['Join Type'], self.join_type_vocab)
             features.extend(join_vec)
         else:
             features.extend(np.zeros(len(self.join_type_vocab)))
@@ -269,7 +218,7 @@ class FeatureExtractor(BaseFeatureExtractor):
 
         # Hash Algorithm (one-hot)
         if 'Hash Algorithm' in node:
-            hash_vec = self.__encode_one_hot(node['Hash Algorithm'], self.hash_algorithm_vocab)
+            hash_vec = self._one_hot(node['Hash Algorithm'], self.hash_algorithm_vocab)
             features.extend(hash_vec)
         else:
             features.extend(np.zeros(len(self.hash_algorithm_vocab)))
@@ -285,7 +234,7 @@ class FeatureExtractor(BaseFeatureExtractor):
 
         # Strategy (one-hot)
         if 'Strategy' in node:
-            strategy_vec = self.__encode_one_hot(node['Strategy'], self.agg_strategy_vocab)
+            strategy_vec = self._one_hot(node['Strategy'], self.agg_strategy_vocab)
             features.extend(strategy_vec)
         else:
             features.extend(np.zeros(len(self.agg_strategy_vocab)))
@@ -295,7 +244,7 @@ class FeatureExtractor(BaseFeatureExtractor):
         features.append(partial_mode)
 
         if 'Operator' in node:
-            op_vec = self.__encode_one_hot(node['Operator'], self.agg_operator_vocab)
+            op_vec = self._one_hot(node['Operator'], self.agg_operator_vocab)
             features.extend(op_vec)
         else:
             features.extend(np.zeros(len(self.agg_operator_vocab)))
@@ -310,13 +259,13 @@ class FeatureExtractor(BaseFeatureExtractor):
 
         # Sort method (one-hot)
         if 'Sort Method' in node:
-            sort_vec = self.__encode_one_hot(node['Sort Method'], self.sort_method_vocab)
+            sort_vec = self._one_hot(node['Sort Method'], self.sort_method_vocab)
             features.extend(sort_vec)
         else:
             features.extend(np.zeros(len(self.sort_method_vocab)))
 
         if 'Sort Key' in node:
-            key_vec = self.__encode_one_hot(str(node['Sort Key']), self.sort_key_vocab)
+            key_vec = self._one_hot(str(node['Sort Key']), self.sort_key_vocab)
             features.extend(key_vec)
         else:
             features.extend(np.zeros(len(self.sort_key_vocab)))
@@ -333,39 +282,24 @@ class FeatureExtractor(BaseFeatureExtractor):
             return (value - stats['mean']) / stats['std']
         return value
 
-    @staticmethod
-    def extract_node_latency(node: dict) -> float:
+    #endregion
+    #region Latency
+
+    def __extract_node_latency(self, node: dict) -> float:
         """Extract actual execution time for node from EXPLAIN ANALYZE output."""
         return node.get('Actual Total Time', 0.0)
 
-    # TODO Make this abstract (or move it elsewhere)?
-    def extract_query_kinds(self, query: str) -> set[str]:
-        """Returns the set of kinds that have to be in the database for the query to be executed."""
+    #endregion
 
-        # FIXME Check this ...
+    @staticmethod
+    @override
+    def get_node_type(node: dict) -> str:
+        type = node.get('Node Type', '')
 
-        ctes = {
-            *CTE_PATTERN.findall(query),
-            *CTE_FOLLOWING_PATTERN.findall(query),
-        }
-        ctes_lower = {cte.lower() for cte in ctes}
+        # Normalize node type for neural unit lookup. All scan types (Seq Scan, Index Scan, etc.) are unified to 'Scan'.
+        return 'Scan' if 'Scan' in type else type
 
-        tables = set[str]()
-        for match in SOURCE_PATTERN.finditer(query):
-            first_quoted, first_plain, second_quoted, second_plain = match.groups()
-
-            first_part = first_quoted or first_plain
-            second_part = second_quoted or second_plain
-            table_name = second_part if second_part else first_part
-
-            if not table_name:
-                continue
-            if table_name.lower() in ctes_lower:
-                continue
-            tables.add(table_name)
-
-        return tables
-
-CTE_PATTERN = re.compile(r'\bWITH\s+([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(', re.IGNORECASE)
-CTE_FOLLOWING_PATTERN = re.compile(r',\s*([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(', re.IGNORECASE)
-SOURCE_PATTERN = re.compile(r'\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:(?:"([^"]+)")|([A-Za-z_][A-Za-z0-9_]*))(?:\s*\.\s*(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*)))?', re.IGNORECASE)
+    @staticmethod
+    @override
+    def get_node_children(node: dict) -> list[dict]:
+        return node.get('Plans', [])

@@ -1,24 +1,65 @@
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from dataclasses import dataclass
+import numpy as np
+import torch
 import torch.nn as nn
-from common.nn_operator import NnOperator
-from latency_estimation.config import ModelConfig
-from latency_estimation.feature_extractor import BaseFeatureExtractor
-from latency_estimation.exceptions import NeuralUnitNotFoundException
+from core.nn_operator import NnOperator
+from core.query import DriverType
+from .config import ModelConfig
+from .feature_extractor import PlanNode
 
-TExtractor = TypeVar('TExtractor', bound=BaseFeatureExtractor)
+ModelName = str
+"""Identifies a model family (within a specific driver).
 
-class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
+Each unique training settings (e.g., model architecture, hyperparameters, training procedure, datasets) should correspond to a different model name.
+"""
+
+ModelId = str
+"""Identifies a model family.
+
+Pattern: {driver_type}/{model_name}.
+Example: `postres/sgd_3/epoch/10`, `mongo/lr/best`.
+"""
+
+def create_model_id(driver_type: DriverType, model_name: ModelName) -> ModelId:
+    return f'{driver_type.value}/{model_name}'
+
+def parse_model_id(id: ModelId) -> tuple[DriverType, ModelName]:
+    """Parses a model id into `driver_type`, `model_name`."""
+    driver_type_str, model_name = id.split('/', 1)
+    return DriverType(driver_type_str), model_name
+
+CheckpointName = str
+"""Identifies a specific model checkpoint (within a model family).
+
+Pattern: either a word (e.g., `best`) or in the form of epoch/{epoch_number}.
+"""
+
+CheckpointId = str
+"""Identifies a specific model checkpoint.
+
+Pattern: {model_id}/{checkpoint_name}.
+"""
+
+def create_checkpoint_id(model_id: ModelId, checkpoint_name: CheckpointName) -> CheckpointId:
+    return f'{model_id}/{checkpoint_name}'
+
+def parse_checkpoint_id(checkpoint_id: CheckpointId) -> tuple[DriverType, ModelName, CheckpointName]:
+    driver_type_str, model_name, checkpoint_name = checkpoint_id.split('/', 2)
+    driver_type = DriverType(driver_type_str)
+    return driver_type, model_name, checkpoint_name
+
+class BasePlanStructuredNetwork(nn.Module, ABC):
     """
     Plan-structured neural network for query performance estimation.
     Maintains a library of neural units (one per operator type).
     Dynamically assembles neural units to match query plan structure.
     """
-    def __init__(self, config: ModelConfig, feature_extractor: TExtractor):
+    def __init__(self, config: ModelConfig, model_id: ModelId):
         super().__init__()
 
         self.config = config
-        self.feature_extractor = feature_extractor
+        self.model_id = model_id
         self.units = nn.ModuleDict()
         """One neural unit for each operator type"""
         self.operators = dict[str, NnOperator]()
@@ -34,6 +75,7 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
     def to_checkpoint(self) -> dict:
         """Serialization to a file-friendly dictionary."""
         return {
+            'id': self.model_id,
             'config': self.config,
             'operators': self.operators,
             'feature_extractor': self.feature_extractor,
@@ -67,7 +109,7 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
 
         return self.units[op_key]
 
-    def _define_operators(self, operators: list[NnOperator]):
+    def define_operators(self, operators: list[NnOperator]):
         """Defines neural units for a list of operators."""
         for operator in operators:
             op_key = operator.key()
@@ -77,9 +119,9 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
             self.units[op_key] = self._create_unit(operator)
             self.operators[op_key] = operator
 
-    def find_missing_operators(self, plan: dict) -> list[NnOperator]:
+    def find_missing_operators(self, plan: PlanNode) -> list[NnOperator]:
         """Returns all operators that are in the plan but not in the model."""
-        plan_operators = OperatorCollector.run_quiet(self.feature_extractor, [plan])
+        plan_operators = OperatorCollector.run_quiet([plan])
         missing_operators = []
         for operator in plan_operators:
             if operator.key() not in self.units:
@@ -91,6 +133,38 @@ class BasePlanStructuredNetwork(nn.Module, ABC, Generic[TExtractor]):
     def _create_unit(self, operator: NnOperator) -> nn.Module:
         pass
 
+    @abstractmethod
+    def forward(self, plan: PlanNode) -> torch.Tensor:
+        """Implements the model's forward pass. Estimate latency for a query plan.
+
+        Args:
+            plan: The plan tree root node (already extracted from explain)
+        Returns:
+            Estimated latency (scalar tensor [1, 1], in ms)
+        """
+        pass
+
+    def evaluate(self, plan: PlanNode) -> float:
+        """Evaluate the model on a single plan and return the estimated latency."""
+        with torch.no_grad():
+            return self.forward(plan).item()
+
+    def get_tsne_data(self, plan: PlanNode) -> list['TsneItem']:
+        # NICE_TO_HAVE
+        raise NotImplementedError('get_tsne_data is not implemented for this model. This method is used for t-SNE visualization of operator embeddings. If you want to use it, please implement it in your model subclass.')
+
+class NeuralUnitNotFoundException(Exception):
+    def __init__(self, operator: NnOperator):
+        super().__init__(f'Neural unit not found for operator: {operator.key()}.')
+        self.operator = operator
+
+@dataclass
+class TsneItem:
+    operator: NnOperator
+    features: np.ndarray
+    extracted: float
+    estimated: float
+
 class OperatorCollector():
     """
     - Assembles neural units into trees.
@@ -98,12 +172,10 @@ class OperatorCollector():
     - Each operator in the plan is replaced by its corresponding neural unit.
     - The network recursively computes outputs bottom-up through the tree.
     """
-    def __init__(self, feature_extractor: BaseFeatureExtractor):
-        self.feature_extractor = feature_extractor
 
     @staticmethod
-    def run(feature_extractor: BaseFeatureExtractor, plans: list[dict]) -> list[NnOperator]:
-        collector = OperatorCollector(feature_extractor)
+    def run(plans: list[PlanNode]) -> list[NnOperator]:
+        collector = OperatorCollector()
         output = collector.__collect_unique_operators(plans)
 
         print(f'\nFound {len(output)} unique operator type/children combinations:')
@@ -113,14 +185,14 @@ class OperatorCollector():
         return output
 
     @staticmethod
-    def run_quiet(feature_extractor: BaseFeatureExtractor, plans: list[dict]) -> list[NnOperator]:
-        collector = OperatorCollector(feature_extractor)
+    def run_quiet(plans: list[PlanNode]) -> list[NnOperator]:
+        collector = OperatorCollector()
         return collector.__collect_unique_operators(plans)
 
-    def __collect_unique_operators(self, plans: list[dict]) -> list[NnOperator]:
+    def __collect_unique_operators(self, plans: list[PlanNode]) -> list[NnOperator]:
         """Collect all unique operators from the plans."""
-        # Pairs of (operator_type, num_children).
-        operator_pairs = set[tuple[str, int]]()
+        # Pairs of (operator_type, num_children, feature_dim).
+        operator_pairs = set[tuple[str, int, int]]()
         for plan in plans:
             operator_pairs.update(self.__collect_operator_pairs(plan))
 
@@ -128,22 +200,24 @@ class OperatorCollector():
         sorted_pairs = sorted(list(operator_pairs))
 
         operators = list[NnOperator]()
+        type_children_counts = set[tuple[str, int]]()
 
-        for op_type, num_children in sorted_pairs:
-            feature_dim = self.feature_extractor.get_feature_dim(op_type)
+        for op_type, num_children, feature_dim in sorted_pairs:
+            type_children = (op_type, num_children)
+            if type_children in type_children_counts:
+                raise ValueError(f'Operator type "{op_type}" with {num_children} children appears with multiple feature dimensions. This is not supported. Please check the plans and ensure consistent feature dimensions for the same operator type and children count.')
+            type_children_counts.add(type_children)
+
             operators.append(NnOperator(op_type, num_children, feature_dim))
 
         return operators
 
-    def __collect_operator_pairs(self, node: dict) -> set[tuple[str, int]]:
-        """Recursively collect operator types and their children counts."""
-        output = set[tuple[str, int]]()
+    def __collect_operator_pairs(self, node: PlanNode) -> set[tuple[str, int, int]]:
+        """Recursively collect operator types, children counts, and feature dimensions."""
+        output = set[tuple[str, int, int]]()
+        output.add((node.type, len(node.children), len(node.features)))
 
-        op_type = self.feature_extractor.get_node_type(node)
-        children = self.feature_extractor.get_node_children(node)
-        output.add((op_type, len(children)))
-
-        for child in children:
+        for child in node.children:
             output.update(self.__collect_operator_pairs(child))
 
         return output

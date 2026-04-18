@@ -1,5 +1,5 @@
 import random
-from common.query_engine import QueryEngine
+from search.query_engine import QueryEngine
 import math
 
 class MCTS:

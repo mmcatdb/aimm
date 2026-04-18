@@ -4,32 +4,25 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset
 import numpy as np
-from common.utils import EPSILON, print_warning
+from core.utils import EPSILON, print_warning
+from latency_estimation.config import TrainerConfig
+from latency_estimation.dataset import DatasetItem
 from latency_estimation.trainer import BaseTrainer, TrainerMetrics
-from latency_estimation.mongo.plan_extractor import MongoItem
 from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
-from common.database import MongoQuery
 
-class Trainer(BaseTrainer[MongoItem]):
+class Trainer(BaseTrainer):
 
-    def __init__(self, model: PlanStructuredNetwork, learning_rate: float, batch_size: int, total_epochs: int, warmup_epochs: int):
+    def __init__(self, model: PlanStructuredNetwork, config: TrainerConfig):
         super().__init__(
             main_metric='geo_mean_q', # Use geometric mean Q-error as primary criterion (more robust than MAE)
             train_metrics=['mae', 'median_q', 'r_within_2.0', 'geo_mean_q'],
-            batch_size=batch_size,
+            config=config,
         )
         self.__model = model
-        self.__optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        self.__optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
 
-        self.__scheduler = optim.lr_scheduler.CosineAnnealingLR(self.__optimizer, T_max=total_epochs, eta_min=learning_rate * 0.01)
-        self.__warmup_epochs = warmup_epochs
-
-    @staticmethod
-    def load_from_checkpoint(model: PlanStructuredNetwork, checkpoint: dict, learning_rate: float, batch_size: int) -> 'Trainer':
-        trainer = Trainer(model, learning_rate, batch_size, checkpoint['total_epochs'], checkpoint['warmup_epochs'])
-        trainer.__optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        trainer._loss_history = checkpoint['loss_history']
-        return trainer
+        self.__scheduler = optim.lr_scheduler.CosineAnnealingLR(self.__optimizer, T_max=config.num_epochs, eta_min=config.learning_rate * 0.01)
+        self.__warmup_epochs = config.warmup_epochs
 
     @override
     def model(self) -> PlanStructuredNetwork:
@@ -37,39 +30,31 @@ class Trainer(BaseTrainer[MongoItem]):
 
     @override
     def to_checkpoint(self) -> dict:
-        return self._to_common_checkpoint() | {
-            # We don't save the learning rate as it can be changed between sessions.
+        return super().to_checkpoint() | {
             # Momentum should be saved automatically.
             'optimizer_state_dict': self.__optimizer.state_dict(),
-            'total_epochs': self.__scheduler.T_max,
-            # TODO This is kinda not ideal as the number of epochs should be changeable between session.
-            # However, this feature is not used yet so we can leave it for now.
-            'warmup_epochs': self.__warmup_epochs,
         }
 
-    def evaluate(self, dataset: Dataset[MongoItem]) -> TrainerMetrics:
-        """Evaluate model on a dataset, returning standard QPP metrics."""
+    @override
+    def load_from_checkpoint(self, checkpoint: dict):
+        self.__optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    @override
+    def evaluate(self, dataset: Dataset[DatasetItem]) -> TrainerMetrics:
         self.__model.eval()
 
         estimations = []
         actuals = []
 
-        with torch.no_grad():
-            for item in dataset:
-                query: MongoQuery = item.query
+        for item in dataset:
+            try:
+                predicted = self.__model.evaluate(item.plan)
+            except Exception as e:
+                print_warning(f'Could not compute model outputs for a query: \n{item.query_id}', e)
+                continue
 
-                collection_name = item.query.collection
-                plan = item.plan
-                actual_ms = item.execution_time
-
-                try:
-                    predicted = self.__model(plan, collection_name).item()
-                except Exception as e:
-                    print_warning(f'Could not compute model outputs for a query: \n{query}', e)
-                    continue
-
-                estimations.append(predicted)
-                actuals.append(actual_ms)
+            estimations.append(predicted)
+            actuals.append(item.latency)
 
         if not estimations:
             return {'mae': float('inf'), 'relative_error': float('inf')}
@@ -106,7 +91,7 @@ class Trainer(BaseTrainer[MongoItem]):
         if epoch > self.__warmup_epochs:
             self.__scheduler.step()
 
-    def _train_batch(self, batch: list[MongoItem]) -> float:
+    def _train_batch(self, batch: list[DatasetItem]) -> float:
         """Returns the loss for the batch."""
         self.__model.train()
         self.__optimizer.zero_grad()
@@ -119,7 +104,7 @@ class Trainer(BaseTrainer[MongoItem]):
 
         return loss.item()
 
-    def __compute_loss(self, batch: list[MongoItem]) -> torch.Tensor:
+    def __compute_loss(self, batch: list[DatasetItem]) -> torch.Tensor:
         """
         Compute log-latency MSE loss over a batch.
         Only uses root-level latency prediction vs actual execution time.
@@ -130,13 +115,12 @@ class Trainer(BaseTrainer[MongoItem]):
         losses = []
 
         for item in batch:
-            query: MongoQuery = item.query
-            actual = item.execution_time
+            actual = item.latency
 
             try:
-                predicted = self.__model(item.plan, query.collection)
+                predicted = self.__model.forward(item.plan)
             except Exception as e:
-                print_warning(f'Could not compute model outputs for a query: \n{query}', e)
+                print_warning(f'Could not compute model outputs for a query: \n{item.query_id}', e)
                 continue
 
             predicted_log = torch.log(predicted + EPSILON)

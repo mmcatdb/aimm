@@ -2,29 +2,31 @@ from dataclasses import dataclass
 import os
 import random
 import time
-from common.config import Config, DatasetName
-from common.drivers import DriverType
-from common.database import DatabaseInfo
-from common.utils import ProgressTracker, exit_with_error, print_warning
-from scripts.populate_db import load_populate_times
+from core.config import Config
+from core.drivers import DriverType
+from core.loaders.base_loader import load_populate_times
+from core.query import create_database_id
+from core.utils import ProgressTracker, exit_with_error, print_warning
+from providers.path_provider import PathProvider
 from search.mcts import MCTS, StateMapping
 from search.run import AdaptationSchema
+# FIXME Use measure_queries
 from experiments.measure import load_database_measurement
 from experiments.plot_measurement import SCALES
 
 # TODO unify with common.config
-DATASET = DatasetName.EDBT
 NUM_QUERIES = 11
 MAX_ITERATIONS = 500000
 ITERATION_CAPTURE_INTERVAL = 1000
 IS_VERBOSE = False
+SCHEMA = 'TODO' # FIXME
 
 def main():
     config = Config.load()
 
     # parser = argparse.ArgumentParser(description='Run experiments.')
     # parser.add_argument('query-weights', nargs='*', type=float, help=f'Query weights for the test queries.')
-    # parser.add_argument('--scale', type=float, required=True, help='Scale factor of the generated dataset.')
+    # parser.add_argument('--scale', type=float, required=True, help='Scale factor of the generated schema data.')
     # args = parser.parse_args()
     # scale: float = args.scale
 
@@ -68,7 +70,7 @@ def do_run(config: Config, run_id: int, scale: float):
 
     print('Starting MCTS with:')
     print(f'  id: {run_id}')
-    print(f'  dataset: {DATASET.value}')
+    print(f'  schema: {SCHEMA.value}')
     print(f'  scale: {scale}')
     print(f'  query weights: {query_weights}')
     print(f'  initial mapping: {initial_mapping}')
@@ -90,11 +92,13 @@ QueryCosts = list[float]
 KindCosts = dict[str, float]
 
 def create_query_engine(config: Config, scale: float, query_weights: list[float], migration_coefficient: float) -> 'QueryEngine':
+    pp = PathProvider(config)
+
     times = dict[DriverType, QueryCosts]()
     migration_times = dict[DriverType, KindCosts]()
 
     for type in DriverType:
-        info = DatabaseInfo(DATASET, type, scale)
+        database_id = create_database_id(type, SCHEMA, scale)
         results = load_database_measurement(config, info)
 
         times_by_query = QueryCosts()
@@ -103,7 +107,7 @@ def create_query_engine(config: Config, scale: float, query_weights: list[float]
         for result in results:
             times_by_query.append(result.mean)
 
-        migration_times[type] = load_populate_times(config, info)
+        migration_times[type] = load_populate_times(pp.populate_times(database_id))
 
     return QueryEngine(times, migration_times, migration_coefficient, query_weights)
 
@@ -223,13 +227,13 @@ class OutputCollector:
             # print(f'\n[{elapsed_s:.3f} s] iterations: {iteration}, states: {processed_states}')
 
 def save_stats(config: Config, run_id: int, output_collector: OutputCollector, scale: float):
-    iterations_path = os.path.join(config.experiments_directory, f'mcts_{DATASET.value}_{scale:g}_{run_id}_iterations.csv')
+    iterations_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_iterations.csv')
     with open(iterations_path, 'w') as file:
         file.write('time,iteration,processed_states\n')
         for stats in output_collector.iterations:
             file.write(f'{stats[0]:.3f},{stats[1]},{stats[2]}\n')
 
-    solutions_path = os.path.join(config.experiments_directory, f'mcts_{DATASET.value}_{scale:g}_{run_id}_solutions.csv')
+    solutions_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_solutions.csv')
     with open(solutions_path, 'w') as file:
         header = 'found_in,id,latency,query_latency,migration_latency'
         for db in DriverType:
@@ -257,7 +261,7 @@ class LoadedAdaptationSolution:
 def load_stats(config: Config, run_id: int, scale: float) -> tuple[list[IterationStats], list[LoadedAdaptationSolution]]:
     iterations = list[IterationStats]()
 
-    iterations_path = os.path.join(config.experiments_directory, f'mcts_{DATASET.value}_{scale:g}_{run_id}_iterations.csv')
+    iterations_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_iterations.csv')
     with open(iterations_path, 'r') as file:
         next(file) # skip header
         for line in file:
@@ -266,7 +270,7 @@ def load_stats(config: Config, run_id: int, scale: float) -> tuple[list[Iteratio
 
     solutions = list[LoadedAdaptationSolution]()
 
-    solutions_path = os.path.join(config.experiments_directory, f'mcts_{DATASET.value}_{scale:g}_{run_id}_solutions.csv')
+    solutions_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_solutions.csv')
     with open(solutions_path, 'r') as file:
         next(file) # skip header
         for line in file:
@@ -291,10 +295,10 @@ def find_stats(config: Config) -> list[tuple[float, int]]:
 
     files = os.listdir(config.experiments_directory)
     for file in files:
-        if not file.startswith(f'mcts_{DATASET.value}_') or not file.endswith('_iterations.csv'):
+        if not file.startswith(f'mcts_{SCHEMA.value}_') or not file.endswith('_iterations.csv'):
             continue
 
-        parts = file[len(f'mcts_{DATASET.value}_'):-len('_iterations.csv')].split('_')
+        parts = file[len(f'mcts_{SCHEMA.value}_'):-len('_iterations.csv')].split('_')
         if len(parts) != 2:
             continue
 

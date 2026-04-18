@@ -1,0 +1,364 @@
+from core.query import query
+from core.drivers import DriverType
+from ...common.edbt.query_registry import EdbtQueryRegistry
+
+def export():
+    return PostgresEdbtQueryRegistry()
+
+class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
+
+    def __init__(self):
+        super().__init__(DriverType.POSTGRES)
+
+    # OLTP focused (mostly Postgres)
+
+    @query('edbt-0', 'Order history for a person (order, customer)')
+    def _order_history_for_person(self):
+        return f'''
+            SELECT
+                o.order_id,
+                o.ordered_at,
+                o.status,
+                o.total_cents,
+                o.currency
+            FROM "order" o
+            JOIN customer c ON c.customer_id = o.customer_id
+            WHERE c.person_id = '{self._param_person_id()}'
+            ORDER BY o.ordered_at DESC
+        '''
+
+    @query('edbt-1', 'Order details view (order, customer, order_item, product)')
+    def _order_details(self):
+        return f'''
+            SELECT
+                o.order_id,
+                o.ordered_at,
+                o.status,
+                oi.order_item_id,
+                oi.product_id,
+                p.title,
+                oi.unit_price_cents,
+                oi.quantity,
+                oi.line_total_cents
+            FROM "order" o
+            JOIN customer c ON c.customer_id = o.customer_id
+            JOIN order_item oi ON oi.order_id = o.order_id
+            JOIN product p ON p.product_id = oi.product_id
+            WHERE c.person_id = '{self._param_person_id()}'
+            ORDER BY oi.order_item_id
+        '''
+
+    @query('edbt-2', 'How many times did this person bought these products? (order, customer, order_item)')
+    def _product_purchases_for_person(self):
+        person_ids = self._param_person_ids(100, 1000)
+        product_ids = self._param_product_ids(100, 1000)
+
+        return f'''
+            SELECT COUNT(*)
+            FROM customer c
+            JOIN "order" o ON o.customer_id = c.customer_id
+            JOIN order_item oi ON oi.order_id = o.order_id
+            WHERE c.person_id IN ({person_ids})
+                AND oi.product_id IN ({product_ids})
+                AND o.status IN ('paid', 'shipped')
+        '''
+
+    # OLAP focused (Postgres)
+
+    @query('edbt-3', 'Seller daily revenue for last 30 days (order, order_item, product)')
+    def _seller_daily_revenue(self):
+        date = self._param_date_minus_days(30, 120)
+        seller_ids = self._param_seller_ids(100, 1000)
+
+        return f'''
+            SELECT
+                date_trunc('day', o.ordered_at) AS day,
+                SUM(oi.line_total_cents) AS revenue_cents,
+                COUNT(DISTINCT o.order_id) AS "order"
+            FROM "order" o
+            JOIN order_item oi ON oi.order_id = o.order_id
+            JOIN product p ON p.product_id = oi.product_id
+            WHERE p.seller_id IN ({seller_ids})
+                AND o.ordered_at >= '{date}'
+                AND o.status IN ('paid', 'shipped')
+            GROUP BY 1
+            ORDER BY 1
+        '''
+
+    @query('edbt-4', 'Top products by revenue inside one category, last 7-30 days (order, order_item, product, has_category)')
+    def _top_products_by_revenue(self):
+        date = self._param_date_minus_days(7, 30)
+        category_ids = self._param_category_ids(10, 50)
+
+        return f'''
+            SELECT
+                oi.product_id,
+                p.title,
+                SUM(oi.line_total_cents) AS revenue_cents,
+                SUM(oi.quantity) AS units
+            FROM has_category hc
+            JOIN product p ON p.product_id = hc.product_id
+            JOIN order_item oi ON oi.product_id = hc.product_id
+            JOIN "order" o ON o.order_id = oi.order_id
+            WHERE hc.category_id IN ({category_ids})
+                AND o.ordered_at >= '{date}'
+                AND o.status IN ('paid', 'shipped')
+            GROUP BY oi.product_id, p.title
+            ORDER BY revenue_cents DESC
+            LIMIT 200
+        '''
+
+    @query('edbt-5', 'Customer spend buckets (order, customer)')
+    def _customer_spend_buckets(self):
+        return f'''
+            WITH spend AS (
+                SELECT c.person_id, SUM(o.total_cents) AS spend_cents
+                FROM customer c
+                JOIN "order" o ON o.customer_id = c.customer_id
+                WHERE o.ordered_at >= '{self._param_date_minus_days(30, 180)}'
+                    AND o.status IN ('paid', 'shipped')
+                GROUP BY c.person_id
+            )
+            SELECT
+                CASE
+                    WHEN spend_cents < 5000 THEN 'low'
+                    WHEN spend_cents < 20000 THEN 'mid'
+                    ELSE 'high'
+                END AS bucket,
+                COUNT(*) AS persons
+            FROM spend
+            GROUP BY 1
+            ORDER BY 1
+        '''
+
+    @query('edbt-6', 'Fraud-ish pattern (order, customer, order_item, product)')
+    def _fraud_pattern(self):
+        date = self._param_date_minus_days(1, 7)
+        distinct_sellers_threshold = self._param_int('distinct_sellers_threshold', 10, 1000)
+
+        return f'''
+            SELECT
+                c.person_id,
+                COUNT(DISTINCT p.seller_id) AS distinct_sellers,
+                COUNT(DISTINCT o.order_id) AS "order"
+            FROM customer c
+            JOIN "order" o ON o.customer_id = c.customer_id
+            JOIN order_item oi ON oi.order_id = o.order_id
+            JOIN product p ON p.product_id = oi.product_id
+            WHERE o.ordered_at >= '{date}'
+                AND o.status IN ('paid', 'shipped')
+            GROUP BY c.person_id
+            HAVING COUNT(DISTINCT p.seller_id) >= {distinct_sellers_threshold}
+            ORDER BY distinct_sellers DESC
+            LIMIT 200
+        '''
+
+    @query('edbt-7', 'Who should I follow? (follows)')
+    def _who_to_follow(self):
+        person_id = self._param_person_id()
+
+        return f'''
+            SELECT
+                f2.from_id AS person_id,
+                COUNT(*) AS paths
+            FROM follows f1
+            JOIN follows f2 ON f1.from_id = f2.to_id
+            WHERE f1.to_id = '{person_id}'
+                AND f2.from_id <> '{person_id}'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM follows direct
+                    WHERE direct.to_id = '{person_id}'
+                        AND direct.from_id = f2.from_id
+                )
+            GROUP BY f2.from_id
+            ORDER BY paths DESC
+            LIMIT 200
+        '''
+
+
+    @query('edbt-8', 'Personalized feed candidates (product, has_category, has_interest)')
+    def _personalized_feed_candidates(self):
+        return f'''
+            SELECT
+                hc.product_id,
+                SUM(hi.strength) AS interest_score
+            FROM has_interest hi
+            JOIN has_category hc ON hc.category_id = hi.category_id
+            JOIN product p ON p.product_id = hc.product_id
+            WHERE hi.person_id IN ({self._param_person_ids(2, 20)})
+                AND p.is_active = TRUE
+            GROUP BY hc.product_id
+            ORDER BY interest_score DESC
+            LIMIT 200
+        '''
+
+    # This is designed to be heavy if we do it wrong, but fast if we limit scope. Good for optimizer tests.
+    # Input: a temp table hot_products(product_id) with maybe top 1% products.
+    # Output: co-buy counts for pairs, last 7 days, only when at least one side is hot.
+    # 'Q11',
+    # 'Rebuild "also bought" pairs for hot products only (Postgres, OLAP, sale-specific)', '''
+    #     WITH recent AS (
+    #         SELECT oi.order_id, oi.product_id
+    #         FROM order_item oi
+    #         JOIN "order" o ON o.order_id = oi.order_id
+    #         WHERE o.ordered_at >= now() - INTERVAL '7 days'
+    #           AND o.status IN ('paid', 'shipped')
+    #     ),
+    #     pairs AS (
+    #         SELECT
+    #             LEAST(a.product_id, b.product_id) AS product_id_a,
+    #             GREATEST(a.product_id, b.product_id) AS product_id_b,
+    #             COUNT(*) AS co_buy_count
+    #         FROM recent a
+    #         JOIN recent b
+    #             ON a.order_id = b.order_id
+    #            AND a.product_id < b.product_id
+    #         LEFT JOIN hot_products hp_a ON hp_a.product_id = a.product_id
+    #         LEFT JOIN hot_products hp_b ON hp_b.product_id = b.product_id
+    #         WHERE hp_a.product_id IS NOT NULL
+    #         OR hp_b.product_id IS NOT NULL
+    #         GROUP BY 1, 2
+    #     )
+    #     SELECT product_id_a, product_id_b, co_buy_count
+    #     FROM pairs
+    #     WHERE co_buy_count >= 5
+    #     ORDER BY co_buy_count DESC
+    #     LIMIT 50000
+    # '''
+
+    # Document focused (MongoDB)
+    # These are built to avoid joins at read time. Put "product page bundle" in one document.
+
+    @query('edbt-9', 'Product page read (product, seller, review)')
+    def _product_page_read(self):
+        product_id = self._param_product_id()
+
+        return f'''
+            SELECT
+                p.product_id,
+                p.title,
+                p.price_cents,
+                p.currency,
+                p.stock_qty,
+                jsonb_build_object(
+                    'seller_id', s.seller_id,
+                    'display_name', s.display_name
+                ) AS seller,
+                jsonb_build_object(
+                    'avg', COALESCE(rs.avg_rating, 0),
+                    'count', COALESCE(rs.review_count, 0)
+                ) AS rating_summary,
+                COALESCE(tr.top_reviews, '[]'::jsonb) AS top_reviews
+            FROM product p
+            JOIN seller s ON s.seller_id = p.seller_id
+            LEFT JOIN (
+                SELECT
+                    r.product_id,
+                    AVG(r.rating)::float8 AS avg_rating,
+                    COUNT(*)::int AS review_count
+                FROM review r
+                WHERE r.product_id = '{product_id}'
+                GROUP BY r.product_id
+            ) rs ON rs.product_id = p.product_id
+            LEFT JOIN (
+                SELECT
+                    r.product_id,
+                    jsonb_agg(
+                    jsonb_build_object(
+                        'customer_id', r.customer_id,
+                        'rating', r.rating,
+                        'title', r.title,
+                        'body', r.body,
+                        'created_at', r.created_at,
+                        'helpful_votes', r.helpful_votes
+                    )
+                    ORDER BY r.helpful_votes DESC, r.created_at DESC
+                    ) AS top_reviews
+                FROM (
+                    SELECT *
+                    FROM review
+                    WHERE product_id = '{product_id}'
+                    ORDER BY helpful_votes DESC, created_at DESC
+                    LIMIT 50
+                ) r
+                GROUP BY r.product_id
+            ) tr ON tr.product_id = p.product_id
+            WHERE p.product_id = '{product_id}'
+                AND p.is_active = TRUE
+        '''
+
+    # Bulk fetch product pages for a feed (Mongo, OLTP read-heavy, high weight)
+    # def _bulk_fetch_product_pages(self):
+    #     product_ids = self._param_product_ids(5, 20)
+
+    #     return f'''
+    #         SELECT
+    #             p.product_id,
+    #             p.title,
+    #             p.price_cents,
+    #             p.currency,
+    #             jsonb_build_object(
+    #                 'seller_id', s.seller_id,
+    #                 'display_name', s.display_name
+    #             ) AS seller,
+    #             jsonb_build_object(
+    #                 'avg', COALESCE(rs.avg_rating, 0),
+    #                 'count', COALESCE(rs.review_count, 0)
+    #             ) AS rating_summary
+    #         FROM product p
+    #         JOIN seller s ON s.seller_id = p.seller_id
+    #         LEFT JOIN (
+    #             SELECT
+    #                 r.product_id,
+    #                 AVG(r.rating)::float8 AS avg_rating,
+    #                 COUNT(*)::int AS review_count
+    #             FROM review r
+    #             WHERE r.product_id IN ({product_ids})
+    #             GROUP BY r.product_id
+    #         ) rs ON rs.product_id = p.product_id
+    #         WHERE p.product_id IN ({product_ids})
+    #             AND p.is_active = TRUE
+    #         LIMIT 200
+    #     '''
+
+
+
+
+    @query('edbt-10', 'People also bought using shared orders (order, order_item)')
+    def _people_also_bought(self):
+        product_ids = self._param_product_ids(10, 50)
+
+        return f'''
+            SELECT
+                oi2.product_id,
+                COUNT(*) AS co_buy
+            FROM order_item oi1
+            JOIN order_item oi2 ON oi1.order_id = oi2.order_id
+            JOIN "order" o ON o.order_id = oi1.order_id
+            WHERE oi1.product_id IN ({product_ids})
+                AND oi2.product_id NOT IN ({product_ids})
+                AND o.status IN ('paid', 'shipped')
+            GROUP BY oi2.product_id
+            ORDER BY co_buy DESC
+            LIMIT 20
+        '''
+
+    # One "multi-db" query (on purpose)
+
+    # Q18) Feed ranking in Neo4j, then page fetch in Mongo (Cross DB, high weight in sale)
+
+    # Part A (Neo4j): get 200 product ids
+
+    # MATCH (p:Person {person_id: $personId})-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
+    # WHERE pr.is_active = true
+    # RETURN pr.product_id AS product_id
+    # ORDER BY SUM(hi.strength) DESC
+    # LIMIT 200
+
+    # Part B (Mongo): fetch those 200 docs
+
+    # db.product_page.find(
+    # { _id: { $in: productIds.map(x => NumberLong(x)) }, is_active: true },
+    # { title: 1, price_cents: 1, currency: 1, seller: 1, rating_summary: 1, sale_score_1h: 1 }
+    # )

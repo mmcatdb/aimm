@@ -1,113 +1,38 @@
-from math import nan
-import torch
+from typing_extensions import override
 import numpy as np
 from tabulate import tabulate
-from dataclasses import dataclass
-from common.utils import EPSILON, print_warning
-from common.query_registry import QueryDef
-from common.database import MongoQuery, MongoFindQuery, MongoAggregateQuery
-from latency_estimation.mongo.plan_extractor import PlanExtractor
-from latency_estimation.mongo.plan_structured_network import PlanStructuredNetwork
+from ..model_evaluator import BaseModelEvaluator, QueryResult
 
-class ModelEvaluator:
-    """Evaluates a trained MongoDB QPP-Net model."""
+class ModelEvaluator(BaseModelEvaluator):
 
-    def __init__(self, extractor: PlanExtractor, model: PlanStructuredNetwork):
-        self.extractor = extractor
-        self.model = model
-
-    def evaluate_multiple_queries(self, queries: list[QueryDef[MongoQuery]], num_runs: int) -> list['Result']:
-        results = list['Result']()
-
-        print('=' * 80)
-        print(f'EVALUATING {len(queries)} QUERIES')
-        print('=' * 80)
-
-        for query in queries:
-            try:
-                result = self.evaluate_query(query, num_runs)
-                results.append(result)
-            except Exception as e:
-                print_warning(f'Could not evaluate query {query.id}: {query.label()}.', e)
-
-        return results
-
-    def evaluate_query(self, query: QueryDef[MongoQuery], num_runs: int) -> 'Result':
-        print(f'\nEvaluating: {query.label()}')
-
-        content = query.generate()
-        result = self.__evaluate_query(content, num_runs=num_runs, label=query.label())
-
-        status = 'OK' if result.r_value <= 2.0 else ('WARN' if result.r_value <= 5.0 else 'BAD')
-
-        print(f'  [{status:4s}] {result.label[:55]:55s}')
-        print(f'  pred={result.predicted_ms:8.1f}ms  actual={result.actual_ms:8.1f}ms')
-        print(f'  R={result.r_value:.2f}')
-
-        return result
-
-    def __evaluate_query(self, query: MongoQuery, num_runs: int, label: str) -> 'Result':
-        """Evaluate a single find query."""
-        # 1. Get plan without executing
-        plan = self.extractor.explain_query(query, verbosity='queryPlanner')
-        predicted_ms = self.__estimate_latency(plan, query.collection)
-
-        # 2. Measure actual execution time
-        times = self.extractor.measure_query_multiple(query, num_runs)
-
-        return self.__create_result(label, predicted_ms, times)
-
-    def __estimate_latency(self, plan: dict, collection_name: str) -> float:
-        """Predict latency from a queryPlanner explain (no execution)."""
-        with torch.no_grad():
-            return self.model(plan, collection_name).item()
-
-    def __create_result(self, label: str, predicted_ms: float, times: list[float]) -> 'Result':
-        result = Result(label)
-
-        actual_ms = np.mean(times).item()
-        r_value = max(predicted_ms / (actual_ms + EPSILON), actual_ms / (predicted_ms + EPSILON))
-
-        result.predicted_ms = predicted_ms
-        result.actual_ms = actual_ms
-        result.actual_min = np.min(times)
-        result.actual_max = np.max(times)
-        result.error_ms = abs(predicted_ms - actual_ms)
-        result.relative_error = abs(predicted_ms - actual_ms) / (actual_ms + EPSILON)
-        result.r_value = r_value
-
-        return result
-
-    def print_summary(self, results: list['Result']):
-        """Print summary statistics and comparison table."""
+    @override
+    def print_summary(self, results: list[QueryResult]):
         print('\n' + '=' * 80)
         print('AGGREGATE STATISTICS')
         print('=' * 80)
 
-        errors = [r.error_ms for r in results]
-        rel_errors = [r.relative_error for r in results]
-        r_values = [r.r_value for r in results]
-        predicted = [r.predicted_ms for r in results]
-        actual = [r.actual_ms for r in results]
+        absolute = [r.vs_measured.absolute for r in results]
+        relative = [r.vs_measured.relative for r in results]
+        r_value = [r.vs_measured.r_value for r in results]
 
         print(f'  Queries evaluated: {len(results)}')
-        print(f'  Mean Absolute Error: {np.mean(errors):.2f} ms')
-        print(f'  Median Absolute Error: {np.median(errors):.2f} ms')
-        print(f'  Mean Relative Error: {np.mean(rel_errors):.4f}')
-        print(f'  Median R-value (Q-error): {np.median(r_values):.2f}')
-        print(f'  Mean R-value: {np.mean(r_values):.2f}')
-        print(f'  R <= 1.5: {np.mean([r <= 1.5 for r in r_values]) * 100:.1f}%')
-        print(f'  R <= 2.0: {np.mean([r <= 2.0 for r in r_values]) * 100:.1f}%')
-        print(f'  R <= 5.0: {np.mean([r <= 5.0 for r in r_values]) * 100:.1f}%')
+        print(f'  Mean Absolute Error: {np.mean(absolute):.2f} ms')
+        print(f'  Median Absolute Error: {np.median(absolute):.2f} ms')
+        print(f'  Mean Relative Error: {np.mean(relative):.4f}')
+        print(f'  Median R-value (Q-error): {np.median(r_value):.2f}')
+        print(f'  Mean R-value: {np.mean(r_value):.2f}')
+
+        for threshold in [1.5, 2.0, 5.0]:
+            print(f'  R < {threshold}: {self._less_than_in_percent(r_value, threshold)}')
 
         table_data = []
         for r in results:
             table_data.append([
                 r.label[:30],
-                f'{r.predicted_ms:.2f}',
-                f'{r.actual_ms:.2f}',
-                f'{r.error_ms:.2f}',
-                f'{r.r_value:.4f}' if r.r_value != float('inf') else 'inf'
+                f'{r.predicted:.2f}',
+                f'{r.measured.mean:.2f}',
+                f'{r.vs_measured.absolute:.2f}',
+                f'{r.vs_measured.r_value:.4f}',
             ])
 
         print(tabulate(
@@ -115,15 +40,3 @@ class ModelEvaluator:
             headers=['Query', 'Predicted (ms)', 'Actual (ms)', 'Abs Error (ms)', 'R-value'],
             tablefmt='grid'
         ))
-
-@dataclass
-class Result:
-    """Holds a single query evaluation result."""
-    label: str
-    predicted_ms: float = nan
-    actual_ms: float = nan
-    actual_min: float = nan
-    actual_max: float = nan
-    error_ms: float = nan
-    relative_error: float = nan
-    r_value: float = nan

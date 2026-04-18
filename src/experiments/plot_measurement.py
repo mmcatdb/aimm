@@ -2,13 +2,11 @@ import os
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 import numpy as np
-from common.config import Config, DatasetName
-from common.database import DatabaseInfo
-from common.drivers import DriverType, DATABASE_COLORS
+from core.config import Config
+from core.drivers import DriverType, DATABASE_COLORS
 from experiments.measure import load_database_measurement
 from scripts.analyze import get_subplots_dimensions
 
-DATASET = DatasetName.EDBT
 SCALES = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0]
 # TODO FIX mongo
 # SCALES = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0]
@@ -38,7 +36,7 @@ def _load_database_measurement(config: Config, type: DriverType) -> ByQuery:
     by_query = ByQuery()
 
     for scale in SCALES:
-        info = DatabaseInfo(DATASET, type, scale)
+        info = DatabaseInfo(SCHEMA, type, scale)
         results = load_database_measurement(config, info)
 
         for result in results:

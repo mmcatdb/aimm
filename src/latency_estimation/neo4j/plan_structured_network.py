@@ -1,39 +1,16 @@
 from typing_extensions import override
 import torch
 import torch.nn as nn
-from common.nn_operator import NnOperator
-from latency_estimation.config import ModelConfig
-from latency_estimation.plan_structured_network import BasePlanStructuredNetwork, OperatorCollector
-from latency_estimation.neo4j.feature_extractor import FeatureExtractor
+from core.nn_operator import NnOperator
+from core.drivers import DriverType
+from ..config import ModelConfig
+from ..feature_extractor import PlanNode
+from ..plan_structured_network import BasePlanStructuredNetwork, ModelName, create_model_id
 
-class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
-    def __init__(self, config: ModelConfig, feature_extractor: FeatureExtractor):
-        super().__init__(config, feature_extractor)
+class PlanStructuredNetwork(BasePlanStructuredNetwork):
 
-    @staticmethod
-    def from_plans(config: ModelConfig, device: str, feature_extractor: FeatureExtractor, plans: list[dict]) -> 'PlanStructuredNetwork':
-        """Create neural units by analyzing all operator types and their *number of children* in the training plans."""
-        model = PlanStructuredNetwork(config, feature_extractor)
-        model._define_operators(OperatorCollector.run(feature_extractor, plans))
-        model.set_device(device)
-        return model
-
-    @staticmethod
-    def from_checkpoint(checkpoint: dict, device: str) -> 'PlanStructuredNetwork':
-        """Load model from checkpoint, including neural units."""
-        config: ModelConfig = checkpoint['config']
-        feature_extractor: FeatureExtractor = checkpoint['feature_extractor']
-
-        model = PlanStructuredNetwork(config, feature_extractor)
-
-        operators: dict[str, NnOperator] = checkpoint['operators']
-        model._define_operators(list(operators.values()))
-
-        # Load trained weights
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.set_device(device)
-        model.eval()
-        return model
+    def __init__(self, config: ModelConfig, model_name: ModelName):
+        super().__init__(config, create_model_id(DriverType.NEO4J, model_name))
 
     @override
     def _create_unit(self, operator: NnOperator) -> nn.Module:
@@ -51,27 +28,20 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             is_root=is_root_op,
         )
 
-    def forward(self, plan: dict) -> torch.Tensor:
-        """
-        Implements the model's forward pass. Estimate latency for a query plan.
-        Args:
-            plan: Query plan dictionary (root node)
-        Returns:
-            Estimated latency (scalar tensor [1, 1])
-        """
-        # Process the entire plan tree
+    @override
+    def forward(self, plan: PlanNode) -> torch.Tensor:
         cache = dict[int, Estimation]()
         output = self.__process_plan_node(plan, cache)
 
         # Root should have estimated latency
         if output.latency is None:
-            raise ValueError(f'Root operator {plan.get("operatorType")} did not estimate latency. Make sure root is ProduceResults.')
+            raise ValueError(f'Root operator {plan.type} did not estimate latency. Make sure root is ProduceResults.')
 
         return output.latency
 
     # TODO not used?
     # Note: For Neo4j, we process plans individually since they have different structures. Future optimization could group by structure.
-    # def estimate_plan_latency_all_nodes(self, plan: dict) -> dict[int, torch.Tensor]:
+    # def estimate_plan_latency_all_nodes(self, plan: PlanNode) -> dict[int, torch.Tensor]:
     #     """
     #     Get latency estimations for all nodes in the plan.
     #     Used for computing the loss function (Equation 7).
@@ -82,7 +52,7 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
     #     """
     #     pass
 
-    def __process_plan_node(self, node: dict, cache: dict[int, 'Estimation']) -> 'Estimation':
+    def __process_plan_node(self, node: PlanNode, cache: dict[int, 'Estimation']) -> 'Estimation':
         """
         Recursively process a query plan node.
         Args:
@@ -96,19 +66,18 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
 
         # Process children recursively
         child_outputs = []
-        for child in self.feature_extractor.get_node_children(node):
+        for child in node.children:
             child_output = self.__process_plan_node(child, cache)
             # Extract data vector from child
             child_outputs.append(child_output.data)
 
-        node_features = self.feature_extractor.extract_features(node)
         # Add batch dimension: [1, input_dim]
-        node_features_tensor = torch.tensor(node_features, dtype=torch.float32, device=self.device).unsqueeze(0)
+        node_features_tensor = torch.tensor(node.features, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         unit = self._get_unit(NnOperator(
-            type=self.feature_extractor.get_node_type(node),
+            type=node.type,
             num_children=len(child_outputs),
-            feature_dim=len(node_features),
+            feature_dim=len(node.features),
         ))
 
         if child_outputs:

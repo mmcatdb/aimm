@@ -1,7 +1,9 @@
 import os
 import argparse
-from common.config import Config
-from common.utils import print_warning
+from core.config import Config
+from core.utils import print_warning
+
+# FIXME This needs major rework
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Clean cache')
@@ -15,8 +17,8 @@ def main(rawArgs: list[str] | None = None):
         plans_run(args)
 
 def plans_args(parser: argparse.ArgumentParser):
-    # Here can be something that specifies which cache to clean, e.g., dataset name, number of queries, etc.
-    # parser.add_argument('dataset', nargs=1, choices=get_available_dataset_names(), help=f'Name of the dataset. Needed to select the database.')
+    # Here can be something that specifies which cache to clean, e.g., schema name, number of queries, etc.
+    # parser.add_argument('schema', nargs=1, choices=get_available_schema_names(), help=f'Name of the schema. Needed to select the database.')
     pass
 
 def plans_run(args: argparse.Namespace):

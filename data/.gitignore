@@ -3,8 +3,9 @@
 # We have to separately re-include all subdirectories.
 !*/
 
+# This seems to work to any depth. Not sure why tho.
 # Ignore all files in subdirectories except .gitkeep.
-/*/*
+/*/**
 # We have to separately re-include all subdirectories.
 !*/
 !.gitkeep

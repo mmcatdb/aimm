@@ -1,39 +1,16 @@
 from typing_extensions import override
 import torch
 import torch.nn as nn
-from common.nn_operator import NnOperator
-from latency_estimation.config import ModelConfig
-from latency_estimation.plan_structured_network import BasePlanStructuredNetwork, OperatorCollector
-from latency_estimation.mongo.feature_extractor import FeatureExtractor
+from core.nn_operator import NnOperator
+from core.drivers import DriverType
+from ..config import ModelConfig
+from ..feature_extractor import PlanNode
+from ..plan_structured_network import BasePlanStructuredNetwork, ModelName, create_model_id
 
-class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
-    def __init__(self, config: ModelConfig, feature_extractor: FeatureExtractor):
-        super().__init__(config, feature_extractor)
+class PlanStructuredNetwork(BasePlanStructuredNetwork):
 
-    @staticmethod
-    def from_plans(config: ModelConfig, device: str, feature_extractor: FeatureExtractor, plans: list[dict]) -> 'PlanStructuredNetwork':
-        """Create neural units by analyzing all operator types and their *number of children* in the training plans."""
-        model = PlanStructuredNetwork(config, feature_extractor)
-        model._define_operators(OperatorCollector.run(feature_extractor, plans))
-        model.set_device(device)
-        return model
-
-    @staticmethod
-    def from_checkpoint(checkpoint: dict, device: str) -> 'PlanStructuredNetwork':
-        """Load model from checkpoint, including neural units."""
-        config: ModelConfig = checkpoint['config']
-        feature_extractor: FeatureExtractor = checkpoint['feature_extractor']
-
-        model = PlanStructuredNetwork(config, feature_extractor)
-
-        operators: dict[str, NnOperator] = checkpoint['operators']
-        model._define_operators(list(operators.values()))
-
-        # Load trained weights
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.set_device(device)
-        model.eval()
-        return model
+    def __init__(self, config: ModelConfig, model_name: ModelName):
+        super().__init__(config, create_model_id(DriverType.MONGO, model_name))
 
     @override
     def _create_unit(self, operator: NnOperator) -> nn.Module:
@@ -47,19 +24,13 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             hidden_num=self.config.hidden_num,
         )
 
-    def forward(self, plan_tree: dict, collection_name: str) -> torch.Tensor:
-        """
-        Implements the model's forward pass. Estimate latency for a query plan.
-        Args:
-            plan_tree: the plan tree root node (already extracted from explain)
-            collection_name: name of the primary collection
-        Returns: scalar predicted latency (ms)
-        """
+    @override
+    def forward(self, plan: PlanNode) -> torch.Tensor:
         cache = dict[int, torch.Tensor]()
-        output = self.__process_plan_node(plan_tree, collection_name, cache)
-        return output[:, 0]  # latency
+        output = self.__process_plan_node(plan, cache)
+        return output[:, 0]
 
-    def __process_plan_node(self, node: dict, collection_name: str, cache: dict[int, torch.Tensor]) -> torch.Tensor:
+    def __process_plan_node(self, node: PlanNode, cache: dict[int, torch.Tensor]) -> torch.Tensor:
         """
         Recursively process a plan tree node bottom-up.
 
@@ -70,14 +41,14 @@ class PlanStructuredNetwork(BasePlanStructuredNetwork[FeatureExtractor]):
             return cache[node_id]
 
         child_outputs = []
-        for child in self.feature_extractor.get_node_children(node):
-            child_outputs.append(self.__process_plan_node(child, collection_name, cache))
+        for child in node.children:
+            child_outputs.append(self.__process_plan_node(child, cache))
 
-        node_features = self.feature_extractor.extract_features(node, collection_name)
+        node_features = node.features
         node_features_tensor = torch.tensor(node_features, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         unit = self._get_unit(NnOperator(
-            type=self.feature_extractor.get_node_type(node),
+            type=node.type,
             num_children=len(child_outputs),
             feature_dim=len(node_features),
         ))
