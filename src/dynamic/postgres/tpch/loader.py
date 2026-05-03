@@ -88,7 +88,7 @@ class TpchPostgresLoader(PostgresLoader):
             'knows': [
                 c('k_custkey1', 'INTEGER', primary_key=True, references='customer(c_custkey)'),
                 c('k_custkey2', 'INTEGER', primary_key=True, references='customer(c_custkey)'),
-                c('k_startdate', 'DATE'),
+                c('k_startdate', 'DATE', primary_key=True),
                 c('k_source', 'VARCHAR(20)'),
                 c('k_comment', 'TEXT'),
                 c('k_strength', 'DOUBLE PRECISION'),

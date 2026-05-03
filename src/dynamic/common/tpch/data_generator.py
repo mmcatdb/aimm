@@ -54,12 +54,14 @@ class TpchDataGenerator(DataGenerator):
 
         file, writer = self._open_csv_output('knows', [])
         with file:
+            seen: set[tuple[int, int]] = set()
             written = 0
             while written < n_knows:
                 from_id = customer_ids[self._rng.randrange(n_customers)]
                 to_id = customer_ids[self._rng.randrange(n_customers)]
-                if from_id == to_id:
+                if from_id == to_id or (from_id, to_id) in seen:
                     continue
+                seen.add((from_id, to_id))
 
                 writer.writerow([
                     from_id,
