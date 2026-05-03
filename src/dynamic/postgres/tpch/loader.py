@@ -90,7 +90,7 @@ class TpchPostgresLoader(PostgresLoader):
                 c('k_custkey2', 'INTEGER', primary_key=True, references='customer(c_custkey)'),
                 c('k_startdate', 'DATE'),
                 c('k_source', 'VARCHAR(20)'),
-                c('k_comment', 'VARCHAR(117)'),
+                c('k_comment', 'TEXT'),
                 c('k_strength', 'DOUBLE PRECISION'),
             ],
         }
