@@ -12,7 +12,12 @@ class ModelEvaluator(BaseModelEvaluator):
 
     @override
     def print_summary(self, results: list[QueryResult]):
-        self.__inner_print_summary(self._get_extracted_results(results))
+        extracted_results = self._get_extracted_results(results)
+        if not extracted_results:
+            print('\nNo successful query results to summarize.')
+            return
+
+        self.__inner_print_summary(extracted_results)
 
     def __inner_print_summary(self, results: list[ExtractedQueryResult]):
         print('\n' + '=' * 80)
@@ -69,7 +74,12 @@ class ModelEvaluator(BaseModelEvaluator):
         self._summary_diff_results(extracted_vs_measured)
 
     def plot_results(self, results: list[QueryResult], save_path: str):
-        return self.__plot_results_inner(self._get_extracted_results(results), save_path)
+        extracted_results = self._get_extracted_results(results)
+        if not extracted_results:
+            print('\nNo successful query results to plot.')
+            return None
+
+        return self.__plot_results_inner(extracted_results, save_path)
 
     def __plot_results_inner(self, results: list[ExtractedQueryResult], save_path: str):
         import matplotlib.pyplot as plt

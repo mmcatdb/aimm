@@ -66,4 +66,4 @@ class LatencyEstimator(Generic[TQuery]):
         database_id, _, _ = parse_query_instance_id(query.id)
         plan_extractor, _, _ = self.__per_database[database_id]
 
-        return plan_extractor.measure_and_explain_query(query.content, num_runs=num_runs)
+        return plan_extractor.measure_and_explain_query(query, num_runs=num_runs)

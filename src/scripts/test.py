@@ -29,6 +29,7 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--checkpoint', '-c', type=str, required=True,                   help='Path to model checkpoint.')
     parser.add_argument('--feature-extractor', '-f', type=str, required=True,            help='Path to the feature extractor.')
     parser.add_argument('--num-runs',         type=int, default=3,                       help='Number of executions per query for averaging.')
+    parser.add_argument('--num-queries',      type=int, default=0,                       help='Number of built-in query instances to generate. Defaults to one per template.')
     parser.add_argument('--query', '-q',      type=str, action='append', dest='queries', help='Additional query to test (can be used multiple times). Disables built-in test queries.')
 
     # TODO This is only for postgres
@@ -83,7 +84,7 @@ def get_query_instances(args: argparse.Namespace) -> list[QueryInstance]:
     else:
         print('\nGenerating test queries...')
         registry = get_dynamic_class_instance(QueryRegistry, driver_type, schema)
-        queries = registry.generate_queries(scale, 0)
+        queries = registry.generate_queries(scale, args.num_queries)
 
     if not queries:
         exit_with_error('No queries to test. Provide queries with --query or use the built-in test queries.')
