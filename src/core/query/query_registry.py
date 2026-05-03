@@ -53,7 +53,7 @@ class QueryRegistry(Generic[TQuery]):
 
     def __set_scale(self, scale: float):
         """If needed, sets the current scale factor for which the parameters are being generated. Is used lazily by the parameter generators."""
-        if self._scale != scale:
+        if not hasattr(self, '_scale') or self._scale != scale:
             self._scale = scale
             self._setup_cache()
 

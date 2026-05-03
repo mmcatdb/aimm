@@ -65,13 +65,13 @@ class EdbtDataGenerator(DataGenerator):
         """
 
         return Counts(
-            person = self._scaled(50_000, 1.00),
-            seller = self._scaled(5_000, 0.90),
-            product = self._scaled(20_000, 0.95),
-            category = self._scaled(2_000, 0.60),
-            order = self._scaled(200_000, 1.05),
-            review = self._scaled(100_000, 1.05),
-            follows = self._scaled(200_000, 1.10),
+            person = self._scaled(5_000, 1.00),
+            seller = self._scaled(500, 0.90),
+            product = self._scaled(2_000, 0.95),
+            category = self._scaled(200, 0.60),
+            order = self._scaled(20_000, 1.05),
+            review = self._scaled(10_000, 1.05),
+            follows = self._scaled(20_000, 1.10),
         )
 
     def __generate_persons(self, n_persons: int) -> list[list]:

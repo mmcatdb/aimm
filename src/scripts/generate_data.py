@@ -4,7 +4,7 @@ from core.data_generator import DataGenerator
 from core.query import parse_schema_id
 from core.utils import exit_with_exception
 from core.dynamic_provider import get_dynamic_class_instance
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Generate schema data.')

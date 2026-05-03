@@ -4,20 +4,20 @@ import os
 from typing import Generic, cast
 from core.utils import JsonEncoder
 from .query_id import DatabaseId, QueryInstanceId, parse_query_instance_driver_type
-from .query_instance import TQuery, parse_query
+from .query_instance import QueryInstance, TQuery, parse_query
 
-class QueryMeasurement(Generic[TQuery]):
+class QueryMeasurement(QueryInstance[TQuery]):
     """All measured data about a `QueryInstance`."""
 
-    def __init__(self, query_id: QueryInstanceId, content: TQuery, plan: dict, times: list[float]):
-        self.query_id = query_id
-        self.content = content
+    def __init__(self, id: QueryInstanceId, label: str, content: TQuery, plan: dict, times: list[float]):
+        super().__init__(id, label, content)
         self.plan = plan
         self.times = times
 
     def to_dict(self) -> dict:
         return {
-            'query_id': self.query_id,
+            'id': self.id,
+            'label': self.label,
             'content': serialize_query(self.content),
             'plan': self.plan,
             'times': self.times,
@@ -25,11 +25,12 @@ class QueryMeasurement(Generic[TQuery]):
 
     @staticmethod
     def from_dict(data: dict) -> QueryMeasurement:
-        query_id = data['query_id']
-        driver_type = parse_query_instance_driver_type(query_id)
+        id = data['id']
+        driver_type = parse_query_instance_driver_type(id)
         content = parse_query(driver_type, data['content'])
         return QueryMeasurement(
-            query_id=query_id,
+            id=id,
+            label=data['label'],
             # This is probably necessary due to the limitations of python's type system.
             content=cast(TQuery, content),
             plan=data['plan'],

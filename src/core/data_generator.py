@@ -53,6 +53,7 @@ class DataGenerator(ABC):
     def _open_csv_output(self, kind: str, header: list[str]):
         print('Creating', kind)
         path = os.path.join(self._import_directory, kind + '.tbl')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         file = open(path, 'w', newline='', encoding='utf-8')
         writer = csv.writer(file, delimiter = '|')
         # The header is skipped because loaders do not expect it.
@@ -69,7 +70,7 @@ class DataGenerator(ABC):
         return file, reader
 
     def _scaled(self, base: int, exp: float, min_v: int = 1) -> int:
-        return max(min_v, int(round(base * (self._scale ** exp))))
+        return max(min_v, int(round(base * (2 ** (self._scale * exp)))))
 
     def _rng_timestamp_between(self, start: datetime, end: datetime) -> datetime:
         """Uniform timestamp between start and end."""

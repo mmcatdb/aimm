@@ -44,7 +44,7 @@ class ModelEvaluator(BaseModelEvaluator):
             table_data.append([
                 r.label[:30],
                 f'{r.predicted:.2f}',
-                f'{r.measured.mean:.2f}',
+                f'{r.measured:.2f}',
                 f'{r.vs_measured.absolute:.2f}',
                 f'{r.vs_measured.r_value:.4f}',
             ])

@@ -2,7 +2,7 @@
 
 ## Configuration
 
-- Create configuration file:
+- Create a configuration file:
 ```bash
 cp .env.example .env
 ```
@@ -31,35 +31,56 @@ pip install -e .
 python -m path.to.file
 ```
 
-## Input data
+## Workflow
 
-### EDBT (generated)
+Training latency estimation models requires data. For that, there is a whole pipeline of scripts. The general idea is to reuse the former steps as much as possible and repeat them only when necessary (their correspondent code or the previous steps have changed).
 
-- Use a small scale (like 0.01) for testing. Then continue with larger scales (like 10) for experiments. Be careful with larger scales.
+### Data generation and population
+
+Choose a *schema* (e.g., `edbt`) and a *scale* (a number >= 0). Use a small scale (e.g., 0) for testing. Then continue with larger scales for experiments. Generally, the data grows like 2^scale, so be careful.
+- Generate data:
 ```bash
-python -m scripts.generate_data edbt-0.01
-python -m scripts.populate_db postgres/edbt-0.01
-python -m scripts.populate_db mongo/edbt-0.01
-python -m scripts.populate_db neo4j/edbt-0.01
+python -m scripts.generate_data edbt-0
+```
+- Populate databases:
+```bash
+python -m scripts.populate_db postgres/edbt-0
+python -m scripts.populate_db mongo/edbt-0
+python -m scripts.populate_db neo4j/edbt-0
+```
+- Some schemas (e.g., TPC-H) are not generated but downloaded (at least partially). In that case, create manually the corresponding directories in `data/inputs` (see the `edbt-0` example) and put the downloaded data there. Then, run the generate script (if needed to generate the missing data) and populate the databases as usual.
+- [Link](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) to some `tpch` data.
+
+### Query measurement and plan extraction
+
+- Run the following to generate queries, measure their latencies and extract their plans:
+```bash
+python -m scripts.measure_queries postgres/edbt-0 --num-queries 100 --num-runs 10
+```
+- Repeat for other databases (`mongo`, `neo4j`).
+- Adjust the number of queries and runs as needed.
+
+### Dataset preparation
+
+- Choose a cool dataset name (e.g., `cool_dataset`) and run the following:
+```bash
+python -m scripts.create_dataset postgres/cool_dataset edbt-0/measured-100-10.jsonl
+```
+- Multiple schema-scale combinations should be combined into a single dataset. So, if you also generated data for `edbt-2` with `200` queries and `20` runs, you should add `edbt-2/measured-200-20.jsonl` to the command above.
+- A validation dataset should reuse the feature extractor from the train dataset. Use:
+```bash
+python -m scripts.create_dataset postgres/hot_dataset --feature-extractor-dataset cool_dataset edbt-1/measured-100-10.jsonl
 ```
 
-### TPC-H (downloaded)
+### Training and evaluation
 
-- Download [TPC-H data](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) and extract it into the `data/inputs/tpch` directory.
-- We also need to generate some additional data. No need for scale as we use the original data as a reference.
+- Choose a fitting model name (e.g., `fitting_model`). Then, run the following:
 ```bash
-python -m scripts.generate_data tpch
-python -m scripts.populate_db postgres tpch
-python -m scripts.populate_db mongo tpch
-python -m scripts.populate_db neo4j tpch
+python -m scripts.train postgres/fitting_model --train-dataset cool_dataset --val-dataset hot_dataset
 ```
-
-## Training
-
-- Currently, only TPC-H is supported for training.
+- To eavaluate a model, choose a checkpoint (e.g., `best`, `epoch/10`, ...) and a test dataset (e.g., `hot_dataset`) and run:
 ```bash
-python -m latency_estimation.mongo train
-python -m latency_estimation.mongo test
+python -m scripts.test postgres/fitting_model/best hot_dataset
 ```
 
 ## Experiments

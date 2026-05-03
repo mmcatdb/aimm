@@ -20,7 +20,6 @@ class Config:
         self.checkpoints_directory: str = rest['checkpoints_directory']
         self.results_directory: str = rest['results_directory']
         self.populate_directory: str = rest['populate_directory']
-        self.measure_directory: str = rest['measure_directory']
         self.experiments_directory: str = rest['experiments_directory']
         self.device: str = rest['device']
         self.train_num_runs: int | None = rest.get('train_num_runs')
@@ -82,7 +81,6 @@ class Config:
             'checkpoints_directory': _string('CHECKPOINTS_DIRECTORY', 'data/checkpoints'),
             'results_directory': _string('RESULTS_DIRECTORY', 'data'),
             'populate_directory': _string('POPULATE_DIRECTORY', 'data/populate'),
-            'measure_directory': _string('MEASURE_DIRECTORY', 'data/measure'),
             'experiments_directory': _string('EXPERIMENTS_DIRECTORY', 'data/experiments'),
             'device': _string('DEVICE'),
             'train_num_runs': _int_optional('TRAIN_NUM_RUNS'),

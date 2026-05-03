@@ -1,7 +1,7 @@
 import json
 import os
 import pickle
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset
 from core.drivers import DriverType
 from core.nn_operator import NnOperator
 from core.query import QueryInstanceId
@@ -35,14 +35,15 @@ def parse_dataset_id(dataset_id: DatasetId) -> tuple[DriverType, DatasetName]:
 
 class DatasetItem:
 
-    def __init__(self, query_id: QueryInstanceId, latency: float, plan: PlanNode, structure_hash: int):
+    def __init__(self, query_id: QueryInstanceId, label: str, latency: float, plan: PlanNode, structure_hash: int):
         self.query_id = query_id
+        self.label = label
         self.latency = latency
         """In milliseconds."""
         self.plan = plan
         self.structure_hash = structure_hash
 
-class ArrayDataset(IterableDataset[DatasetItem]):
+class ArrayDataset(Dataset[DatasetItem]):
     """
     Dataset of query plans with execution times. Implementation of PyTorch Dataset (there is no other implementation of this?).
 

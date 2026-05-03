@@ -64,6 +64,7 @@ class BaseTrainer(ABC):
     def train_epochs(self, train_dataset: Dataset[DatasetItem], val_dataset: Dataset[DatasetItem], num_epochs: int, ipp: IPathProvider) -> None:
         # Global access for convenience.
         self._ipp = ipp
+        self._create_directories()
 
         best_metrics: TrainerMetrics = {}
         best_metric = float('inf')
@@ -136,6 +137,13 @@ class BaseTrainer(ABC):
         """Hook for any final steps after epoch completes."""
         pass
 
+    def _create_directories(self):
+        """Create necessary directories for saving checkpoints and metrics. Called at the beginning of training."""
+        model_id = self.model().model_id
+        checkpoint_name = _epoch_checkpoint(0) # Just to get the epoch directory name for the path provider.
+        path = self._ipp.model(create_checkpoint_id(model_id, checkpoint_name))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
     def _save_checkpoint(self, checkpoint_name: CheckpointName, metrics: TrainerMetrics):
         model_id = self.model().model_id
         path = self._ipp.model(create_checkpoint_id(model_id, checkpoint_name))
@@ -149,17 +157,17 @@ class BaseTrainer(ABC):
 
         print(f'Model saved to {path}')
 
-    def _save_metrics(self, checkpoint_name: CheckpointName, metrics: TrainerMetrics):
-        model_id = self.model().model_id
-        path = self._ipp.metrics(create_checkpoint_id(model_id, checkpoint_name))
-
-        try_save_metrics(path, metrics)
-
     def _save_epoch_metrics(self, metrics: TrainerMetrics, epoch: int, loss: float):
         checkpoint_name = _epoch_checkpoint(epoch)
         # Extended metrics with epoch and loss for convenience during analysis and plotting.
         metrics = metrics | {'epoch': epoch, 'loss': loss}
         self._save_metrics(checkpoint_name, metrics)
+
+    def _save_metrics(self, checkpoint_name: CheckpointName, metrics: TrainerMetrics):
+        model_id = self.model().model_id
+        path = self._ipp.metrics(create_checkpoint_id(model_id, checkpoint_name))
+
+        try_save_metrics(path, metrics)
 
     @staticmethod
     def get_epoch_and_loss_from_metrics(metrics: TrainerMetrics) -> tuple[int, float]:

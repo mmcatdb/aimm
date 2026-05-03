@@ -13,7 +13,7 @@ class LatencyEstimator(Generic[TQuery]):
     def __init__(self):
         self.__per_driver_type = dict[DriverType, tuple[BaseFeatureExtractor, BaseModel]]()
         """Contains tuples of (feature_extractor, model) for each registered driver type."""
-        self.__per_database = dict[DatabaseId, tuple[BasePlanExtractor, dict, DriverType]]()
+        self.__per_database = dict[DatabaseId, tuple[BasePlanExtractor | None, dict, DriverType]]()
         """Contains tuples of (plan_extractor, global_stats, driver_type) for each registered database. Used for caching the global stats to avoid redundant collection."""
 
         self.__estimate_cache = dict[QueryInstanceId, float]()
@@ -25,32 +25,48 @@ class LatencyEstimator(Generic[TQuery]):
         """Each driver type has to be registered so that the corresponding feature extractor and model can be used for estimation."""
         self.__per_driver_type[driver_type] = (feature_extractor, model)
 
-    def register_database(self, database_id: DatabaseId, plan_extractor: BasePlanExtractor):
-        """Each database has to be registered so that the plans can be extracted for the queries."""
+    def register_database_extractor(self, database_id: DatabaseId, plan_extractor: BasePlanExtractor):
+        """Each database has to be registered (via this or `register_database_stats`) so that the plans can be extracted for the queries."""
         stats = plan_extractor.collect_global_stats()
         driver_type, _, _ = parse_database_id(database_id)
         self.__per_database[database_id] = (plan_extractor, stats, driver_type)
 
-    def estimate(self, query: QueryInstance) -> float:
-        """Estimates query latency without executing the query. Returns the latency in milliseconds. The result is cached by the query_id."""
+    def register_database_stats(self, database_id: DatabaseId, stats: dict):
+        """Each database has to be registered (via this or `register_database_extractor`) so that the plans can be extracted for the queries.
+
+        When estimating a query from such database, the query plan has to be provided manually. Also, such database can't be used for measuring queries.
+        """
+        driver_type, _, _ = parse_database_id(database_id)
+        self.__per_database[database_id] = (None, stats, driver_type)
+
+    def estimate(self, query: QueryInstance | QueryMeasurement) -> float:
+        """Estimates query latency without executing the query. Returns the latency in milliseconds. The result is cached by the query_id.
+
+        If the plan is not provided (by passing a `QueryMeasurement`), it will be extracted (the extractor has to be already registered).
+        """
         value = self.__estimate_cache.get(query.id)
-        if value is  None:
+        if value is None:
             database_id, _, _ = parse_query_instance_id(query.id)
-            value = self.estimate_uncached(database_id, query.content)
+            plan = query.plan if isinstance(query, QueryMeasurement) else None
+            value = self.estimate_uncached(database_id, query.content, plan)
             self.__estimate_cache[query.id] = value
 
         return value
 
-    def estimate_uncached(self, database_id: DatabaseId, content: TQuery) -> float:
+    def estimate_uncached(self, database_id: DatabaseId, content: TQuery, plan: dict | None) -> float:
         """Estimates query latency without executing the query. Returns the latency in milliseconds."""
         plan_extractor, global_stats, driver_type = self.__per_database[database_id]
         feature_extractor, model = self.__per_driver_type[driver_type]
 
-        raw_plan = plan_extractor.explain_query(content, do_profile=False)
-        feature_extractor.set_global_stats(global_stats)
-        plan = feature_extractor.extract_plan(raw_plan)
+        if plan is None:
+            if plan_extractor is None:
+                raise ValueError('A query plan has to be provided when estimating from a database without a registered plan extractor.')
+            plan = plan_extractor.explain_query(content, do_profile=False)
 
-        return model.evaluate(plan)
+        feature_extractor.set_global_stats(global_stats)
+        extracted_plan = feature_extractor.extract_plan(plan)
+
+        return model.evaluate(extracted_plan)
 
     def measure(self, query: QueryInstance, num_runs: int) -> QueryMeasurement:
         """Measures the actual latency of a query by executing it multiple times. Returns a list of latencies in milliseconds."""
@@ -65,5 +81,8 @@ class LatencyEstimator(Generic[TQuery]):
         """Measures the actual latency of a query by executing it multiple times. Returns a list of latencies in milliseconds."""
         database_id, _, _ = parse_query_instance_id(query.id)
         plan_extractor, _, _ = self.__per_database[database_id]
+
+        if not plan_extractor:
+            raise ValueError('A query can\'t be measured for in database without a registered plan extractor.')
 
         return plan_extractor.measure_and_explain_query(query.content, num_runs=num_runs)

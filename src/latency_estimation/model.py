@@ -78,7 +78,6 @@ class BaseModel(nn.Module, ABC):
             'id': self.model_id,
             'config': self.config,
             'operators': self.operators,
-            'feature_extractor': self.feature_extractor,
             # Learned parameters of the model.
             'model_state_dict': self.state_dict(),
         }

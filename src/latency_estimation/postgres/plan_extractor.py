@@ -30,6 +30,7 @@ class PlanExtractor(BasePlanExtractor[str]):
                 # EXPLAIN returns list of plans
                 explain = result[0][0]
                 plan: dict = explain['Plan']
+                # FIXME This is not used anywhere right now.
                 plan[self.EXECUTION_TIME_KEY] = explain['Execution Time']
 
                 return plan

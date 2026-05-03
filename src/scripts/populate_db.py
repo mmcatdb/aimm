@@ -4,9 +4,9 @@ from core.driver_provider import DriverProvider
 from core.drivers import DriverType, PostgresDriver
 from core.dynamic_provider import get_dynamic_class_instance
 from core.loaders.base_loader import BaseLoader, save_populate_times
-from core.query import create_schema_id, parse_database_id
+from core.query import DatabaseId, create_schema_id, parse_database_id
 from core.utils import auto_close, exit_with_exception
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Load schema data into database.')
@@ -25,7 +25,7 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('database_id', nargs=1, help='Id of the database. Pattern: {driver_type}/{schema_name}-{scale}')
     parser.add_argument('--no-reset', action='store_true', help='Skip clearing the database beforehand.')
 
-def run(config: Config, database_id: str, do_reset: bool):
+def run(config: Config, database_id: DatabaseId, do_reset: bool):
     pp = PathProvider(config)
 
     driver_type, schema, scale = parse_database_id(database_id)

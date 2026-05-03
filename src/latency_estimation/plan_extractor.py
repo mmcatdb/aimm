@@ -70,4 +70,4 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
 
         plan = self.explain_query(query.content, do_profile=True)
 
-        return QueryMeasurement(query.id, query.content, plan, times)
+        return QueryMeasurement(query.id, query.label, query.content, plan, times)

@@ -2,16 +2,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from matplotlib.figure import Figure
 import numpy as np
-from core.query import QueryInstance
 from core.utils import EPSILON, print_warning
-from .latency_estimator import LatencyEstimator
-
-@dataclass
-class StatisticalResult:
-    min: float
-    max: float
-    mean: float
-    std: float
+from latency_estimation.dataset import ArrayDataset, DatasetItem
+from latency_estimation.model import BaseModel
 
 @dataclass
 class DiffResult:
@@ -26,7 +19,7 @@ class QueryResult:
     label: str
     predicted: float
 
-    measured: StatisticalResult
+    measured: float
     vs_measured: DiffResult
 
 @dataclass
@@ -35,50 +28,48 @@ class ExtractedQueryResult(QueryResult):
     vs_extracted: DiffResult
     extracted_vs_measured: DiffResult
 
-
 class BaseModelEvaluator(ABC):
-    """Evaluates a trained QPP-Net model on new queries."""
+    """Evaluates a trained QPP-Net model on a dataset."""
 
-    def __init__(self, estimator: LatencyEstimator):
+    def __init__(self, estimator: BaseModel):
         self.estimator = estimator
 
-    def evaluate_queries(self, queries: list[QueryInstance[str]], num_runs: int) -> list[QueryResult]:
+    def evaluate_dataset(self, dataset: ArrayDataset) -> list[QueryResult]:
         results = list[QueryResult]()
 
         print('=' * 80)
-        print(f'EVALUATING {len(queries)} QUERIES')
+        print(f'EVALUATING {len(dataset)} QUERIES')
         print('=' * 80)
 
-        for query in queries:
+        for item in dataset:
             try:
-                result = self._evaluate_query(query, num_runs)
+                result = self._evaluate_dataset_item(item)
                 results.append(result)
             except Exception as e:
-                print_warning(f'Could not evaluate query {query.id}: {query.label}.', e)
+                print_warning(f'Could not evaluate query {item.query_id}: {item.label}.', e)
 
         return results
 
-    def _evaluate_query(self, query: QueryInstance, num_runs) -> QueryResult:
-        predicted = self.estimator.estimate(query)
-        measurement = self.estimator.measure(query, num_runs)
+    def _evaluate_dataset_item(self, item: DatasetItem) -> QueryResult:
+        predicted = self.estimator.evaluate(item.plan)
 
-        measured = self._compute_statistical_result(measurement.times)
-        vs_measured = self._compute_diff_result(predicted, measured.mean)
+        measured = item.latency
+        vs_measured = self._compute_diff_result(predicted, measured)
 
         base_result = QueryResult(
-            id=query.id,
-            label=query.label,
+            id=item.query_id,
+            label=item.label,
             predicted=predicted,
             measured=measured,
             vs_measured=vs_measured,
         )
 
-        extracted = self._extract_latency_from_plan(measurement.plan)
+        extracted = item.plan.latency
         if extracted is None:
             return base_result
 
         vs_extracted = self._compute_diff_result(predicted, extracted)
-        extracted_vs_measured = self._compute_diff_result(extracted, measured.mean)
+        extracted_vs_measured = self._compute_diff_result(extracted, measured)
 
         return ExtractedQueryResult(
             **vars(base_result),
@@ -86,10 +77,6 @@ class BaseModelEvaluator(ABC):
             vs_extracted=vs_extracted,
             extracted_vs_measured=extracted_vs_measured,
         )
-
-    def _extract_latency_from_plan(self, plan: dict) -> float | None:
-        """If possible, override in subclasses."""
-        pass
 
     @staticmethod
     def _get_extracted_results(results: list[QueryResult]) -> list[ExtractedQueryResult]:
@@ -107,14 +94,6 @@ class BaseModelEvaluator(ABC):
     def print_summary(self, results: list[QueryResult]):
         """Print summary statistics and comparison table."""
         pass
-
-    def _compute_statistical_result(self, values: list[float]) -> StatisticalResult:
-        return StatisticalResult(
-            min=np.min(values).item(),
-            max=np.max(values).item(),
-            mean=np.mean(values).item(),
-            std=np.std(values).item(),
-        )
 
     def _compute_diff_result(self, a: float, b: float) -> DiffResult:
         absolute = abs(a - b)

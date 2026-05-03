@@ -1,6 +1,7 @@
 import os
 from core.config import Config
-from core.query import DatabaseId, SchemaId
+from core.drivers import DriverType
+from core.query import DatabaseId, SchemaId, create_database_id, parse_schema_id
 from latency_estimation.dataset import DatasetId
 from latency_estimation.model import CheckpointId, ModelId
 from latency_estimation.trainer import EPOCH_DIRECTORY
@@ -22,6 +23,10 @@ class PathProvider:
         # Json lines!
         filename = f'measured-{num_queries}-{num_runs}.jsonl'
         return self._cache_dir(database_id, filename)
+
+    def measured_by_suffix(self, driver_type: DriverType, suffix: str) -> str:
+        """Suffix pattern: {schema_id}/measured-{num_queries}-{num_runs}.jsonl"""
+        return self._cache_dir(driver_type.value, suffix)
 
     def dataset(self, dataset_id: str) -> str:
         return self._cache_dir(dataset_id, 'dataset.pkl')

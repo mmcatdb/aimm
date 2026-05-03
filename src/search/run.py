@@ -32,7 +32,7 @@ def main():
     estimator = LatencyEstimator()
     for driver_type in DriverType:
         estimator.register_driver_type(*load_driver_type(ctx, driver_type))
-        estimator.register_database(*load_database(ctx, driver_type, SCHEMA_ID))
+        estimator.register_database_extractor(*load_database(ctx, driver_type, SCHEMA_ID))
 
     queires = dict[QueryInstanceId, QueryInstance]()
     query_kinds = dict[DriverType, QttMapping]()

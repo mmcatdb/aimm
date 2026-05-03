@@ -1,6 +1,5 @@
 import sys
 import argparse
-from typing_extensions import deprecated
 from core.config import Config
 from core.driver_provider import DriverProvider
 from core.drivers import PostgresDriver, Neo4jDriver, DriverType
@@ -11,7 +10,7 @@ from core.utils import auto_close, exit_with_exception, trim_to_block, exit_with
 from core.explainers.common import OperatorNameFormatter
 from core.query import QueryRegistry, QueryInstance, parse_database_id, DatabaseId
 from latency_estimation.dataset import try_load_available_operators
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 SCALE = 1.0  # FIXME
 
@@ -63,7 +62,6 @@ def run(config: Config, args: argparse.Namespace, database_id: DatabaseId):
 
     _try_print_missing_operators(operators)
 
-@deprecated('unify')
 def _get_queries_from_input(args: argparse.Namespace, registry: QueryRegistry, scale: float) -> list[QueryInstance]:
     """Returns a list of (query_id, query_content) tuples. The query_id is empty if the query was provided directly rather than by ID."""
     if args.all_queries:
@@ -78,7 +76,6 @@ def _get_queries_from_input(args: argparse.Namespace, registry: QueryRegistry, s
 
     return [QueryInstance.create_custom(registry.driver, registry.schema, scale, 0, content_or_name)]
 
-@deprecated('unify')
 def _get_query_content_or_name_from_input(args: argparse.Namespace) -> str:
     if args.query:
         query = args.query

@@ -8,7 +8,7 @@ from core.config import Config
 from core.utils import exit_with_error, exit_with_exception
 from latency_estimation.model import ModelId
 from latency_estimation.trainer import BaseTrainer, TrainerMetrics, load_metrics
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Loads metrics from json files and plots them into a graph.')

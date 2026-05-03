@@ -3,13 +3,8 @@ import numpy as np
 from tabulate import tabulate
 import matplotlib.pyplot as plt
 from ..model_evaluator import BaseModelEvaluator, ExtractedQueryResult, QueryResult
-from .plan_extractor import PlanExtractor
 
 class ModelEvaluator(BaseModelEvaluator):
-
-    @override
-    def _extract_latency_from_plan(self, plan: dict) -> float | None:
-        return plan[PlanExtractor.EXECUTION_TIME_KEY]
 
     @override
     def print_summary(self, results: list[QueryResult]):
@@ -27,7 +22,7 @@ class ModelEvaluator(BaseModelEvaluator):
                 r.label[:30],
                 f'{r.predicted:.1f}',
                 f'{r.extracted:.1f}',
-                f'{r.measured.mean:.1f}',
+                f'{r.measured:.1f}',
                 f'{r.vs_extracted.ratio:.2f}',
                 f'{r.vs_extracted.r_value:.2f}',
                 f'{r.vs_measured.ratio:.2f}',
@@ -102,7 +97,7 @@ class ModelEvaluator(BaseModelEvaluator):
         ax2.legend()
         ax2.grid(True, alpha=0.3, axis='y')
 
-        actual = [r.measured.mean for r in results]
+        actual = [r.measured for r in results]
 
         # Plot 3: Estimated vs Actual
         ax3 = axes[1, 0]
