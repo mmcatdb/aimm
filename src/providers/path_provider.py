@@ -1,7 +1,7 @@
 import os
 from core.config import Config
 from core.drivers import DriverType
-from core.query import DatabaseId, SchemaId, create_database_id, parse_schema_id
+from core.query import DatabaseId, SchemaId, parse_schema_id
 from latency_estimation.dataset import DatasetId
 from latency_estimation.model import CheckpointId, ModelId
 from latency_estimation.trainer import EPOCH_DIRECTORY

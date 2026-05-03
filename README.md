@@ -76,7 +76,7 @@ python -m scripts.create_dataset postgres/hot_dataset --feature-extractor-datase
 
 - Choose a fitting model name (e.g., `fitting_model`). Then, run the following:
 ```bash
-python -m scripts.train postgres/fitting_model --train-dataset cool_dataset --val-dataset hot_dataset
+python -m scripts.train postgres/fitting_model cool_dataset hot_dataset
 ```
 - To eavaluate a model, choose a checkpoint (e.g., `best`, `epoch/10`, ...) and a test dataset (e.g., `hot_dataset`) and run:
 ```bash

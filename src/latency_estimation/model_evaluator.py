@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from matplotlib.figure import Figure
+from typing import TYPE_CHECKING
 import numpy as np
 from core.utils import EPSILON, print_warning
 from latency_estimation.dataset import ArrayDataset, DatasetItem
 from latency_estimation.model import BaseModel
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 @dataclass
 class DiffResult:
@@ -122,6 +125,6 @@ class BaseModelEvaluator(ABC):
         ratio = np.mean([value < threshold for value in values]).item() * 100
         return f'{ratio:.1f} %'
 
-    def plot_results(self, results: list[QueryResult], save_path: str) -> Figure:
+    def plot_results(self, results: list[QueryResult], save_path: str) -> 'Figure | None':
         """Create visualization plots comparing estimations and actual times."""
         raise NotImplementedError('Plotting not implemented for this evaluator.')

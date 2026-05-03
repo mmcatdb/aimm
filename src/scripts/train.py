@@ -22,8 +22,9 @@ def main(rawArgs: list[str] | None = None):
 
 def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('model_id',        nargs=1,                 help='Id of the model. Pattern: {driver_type}/{model_name}.')
-    parser.add_argument('--train-dataset', type=str, required=True, help='Name of the training dataset.')
-    parser.add_argument('--val-dataset',   type=str, required=True, help='Name of the validation dataset.')
+    parser.add_argument('train_dataset', type=str, help='Name of the training dataset.')
+    parser.add_argument('val_dataset',   type=str, help='Name of the validation dataset.')
+
     parser.add_argument('--dry-run',       action='store_true',     help='Only print statistics about the dataset.')
 
     ModelConfig.add_arguments(parser)

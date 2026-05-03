@@ -83,6 +83,6 @@ class LatencyEstimator(Generic[TQuery]):
         plan_extractor, _, _ = self.__per_database[database_id]
 
         if not plan_extractor:
-            raise ValueError('A query can\'t be measured for in database without a registered plan extractor.')
+            raise ValueError('A query can\'t be measured for a database without a registered plan extractor.')
 
         return plan_extractor.measure_and_explain_query(query.content, num_runs=num_runs)

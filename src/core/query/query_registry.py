@@ -1,3 +1,4 @@
+from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import Enum
@@ -78,6 +79,9 @@ class QueryRegistry(Generic[TQuery]):
         """Generates `num_queries` query instances. At least one query will be generated for each template."""
         queries = list[QueryInstance[TQuery]]()
         templates = list(self._get_templates().values())
+        if num_queries <= 0:
+            num_queries = len(templates)
+
         for i in range(num_queries):
             template = templates[i % len(templates)]
             query = template.generate(scale, i // len(templates))

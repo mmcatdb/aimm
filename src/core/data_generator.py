@@ -4,7 +4,7 @@ import os
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from core.config import Config, GLOBAL_RNG_SEED
+from core.config import GLOBAL_RNG_SEED
 from core.query import SchemaName
 
 class DataGenerator(ABC):

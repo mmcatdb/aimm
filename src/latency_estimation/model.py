@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from core.nn_operator import NnOperator
 from core.query import DriverType
+from core.utils import EPSILON
 from .config import ModelConfig
 from .feature_extractor import PlanNode
 
@@ -146,7 +147,9 @@ class BaseModel(nn.Module, ABC):
     def evaluate(self, plan: PlanNode) -> float:
         """Evaluate the model on a single plan and return the estimated latency."""
         with torch.no_grad():
-            return self.forward(plan).item()
+            # Latency cannot be negative, but neural units use a linear output
+            # head and older checkpoints may produce small negative values.
+            return max(EPSILON, self.forward(plan).item())
 
     def get_tsne_data(self, plan: PlanNode) -> list['TsneItem']:
         # NICE_TO_HAVE
