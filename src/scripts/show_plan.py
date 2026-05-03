@@ -11,7 +11,7 @@ from core.utils import auto_close, exit_with_exception, trim_to_block, exit_with
 from core.explainers.common import OperatorNameFormatter
 from core.query import QueryRegistry, QueryInstance, parse_database_id, DatabaseId
 from latency_estimation.dataset import try_load_available_operators
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 SCALE = 1.0  # FIXME
 

@@ -107,7 +107,7 @@ class PostgresLoader(BaseLoader):
 
         # Identify primary key columns from the primary_key flag
         escaped_columns = [_escape(col.name) for col in columns if col.primary_key]
-        assert escaped_columns is not None, f'No primary key defined for entity "{name}". Please specify a primary key(s) in the schema.'
+        assert escaped_columns, f'No primary key defined for entity "{name}". Please specify a primary key(s) in the schema.'
 
         pk_def = f', PRIMARY KEY ({", ".join(escaped_columns)})'
 

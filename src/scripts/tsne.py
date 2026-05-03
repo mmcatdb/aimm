@@ -4,7 +4,7 @@ from core.utils import exit_with_exception, print_warning
 from latency_estimation.dataset import prune_dataset, load_dataset
 from latency_estimation.model_provider import ModelProvider
 from latency_estimation.model import TsneItem
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 SCALE = 1.0 # FIXME
 DATASET_ID = 'FIXME' # FIXME

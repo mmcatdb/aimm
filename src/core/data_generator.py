@@ -29,6 +29,7 @@ class DataGenerator(ABC):
     def run(self, scale: float, import_directory: str):
         self._reset(scale)
         self._import_directory = import_directory
+        os.makedirs(self._import_directory, exist_ok=True)
 
         title = f'--- {self._schema} Data Generator ---'
         print(title)

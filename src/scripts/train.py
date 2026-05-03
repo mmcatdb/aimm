@@ -5,7 +5,7 @@ from latency_estimation.config import ModelConfig, TrainerConfig
 from latency_estimation.dataset import create_dataset_id, load_dataset, parse_dataset_id, prune_dataset
 from latency_estimation.model_provider import ModelProvider
 from latency_estimation.model import ModelId, OperatorCollector
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Train a new QPP-Net model on a dataset.')
@@ -22,8 +22,8 @@ def main(rawArgs: list[str] | None = None):
 
 def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('model_id',        nargs=1,                 help='Id of the model. Pattern: {driver_type}/{model_name}.')
-    parser.add_argument('..train-dataset', type=str, required=True, help='Name of the training dataset.')
-    parser.add_argument('..val-dataset',   type=str, required=True, help='Name of the validation dataset.')
+    parser.add_argument('train_dataset', type=str, help='Name of the training dataset.')
+    parser.add_argument('val_dataset',   type=str, help='Name of the validation dataset.')
 
     parser.add_argument('--dry-run',       action='store_true',     help='Only print statistics about the dataset.')
 
@@ -73,3 +73,6 @@ def run(config: Config, args: argparse.Namespace, model_id: ModelId):
     print(f'\nTraining for {trainer_config.num_epochs} epochs...')
 
     trainer.train_epochs(train_dataset, val_dataset, trainer_config.num_epochs, pp)
+
+if __name__ == '__main__':
+    main()

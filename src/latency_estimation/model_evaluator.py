@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from matplotlib.figure import Figure
+from typing import TYPE_CHECKING
 import numpy as np
 from core.query import QueryInstance
 from core.utils import EPSILON, print_warning
 from .latency_estimator import LatencyEstimator
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 @dataclass
 class StatisticalResult:
@@ -143,6 +146,6 @@ class BaseModelEvaluator(ABC):
         ratio = np.mean([value < threshold for value in values]).item() * 100
         return f'{ratio:.1f} %'
 
-    def plot_results(self, results: list[QueryResult], save_path: str) -> Figure:
+    def plot_results(self, results: list[QueryResult], save_path: str) -> 'Figure':
         """Create visualization plots comparing estimations and actual times."""
         raise NotImplementedError('Plotting not implemented for this evaluator.')

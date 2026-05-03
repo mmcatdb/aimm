@@ -220,6 +220,7 @@ def save_checkpoint(path: str, dict: dict, is_first_time: bool) -> None:
         print_warning(f'Overwriting existing checkpoint file at {path}.')
 
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(dict, path)
     except Exception as e:
         # There is no point in continuing if we can't save the checkpoint.
@@ -273,6 +274,7 @@ METRIC_FORMATTERS = {
 
 def try_save_metrics(path: str, metrics: TrainerMetrics) -> None:
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'w') as file:
             json.dump(metrics, file, indent=4)
     except Exception as e:

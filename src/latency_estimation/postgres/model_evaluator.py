@@ -1,7 +1,6 @@
 from typing_extensions import override
 import numpy as np
 from tabulate import tabulate
-import matplotlib.pyplot as plt
 from ..model_evaluator import BaseModelEvaluator, ExtractedQueryResult, QueryResult
 from .plan_extractor import PlanExtractor
 
@@ -73,6 +72,8 @@ class ModelEvaluator(BaseModelEvaluator):
         return self.__plot_results_inner(self._get_extracted_results(results), save_path)
 
     def __plot_results_inner(self, results: list[ExtractedQueryResult], save_path: str):
+        import matplotlib.pyplot as plt
+
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         fig.suptitle('QPP-Net Model Evaluation', fontsize=16, fontweight='bold')
 

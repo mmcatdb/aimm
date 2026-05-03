@@ -6,7 +6,7 @@ from core.dynamic_provider import get_dynamic_class_instance
 from core.loaders.base_loader import BaseLoader, save_populate_times
 from core.query import create_schema_id, parse_database_id
 from core.utils import auto_close, exit_with_exception
-from ..providers.path_provider import PathProvider
+from providers.path_provider import PathProvider
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Load schema data into database.')

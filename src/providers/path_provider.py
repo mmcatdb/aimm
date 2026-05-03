@@ -1,6 +1,6 @@
 import os
 from core.config import Config
-from core.query import DatabaseId, SchemaId
+from core.query import DatabaseId, SchemaId, parse_schema_id
 from latency_estimation.dataset import DatasetId
 from latency_estimation.model import CheckpointId, ModelId
 from latency_estimation.trainer import EPOCH_DIRECTORY
@@ -10,7 +10,16 @@ class PathProvider:
         self.config = config
 
     def imports(self, schema_id: SchemaId) -> str:
-        return os.path.join(self.config.import_directory, schema_id)
+        scaled_path = os.path.join(self.config.import_directory, schema_id)
+        if os.path.isdir(scaled_path):
+            return scaled_path
+
+        schema, _ = parse_schema_id(schema_id)
+        unscaled_path = os.path.join(self.config.import_directory, schema)
+        if os.path.isdir(unscaled_path):
+            return unscaled_path
+
+        return scaled_path
 
     def populate_times(self, database_id: DatabaseId) -> str:
         return os.path.join(self.config.populate_directory, f'{database_id}.json')

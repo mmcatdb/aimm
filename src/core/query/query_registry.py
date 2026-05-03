@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import Enum
@@ -44,7 +46,7 @@ class QueryRegistry(Generic[TQuery]):
         self.driver = driver
         self.schema = schema
         self._rng = random.Random(GLOBAL_RNG_SEED)
-        self._scale: float
+        self._scale: float | None = None
         """The current scale factor for which the parameters are being generated. Set when generating queries."""
         self.__is_raw = False
         # It's better to map the templates by name instead of their full ID because part of the ID is already contained in the registry (driver and schema).
@@ -78,6 +80,9 @@ class QueryRegistry(Generic[TQuery]):
         """Generates `num_queries` query instances. At least one query will be generated for each template."""
         queries = list[QueryInstance[TQuery]]()
         templates = list(self._get_templates().values())
+        if num_queries <= 0:
+            num_queries = len(templates)
+
         for i in range(num_queries):
             template = templates[i % len(templates)]
             query = template.generate(scale, i // len(templates))

@@ -79,7 +79,7 @@ class Config:
         return {
             'import_directory': _string('IMPORT_DIRECTORY', 'data/inputs'),
             'cache_directory': _string('CACHE_DIRECTORY', 'data/cache'),
-            'checkpoints_directory': _string('CHECKPOINTS_DIRECTORY', 'data/checkpoints'),
+            'checkpoints_directory': _string('CHECKPOINTS_DIRECTORY', os.getenv('CHECKPOINT_DIRECTORY', 'data/checkpoints')),
             'results_directory': _string('RESULTS_DIRECTORY', 'data'),
             'populate_directory': _string('POPULATE_DIRECTORY', 'data/populate'),
             'measure_directory': _string('MEASURE_DIRECTORY', 'data/measure'),

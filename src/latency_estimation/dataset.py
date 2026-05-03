@@ -1,7 +1,7 @@
 import json
 import os
 import pickle
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset
 from core.drivers import DriverType
 from core.nn_operator import NnOperator
 from core.query import QueryInstanceId
@@ -42,7 +42,7 @@ class DatasetItem:
         self.plan = plan
         self.structure_hash = structure_hash
 
-class ArrayDataset(IterableDataset[DatasetItem]):
+class ArrayDataset(Dataset[DatasetItem]):
     """
     Dataset of query plans with execution times. Implementation of PyTorch Dataset (there is no other implementation of this?).
 
