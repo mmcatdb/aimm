@@ -33,6 +33,7 @@ class TpchDataGenerator(DataGenerator):
         if source == target:
             return
 
+        os.makedirs(target, exist_ok=True)
         for filename in os.listdir(source):
             if not filename.endswith('.tbl') or filename == 'knows.tbl':
                 continue
