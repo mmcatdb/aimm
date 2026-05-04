@@ -1,3 +1,5 @@
+import os
+import shutil
 from typing_extensions import override
 from core.data_generator import DataGenerator, clamp_int
 
@@ -7,18 +9,63 @@ def export():
 class TpchDataGenerator(DataGenerator):
     """
     Data generator for the Tpch schema.
-    - Only adds some tables, doesn't change the original ones.
+    - Copies missing base TPC-H tables from data/inputs/tpch into the target
+      scale directory.
+    - Adds custom generated tables.
 
     Kinds: knows.
     """
+
+    BASE_KINDS = [
+        'customer',
+        'lineitem',
+        'nation',
+        'orders',
+        'part',
+        'partsupp',
+        'region',
+        'supplier',
+    ]
 
     def __init__(self):
         super().__init__('tpch')
 
     @override
     def _generate_data(self):
+        self.__materialize_base_tables()
         customer_ids = self.__load_customer_ids()
         self.__generate_knows(customer_ids)
+
+    def __materialize_base_tables(self) -> None:
+        source_directory = self.__source_directory()
+        target_directory = self._import_directory
+
+        if os.path.abspath(source_directory) == os.path.abspath(target_directory):
+            return
+
+        missing_sources = list[str]()
+        os.makedirs(target_directory, exist_ok=True)
+
+        for kind in self.BASE_KINDS:
+            source_path = os.path.join(source_directory, kind + '.tbl')
+            target_path = os.path.join(target_directory, kind + '.tbl')
+
+            if os.path.exists(target_path):
+                continue
+
+            if not os.path.exists(source_path):
+                missing_sources.append(source_path)
+                continue
+
+            print('Copying', kind)
+            shutil.copyfile(source_path, target_path)
+
+        if missing_sources:
+            paths = '\n'.join(f'- {path}' for path in missing_sources)
+            raise FileNotFoundError(f'Missing base TPC-H input files:\n{paths}')
+
+    def __source_directory(self) -> str:
+        return os.path.join(os.path.dirname(self._import_directory), self._schema)
 
     def __load_customer_ids(self) -> list[int]:
         f, r = self._open_csv_input('customer', ['c_custkey', 'c_name', 'c_address', 'c_nationkey', 'c_phone', 'c_acctbal', 'c_mktsegment', 'c_comment'])

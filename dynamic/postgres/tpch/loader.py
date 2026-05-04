@@ -121,10 +121,10 @@ def get_postgres_tpch_kinds() -> dict[str, list[PostgresColumn]]:
     knows = [
         PostgresColumn('k_custkey1', 'INTEGER', primary_key=True, references='customer(c_custkey)'),
         PostgresColumn('k_custkey2', 'INTEGER', primary_key=True, references='customer(c_custkey)'),
-        PostgresColumn('k_startdate', 'DATE'),
+        PostgresColumn('k_startdate', 'DATE', primary_key=True),
         PostgresColumn('k_source', 'VARCHAR(20)'), # e.g. 'organic', 'social_media', etc.
-        PostgresColumn('k_comment', 'VARCHAR(255)'), # optional free-form comment about the relationship
-        PostgresColumn('k_strength', 'DECIMAL(3,2)'), # Strength of the relationship (0.00 to 1.00)
+        PostgresColumn('k_comment', 'TEXT'), # optional free-form comment about the relationship
+        PostgresColumn('k_strength', 'DOUBLE PRECISION'), # Strength of the relationship (0.00 to 1.00)
     ]
 
     return {
