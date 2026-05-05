@@ -106,7 +106,7 @@ python -m scripts.train_postgres_flat postgres/tpch-2-flat-xgb tpch-2-flat-train
 ```
 - Evaluate on a flat dataset:
 ```bash
-python -m scripts.test_postgres_flat postgres/tpch-2-flat-rf edbt-2-flat-
+python -m scripts.test_postgres_flat postgres/tpch-2-flat-rf edbt-2-flat
 ```
 - Predict latency for a new query using plain `EXPLAIN` only:
 ```bash
