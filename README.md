@@ -83,6 +83,36 @@ python -m scripts.train postgres/fitting_model cool_dataset hot_dataset
 python -m scripts.test postgres/fitting_model/best hot_dataset
 ```
 
+### PostgreSQL flat-feature tree models
+
+PostgreSQL also has an alternative latency-estimation path based on fixed-length
+features from `EXPLAIN` plans and scikit-learn style tree regressors. This path
+coexists with the QPP-Net workflow above and does not require `EXPLAIN ANALYZE`
+at inference time. Table and index names are excluded by default so models can be
+evaluated across schemas more easily; pass `--include-schema-identifiers` when
+you intentionally want schema-specific relation/index features.
+
+- Create flat train/validation datasets from measured PostgreSQL queries:
+```bash
+python -m scripts.create_postgres_flat_dataset postgres/tpch-2-flat-train tpch-2/measured-1000-2.jsonl --val-dataset postgres/tpch-2-flat-val --val-ratio 0.2 --split-seed 69
+```
+- Train a random forest:
+```bash
+python -m scripts.train_postgres_flat postgres/tpch-2-flat-rf tpch-2-flat-train tpch-2-flat-val --model-type random_forest
+```
+- Or train an XGBoost regressor:
+```bash
+python -m scripts.train_postgres_flat postgres/tpch-2-flat-xgb tpch-2-flat-train tpch-2-flat-val --model-type xgboost
+```
+- Evaluate on a flat dataset:
+```bash
+python -m scripts.test_postgres_flat postgres/tpch-2-flat-rf edbt-2-flat-
+```
+- Predict latency for a new query using plain `EXPLAIN` only:
+```bash
+python -m scripts.predict_postgres_flat postgres/tpch-2-flat-rf postgres/tpch-2 "SELECT * FROM orders LIMIT 10"
+```
+
 ## Experiments
 
 - Explain query plan:

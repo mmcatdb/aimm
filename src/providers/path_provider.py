@@ -31,8 +31,14 @@ class PathProvider:
     def dataset(self, dataset_id: str) -> str:
         return self._cache_dir(dataset_id, 'dataset.pkl')
 
+    def flat_dataset(self, dataset_id: str) -> str:
+        return self._cache_dir(dataset_id, 'flat_dataset.pkl')
+
     def feature_extractor(self, dataset_id: DatasetId) -> str:
         return self._cache_dir(dataset_id, 'feature_extractor.pkl')
+
+    def flat_feature_extractor(self, dataset_id: DatasetId) -> str:
+        return self._cache_dir(dataset_id, 'flat_feature_extractor.pkl')
 
     def operators(self, dataset_id: DatasetId) -> str:
         return self._cache_dir(dataset_id, 'operators.json')
@@ -42,10 +48,16 @@ class PathProvider:
     def model(self, checkpoint_id: CheckpointId) -> str:
         return os.path.join(self.config.checkpoints_directory, f'{checkpoint_id}{self.MODEL_SUFFIX}')
 
+    def flat_model(self, model_id: ModelId) -> str:
+        return os.path.join(self.config.checkpoints_directory, model_id, 'flat_model.pkl')
+
     METRICS_SUFFIX = '_metrics.json'
 
     def metrics(self, checkpoint_id: CheckpointId) -> str:
         return os.path.join(self.config.checkpoints_directory, f'{checkpoint_id}{self.METRICS_SUFFIX}')
+
+    def flat_metrics(self, model_id: ModelId) -> str:
+        return os.path.join(self.config.checkpoints_directory, model_id, 'flat_metrics.json')
 
     def epochs(self, model_id: ModelId) -> str:
         return os.path.join(self.config.checkpoints_directory, model_id, EPOCH_DIRECTORY)

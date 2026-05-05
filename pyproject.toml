@@ -9,6 +9,7 @@ dependencies = [
     "neo4j",
     "pyyaml",
     "scikit-learn",
+    "xgboost",
     "torch",
     "tabulate",
     "matplotlib",
