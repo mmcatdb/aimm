@@ -101,7 +101,7 @@ class Trainer(BaseTrainer):
     def __compute_loss(self, batch: list[DatasetItem]) -> torch.Tensor:
         """
         Compute MSLE loss for a batch of query plans.
-        Loss = (log(estimated + 1) - log(actual + 1))²
+        Loss = (log(estimated + 1) - log(actual + 1))^2
         """
         predictions = []
         actuals = []

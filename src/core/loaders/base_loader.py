@@ -1,13 +1,21 @@
 from abc import ABC, abstractmethod
 import json
 import os
+from core.driver_provider import Driver
+from core.query import SchemaId
 from core.utils import JsonEncoder
 
 class BaseLoader(ABC):
     """Base class for data loaders."""
 
+    def _reset(self, driver, schema_id: SchemaId, import_directory: str):
+        self._driver = driver
+        self._schema_id = schema_id
+        self._import_directory = import_directory
+        self._times = dict[str, float]()
+
     @abstractmethod
-    def run(self, driver, import_directory: str, do_reset: bool) -> dict[str, float]:
+    def run(self, driver, schema_id: SchemaId, import_directory: str, do_reset: bool) -> dict[str, float]:
         """Loads data from the specified directory into the database.
 
         If `do_reset` is True, the database will be cleared beforehand.

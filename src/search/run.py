@@ -82,7 +82,7 @@ def load_database(ctx: Context, driver_type: DriverType, schema_id: SchemaId):
 def generate_queries(driver_type: DriverType, schema_id: SchemaId) -> dict[QueryInstanceId, QueryInstance]:
     schema, scale = parse_schema_id(schema_id)
     registry = get_dynamic_class_instance(QueryRegistry, driver_type, schema)
-    instances = registry.generate_queries(scale, 0)
+    instances = registry.generate_queries(scale, 0, True)
     return {instance.id: instance for instance in instances}
 
 class QueryEngine:

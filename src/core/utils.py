@@ -1,9 +1,13 @@
+from collections.abc import Iterator
+from io import TextIOWrapper
 import sys
 import time
 from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
-import dataclasses, json
+import dataclasses
+import json
 from contextlib import contextmanager
 import textwrap
+from bson import json_util
 
 # Add small epsilon to avoid division by zero or log(0).
 EPSILON = 1e-8
@@ -14,6 +18,41 @@ class JsonEncoder(json.JSONEncoder):
             dataclass: Any = o
             return dataclasses.asdict(dataclass)
         return super().default(o)
+
+class JsonLinesWriter:
+    def __init__(self, file: TextIOWrapper, extended: bool):
+        """If `extended` is True, extended json (via `bson.json_util`) will be used."""
+        self._file = file
+        self._extended = extended
+
+    def writeobject(self, object: dict):
+        if self._extended:
+            self._file.write(json_util.dumps(object))
+        else:
+            json.dump(object, self._file, cls=JsonEncoder)
+        self._file.write('\n')
+
+class JsonLinesReader:
+    def __init__(self, file: TextIOWrapper, extended: bool):
+        """If `extended` is True, extended json (via `bson.json_util`) will be used."""
+        self._file = file
+        self._extended = extended
+
+    def readobject(self) -> dict:
+        line = self._file.readline()
+        if not line:
+            raise EOFError()
+        return self._parse(line)
+
+    def readobjects(self) -> list[dict]:
+        return [self._parse(line) for line in self._file]
+
+    def __iter__(self) -> Iterator[dict]:
+        for line in self._file:
+            yield self._parse(line)
+
+    def _parse(self, line: str) -> dict:
+        return json_util.loads(line) if self._extended else json.loads(line)
 
 class Closeable(Protocol):
     def close(self) -> None: ...
@@ -30,9 +69,9 @@ def auto_close(closeable: Closeable):
 
 def exit_with_exception(exception: Exception) -> NoReturn:
     """Use this in each top-level script in a catch block to print unexpected terminal exceptions."""
-    import traceback
-
     print(exception, file=sys.stderr)
+
+    import traceback
     traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 
@@ -52,14 +91,14 @@ def exit_with_error(message: str, exception: Exception | None = None) -> NoRetur
     else:
         sys.exit(1)
 
-def print_warning(message: str, exception: Exception | None = None) -> None:
+def print_warning(message: str, exception: Exception | None = None, suppress_stacktrace: bool = False) -> None:
     """Use this to print a warning message without exiting."""
     print(f'{WARNING_TEXT}{BOLD_TEXT}Warning:{RESET_BOLD_TEXT} {message}{RESET_TEXT}', file=sys.stderr)
     if exception is not None:
-        import traceback
-
         print(exception, file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        if not suppress_stacktrace:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
 
 def print_info(message: str) -> None:
     """Use this to print an informational message."""
@@ -188,7 +227,7 @@ class ProgressTracker:
     def limited(total: int, steps=100, show_percents=True) -> 'ProgressTracker':
         """Use this when you know the total number of items in advance. It will try to report after a fixed interval."""
         start_interval = max(1, total // steps)
-        show_percents_from_total = total if show_percents else None
+        show_percents_from_total = total if show_percents and total > 0 else None
         return ProgressTracker(start_interval, 1, show_percents_from_total)
 
     def start(self, prefix: str):
@@ -203,11 +242,11 @@ class ProgressTracker:
         sys.stdout.write(self.prefix)
         sys.stdout.flush()
 
-    def track(self, amount = 1):
+    def track(self, amount: int = 1, force_print: bool = False):
         self.count += amount
 
-        if self.count >= self.next_report:
-            self._print()
+        if self.count >= self.next_report or force_print:
+            self._print(force_print)
             self.interval = int(self.interval * self.growth)
             self.next_report += self.interval
 
@@ -229,3 +268,8 @@ class ProgressTracker:
         message = f'{self.prefix}{self.count:,} ({rate:,.0f}/s{percents})'
         sys.stdout.write('\r' + message)
         sys.stdout.flush()
+
+def plural(count: int, singular: str, plural: str | None = None) -> str:
+    """Automatic pluralization of a word based for en-US. If plural form is not provided, it will be formed by adding 's' to the singular form."""
+    word = singular if count == 1 else (plural or singular + 's')
+    return f'{count} {word}'

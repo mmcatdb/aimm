@@ -39,6 +39,8 @@ class PlanExtractor(BasePlanExtractor[str]):
 
     @override
     def measure_query(self, query: str) -> tuple[float, int]:
+        # FIXME Rollback if it's a write query.
+
         connection = self.driver.get_connection()
         connection.autocommit = True
 

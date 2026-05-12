@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from core.config import GLOBAL_RNG_SEED
 from core.query import SchemaName
+from core.utils import JsonLinesWriter
 
 class DataGenerator(ABC):
     """Base class for data generators."""
@@ -55,7 +56,7 @@ class DataGenerator(ABC):
         path = os.path.join(self._import_directory, kind + '.tbl')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         file = open(path, 'w', newline='', encoding='utf-8')
-        writer = csv.writer(file, delimiter = '|')
+        writer = csv.writer(file, lineterminator='\n', delimiter = '|')
         # The header is skipped because loaders do not expect it.
         # writer.writerow(header)
         return file, writer
@@ -64,10 +65,18 @@ class DataGenerator(ABC):
         print('Loading', kind)
         path = os.path.join(self._import_directory, kind + '.tbl')
         file = open(path, 'r', newline='', encoding='utf-8')
-        reader = csv.reader(file, delimiter = '|')
+        reader = csv.reader(file, lineterminator='\n', delimiter = '|')
         # The header is skipped because loaders do not expect it.
         # next(reader, None)
         return file, reader
+
+    def _open_json_output(self, kind: str):
+        print('Creating', kind)
+        path = os.path.join(self._import_directory, kind + '.jsonl')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        file = open(path, 'w', newline='', encoding='utf-8')
+        writer = JsonLinesWriter(file, extended=True)
+        return file, writer
 
     def _scaled(self, base: int, exp: float, min_v: int = 1) -> int:
         return max(min_v, int(round(base * (2 ** (self._scale * exp)))))

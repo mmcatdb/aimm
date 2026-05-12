@@ -1,12 +1,13 @@
 import json
 import re
 from typing import Any
+from typing_extensions import override
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
 from core.drivers import Neo4jDriver, cypher
 from core.utils import print_info, print_warning
-from core.explainers.common import OperatorNameFormatter
+from .common import OperatorNameFormatter, TreeRenderer
 # FIXME Don't import from latency_estimation. It should be the other way around.
 from latency_estimation.neo4j.feature_extractor import FeatureExtractor
 
@@ -56,9 +57,9 @@ def fetch_plan(driver: Neo4jDriver, query: str, do_profile: bool) -> dict:
 
     if is_dml:
         print_info(
-            'DML query detected — running inside a transaction that will be rolled back (no data will be modified).'
+            'DML query detected - running inside a transaction that will be rolled back (no data will be modified).'
             if do_profile else
-            'DML query detected — using EXPLAIN without execution (estimated plan only, query will NOT be executed).'
+            'DML query detected - using EXPLAIN without execution (estimated plan only, query will NOT be executed).'
         )
 
     with driver.session() as session:
@@ -126,11 +127,7 @@ def normalize_profile(profile: dict) -> dict[str, Any]:
     }
 
     # Handle children recursively
-    children = profile.get('children', [])
-    if children:
-        result['children'] = [normalize_profile(child) for child in children]
-    else:
-        result['children'] = []
+    result['children'] = [normalize_profile(child) for child in FeatureExtractor.get_node_children(profile)]
 
     return result
 
@@ -156,11 +153,7 @@ def normalize_plan(plan: dict) -> dict[str, Any]:
     }
 
     # Handle children recursively
-    children = plan.get('children', [])
-    if children:
-        result['children'] = [normalize_plan(child) for child in children]
-    else:
-        result['children'] = []
+    result['children'] = [normalize_plan(child) for child in FeatureExtractor.get_node_children(plan)]
 
     return result
 
@@ -182,27 +175,23 @@ def plan_tree_to_string(operators: OperatorNameFormatter | None, plan: dict) -> 
     if header_parts:
         header = '  ' + ' | '.join(header_parts) + '\n\n'
 
-    lines = _render_tree(operators, plan)
+    lines = Neo4jTreeRenderer(operators).render_tree(plan)
     return header + '\n'.join(lines)
 
-def _render_tree(operators: OperatorNameFormatter | None, node: dict, prefix: str = '', is_last: bool = True) -> list[str]:
-    """Recursively render the plan tree into a list of lines."""
-    connector = "└─ " if is_last else "├─ "
-    lines = [prefix + connector + _node_label(operators, node)]
+class Neo4jTreeRenderer(TreeRenderer):
 
-    child_prefix = prefix + ("   " if is_last else "│  ")
+    @override
+    def _node_label(self, node: dict) -> str:
+        return _node_label(self._operators, node)
 
-    children: list[dict] = node.get('children', [])
-    for i, child in enumerate(children):
-        last = i == len(children) - 1
-        lines.extend(_render_tree(operators, child, child_prefix, last))
-
-    return lines
+    @override
+    def _get_node_children(self, node: dict) -> list[dict]:
+        return FeatureExtractor.get_node_children(node)
 
 def _node_label(operators: OperatorNameFormatter | None, node: dict) -> str:
     """Generate a descriptive label for a plan node."""
     op_type = FeatureExtractor.get_node_type(node)
-    num_children = len(node.get('children', []))
+    num_children = len(FeatureExtractor.get_node_children(node))
     icon = NODE_ICONS.get(op_type)
     if icon is None:
         print_warning(f'Unknown operator type: {op_type}')

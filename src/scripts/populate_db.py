@@ -40,14 +40,14 @@ def run(config: Config, database_id: DatabaseId, do_reset: bool):
 
         # Postgres databases have to be created explicitly, so let's do that.
         rootDriver = dp.get_by_name(PostgresDriver, config.postgres.root_database)
-        database_name = dp.compute_database_name(schema, scale)
+        database_name = dp.compute_database_name(schema_id)
         with auto_close(rootDriver):
             create_database_if_not_exists(rootDriver, database_name)
 
     driver = dp.get(driver_type, schema, scale)
 
     with auto_close(driver):
-        times = loader.run(driver, pp.imports(schema_id), do_reset)
+        times = loader.run(driver, schema_id, pp.imports(schema_id), do_reset)
 
     save_populate_times(pp.populate_times(database_id), times)
 

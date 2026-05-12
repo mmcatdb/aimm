@@ -1,7 +1,7 @@
 import os
 from core.config import Config
 from core.drivers import DriverType
-from core.query import DatabaseId, SchemaId, parse_schema_id
+from core.query import DatabaseId, MeasurementConfig, SchemaId
 from latency_estimation.dataset import DatasetId
 from latency_estimation.model import CheckpointId, ModelId
 from latency_estimation.trainer import EPOCH_DIRECTORY
@@ -19,9 +19,10 @@ class PathProvider:
     def _cache_dir(self, *parts: str) -> str:
         return os.path.join(self.config.cache_directory, *parts)
 
-    def measured(self, database_id: DatabaseId, num_queries: int, num_runs: int) -> str:
+    def measured(self, database_id: DatabaseId, mc: MeasurementConfig) -> str:
+        nowrite_suffix = '' if mc.allow_write else '-nowrite'
         # Json lines!
-        filename = f'measured-{num_queries}-{num_runs}.jsonl'
+        filename = f'measured-{mc.num_queries}-{mc.num_runs}{nowrite_suffix}.jsonl'
         return self._cache_dir(database_id, filename)
 
     def measured_by_suffix(self, driver_type: DriverType, suffix: str) -> str:

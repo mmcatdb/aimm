@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import random
 from typing import Any, Generic, TypeVar, cast
+from typing_extensions import Self
 from core.config import GLOBAL_RNG_SEED
 from core.drivers import DriverType
 from .query_id import SchemaName, TemplateName
@@ -11,22 +12,26 @@ from .query_instance import TQuery, QueryInstance
 from .query_template import QueryGenerator, QueryTemplate
 
 class QueryMetadata():
-    def __init__(self, name: str, weight: float, title: str | None):
+    def __init__(self, name: str, title: str, weight: float, is_write: bool):
         self.name = name
-        self.weight = weight
         self.title = title
+        self.weight = weight
+        self.is_write = is_write
 
 QueryFunction = TypeVar('QueryFunction', bound=Callable[..., Any])
 
-def query(name: str, title: str | None = None) -> Callable[[QueryFunction], QueryFunction]:
+def query(name: str, title: str, weight: float = 1.0) -> Callable[[QueryFunction], QueryFunction]:
     """Decorator to mark a method as a query generator. The method should take a `QueryRegistry` as input and return a `TQuery`."""
-    return weighted_query(name, 1.0, title)
+    return _common_query(name, title, weight, is_write=False)
 
-def weighted_query(name: str, weight: float, title: str | None = None) -> Callable[[QueryFunction], QueryFunction]:
-    """Decorator to mark a method as a query generator. The method should take a `QueryRegistry` as input and return a `TQuery`."""
+def write_query(name: str, title: str, weight: float = 1.0) -> Callable[[QueryFunction], QueryFunction]:
+    """Decorator to mark a method as a write query generator. The method should take a `QueryRegistry` as input and return a `TQuery`. Write queries are meant to modify the database."""
+    return _common_query(name, title, weight, is_write=True)
+
+def _common_query(name: str, title: str, weight: float, is_write: bool) -> Callable[[QueryFunction], QueryFunction]:
     def decorator(function: QueryFunction) -> QueryFunction:
         setattr(function, '_is_query', True)
-        setattr(function, '_query_metadata', QueryMetadata(name, weight, title))
+        setattr(function, '_query_metadata', QueryMetadata(name, title, weight, is_write))
         return function
 
     return decorator
@@ -75,10 +80,13 @@ class QueryRegistry(Generic[TQuery]):
 
     #region Generation
 
-    def generate_queries(self, scale: float, num_queries: int) -> list[QueryInstance[TQuery]]:
+    def generate_queries(self, scale: float, num_queries: int, allow_write: bool) -> list[QueryInstance[TQuery]]:
         """Generates `num_queries` query instances. At least one query will be generated for each template."""
         queries = list[QueryInstance[TQuery]]()
         templates = list(self._get_templates().values())
+        if not allow_write:
+            templates = [t for t in templates if not t.is_write]
+
         if num_queries <= 0:
             num_queries = len(templates)
 
@@ -109,7 +117,7 @@ class QueryRegistry(Generic[TQuery]):
 
             function = cast('Callable[[QueryRegistry[TQuery]], TQuery]', attribute)
             metadata = cast(QueryMetadata, getattr(function, '_query_metadata'))
-            self._query(metadata.name, metadata.weight, metadata.title, function)
+            self.__register_query(metadata.name, metadata.title, metadata.weight, function, metadata.is_write)
 
         self._register_queries()
 
@@ -123,14 +131,29 @@ class QueryRegistry(Generic[TQuery]):
         """Override this to register queries programmatically using the `_query` method."""
         pass
 
-    def _query(self, name: str, weight: float, title: str | None, function: Callable[[QueryRegistry[TQuery]], TQuery]):
+    def _register_write_queries(self):
+        """Override this to register write queries programmatically using the `_query` method."""
+        pass
+
+    def _query(self, name: str, title: str, function: Callable[[Self], TQuery], weight: float = 1.0):
         """Register query programatically.
 
         Works the same way as the `@query` decorator but can be used dynamically.
         Has to be called within `_register_queries`.
         """
+        self.__register_query(name, title, weight, function, is_write=False)
+
+    def _write_query(self, name: str, title: str, function: Callable[[Self], TQuery], weight: float = 1.0):
+        """Register write query programatically. Write queries are meant to modify the database.
+
+        Works the same way as the `@query` decorator but can be used dynamically.
+        Has to be called within `_register_queries`.
+        """
+        self.__register_query(name, title, weight, function, is_write=True)
+
+    def __register_query(self, name: str, title: str, weight: float, function: Callable[[Self], TQuery], is_write: bool):
         if self.__collected_templates is None:
-            raise Exception('_query can only be called within _register_queries method.')
+            raise Exception('Query can only be registered within _register_queries method.')
 
         generator = self.__create_query_generator(function)
 
@@ -140,10 +163,11 @@ class QueryRegistry(Generic[TQuery]):
             name=name,
             weight=weight,
             title=title,
+            is_write=is_write,
             generator=generator,
         ))
 
-    def __create_query_generator(self, function: 'Callable[[QueryRegistry[TQuery]], TQuery]') -> QueryGenerator[TQuery]:
+    def __create_query_generator(self, function: Callable[[Self], TQuery]) -> QueryGenerator[TQuery]:
         def generator(scale: float | None, is_raw: bool) -> TQuery:
             if scale is not None:
                 self.__set_scale(scale)
@@ -216,8 +240,13 @@ class QueryRegistry(Generic[TQuery]):
     def _param_int(self, name: str, min_value: int, max_value: int):
         return self._param(name, lambda: self._rng_int(min_value, max_value))
 
-    def _param_float(self, name: str, min_value: float, max_value: float):
-        return self._param(name, lambda: self._rng.uniform(min_value, max_value))
+    def _param_float(self, name: str, min_value: float, max_value: float, round_digits: int | None = None):
+        if round_digits is not None:
+            generator = lambda: round(self._rng.uniform(min_value, max_value), round_digits)
+        else:
+            generator = lambda: self._rng.uniform(min_value, max_value)
+
+        return self._param(name, generator)
 
     def _rng_int_array(self, min_value: int, max_value: int, min_count: int, max_count: int, is_unique: bool = False) -> list[int]:
         """min_count is NOT quarranteed if is_unique is True (even if there are enough unique values)."""

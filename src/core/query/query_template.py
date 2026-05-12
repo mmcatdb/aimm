@@ -18,32 +18,27 @@ class QueryGenerator(Protocol[TQuery_cov]):
 class QueryTemplate(Generic[TQuery]):
     """A template that can be instantiated with parameters to produce a `QueryInstance`."""
 
-    def __init__(self, driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str | None, generator: QueryGenerator[TQuery]):
+    def __init__(self, driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str, is_write: bool, generator: QueryGenerator[TQuery]):
         self.driver = driver
         self.schema = schema
         self.name = name
         self.weight = weight
+        self.is_write = is_write
         """Used both for determining the frequency of query generation and the weight of the query during evaluation / MCTS."""
         self.id: TemplateId = create_template_id(driver, schema, name)
         self._title = title
         self._generator = generator
 
-    @staticmethod
-    def create_from_content(driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str | None, content: TQuery) -> QueryTemplate[TQuery]:
-        """Creates a QueryTemplate with a simple generator that always returns the same content."""
-        return QueryTemplate(driver, schema, name, weight, title, lambda scale, is_raw: content)
-
     def label(self) -> str:
         """Returns a human-readable label for this query, combining ID and title."""
-        title = self._title if self._title else '(no title)'
-        return f'{self.id} - {title}'
+        return f'{self.id} - {self._title}'
 
     def generate(self, scale: float, index: int) -> QueryInstance[TQuery]:
         """Generates a query by filling the template with parameters."""
         content = self._generator(scale, is_raw=False)
         database_id = create_database_id(self.driver, self.schema, scale)
         query_id = create_query_instance_id(database_id, self.name, index)
-        return QueryInstance(query_id, self.label(), content)
+        return QueryInstance(query_id, self.label(), self.is_write, content)
 
     def raw(self) -> TQuery:
         """Returns a representation of the query template with placeholders for parameters. Useful for debugging."""
@@ -55,8 +50,8 @@ class QueryTemplate(Generic[TQuery]):
 class CategorizedQueryTemplate(QueryTemplate[TQuery]):
     """A QueryTemplate with an associated category and weight for generation frequency."""
 
-    def __init__(self, driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str | None, generator: QueryGenerator[TQuery], category: str):
-        super().__init__(driver, schema, name, weight, title, generator)
+    def __init__(self, driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str, is_write: bool, generator: QueryGenerator[TQuery], category: str):
+        super().__init__(driver, schema, name, weight, title, is_write, generator)
         self.category = category
 
 class CategorizedQueryGenerator:

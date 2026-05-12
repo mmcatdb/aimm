@@ -8,7 +8,7 @@ def export():
 class MongoTpchLoader(MongoLoader):
 
     @override
-    def _get_kinds(self):
+    def _get_csv_kinds(self):
         b = MongoPostgresBuilder.create(get_postgres_tpch_kinds())
 
         customer = b.document('customer', {

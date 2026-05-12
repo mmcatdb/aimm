@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Generic
 from core.query import QueryInstance, QueryMeasurement, TQuery
-from core.utils import ProgressTracker, print_warning
+from core.utils import ProgressTracker, plural, print_warning
 
 class BasePlanExtractor(ABC, Generic[TQuery]):
 
@@ -40,20 +40,32 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
         """
 
         progress = ProgressTracker.limited(len(queries))
-        progress.start(f'Measuring {len(queries)} queries ({num_runs} runs each) ... ')
+        progress.start(f'Measuring {plural(len(queries), "query", "queries")} ({num_runs} runs each) ... ')
 
         measurements = list[QueryMeasurement[TQuery]]()
+        invalid_queries = list[QueryInstance[TQuery]]()
+
         for query in queries:
+            is_exception = False
             try:
                 measurement = self.measure_and_explain_query(query, num_runs)
                 measurements.append(measurement)
             except Exception as e:
-                print_warning(f'\nCould not execute query {query.label}.', e)
-
-            progress.track()
+                is_exception = True
+                print()
+                # Don't print the stack trace as we don't care about some random internals of the driver.
+                print_warning(f'Could not execute query {query.label}.', e, suppress_stacktrace=True)
+                print()
+                invalid_queries.append(query)
+            progress.track(force_print=is_exception)
 
         progress.finish()
-        print(f'\nCollected {len(measurements)} measurements successfully.')
+        print(f'\nCollected {plural(len(measurements), "measurement")} successfully.')
+
+        if invalid_queries:
+            queries_str = '\n'.join(f'  {q.label}' for q in invalid_queries)
+            print()
+            print_warning(f'Failed to execute {plural(len(invalid_queries), "query", "queries")}:\n{queries_str}')
 
         return measurements
 
@@ -70,4 +82,4 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
 
         plan = self.explain_query(query.content, do_profile=True)
 
-        return QueryMeasurement(query.id, query.label, query.content, plan, times)
+        return QueryMeasurement.from_instance(query, plan, times)

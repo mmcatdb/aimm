@@ -28,6 +28,8 @@ class PlanExtractor(BasePlanExtractor[str]):
 
     @override
     def measure_query(self, query: str) -> tuple[float, int]:
+        # FIXME Rollback if it's a write query.
+
         with self.driver.session() as session:
             start = time.perf_counter()
             result = session.run(cypher(query))

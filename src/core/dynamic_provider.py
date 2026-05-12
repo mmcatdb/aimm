@@ -1,5 +1,4 @@
 import importlib.util
-import os
 from pathlib import Path
 from enum import Enum
 import sys
@@ -18,10 +17,7 @@ class ScriptFile(Enum):
     def module_name(self):
         return self.value[:-3]
 
-SRC_DIRECTORY = Path(__file__).resolve().parents[1]
-PROJECT_ROOT_DIRECTORY = SRC_DIRECTORY.parent
-DYNAMIC_MODULE_NAME = 'dynamic'
-DYNAMIC_ROOT_DIRECTORY = Path(os.getenv('DYNAMIC_ROOT_DIRECTORY', PROJECT_ROOT_DIRECTORY / DYNAMIC_MODULE_NAME)).resolve()
+DYNAMIC_ROOT_DIRECTORY = 'dynamic'
 NO_DRIVER_DIRECTORY = 'common'
 FACTORY_FUNCTION_NAME = 'export'
 
@@ -63,8 +59,6 @@ def _get_script_for_class(clazz: type) -> ScriptFile:
         exit_with_error(f'Unsupported class type "{clazz}" in dynamic loader.')
 
 def _get_or_import_module(script: ScriptFile, driver: DriverType | None, schema: SchemaName) -> ModuleType:
-    _ensure_dynamic_parent_on_path()
-
     driver_directory = driver.value if driver else NO_DRIVER_DIRECTORY
     module_name = _get_module_name(script, driver_directory, schema)
 
@@ -76,15 +70,15 @@ def _get_or_import_module(script: ScriptFile, driver: DriverType | None, schema:
     return module
 
 def _get_module_name(script: ScriptFile, driver_directory: str, schema: SchemaName) -> str:
-    return f'{DYNAMIC_MODULE_NAME}.{driver_directory}.{schema}.{script.module_name()}'
+    return f'{DYNAMIC_ROOT_DIRECTORY}.{driver_directory}.{schema}.{script.module_name()}'
 
 def _find_script_path(script: ScriptFile, driver_directory: str, schema: SchemaName) -> Path:
     """Finds the dynamic script for the requested driver/schema pair."""
-    driver_path = DYNAMIC_ROOT_DIRECTORY / driver_directory
+    driver_path = Path(DYNAMIC_ROOT_DIRECTORY).resolve() / driver_directory
     if not driver_path.is_dir():
         exit_with_error(f'Database driver directory not found: {driver_path}')
 
-    file_path = driver_path / str(schema) / script.value
+    file_path = driver_path / schema / script.value
     if not file_path.is_file():
         available_schemas = _get_available_schemas(script, driver_path, schema)
         exit_with_error(f'Script is not available for schema "{schema}". Make sure the path "{file_path}" exists.\nAvailable schemas: {", ".join(available_schemas)}.')
@@ -95,7 +89,7 @@ def _get_available_schemas(script: ScriptFile, driver_path: Path, schema: Schema
     output = list[str]()
 
     for schema_directory in driver_path.iterdir():
-        if not schema_directory.is_dir() or schema_directory.name == str(schema):
+        if not schema_directory.is_dir() or schema_directory.name == schema:
             continue
 
         file_path = schema_directory / script.value
@@ -116,8 +110,3 @@ def _import_module_from_path(module_name: str, file_path: Path) -> ModuleType:
     spec.loader.exec_module(module)
 
     return module
-
-def _ensure_dynamic_parent_on_path() -> None:
-    parent_directory = str(DYNAMIC_ROOT_DIRECTORY.parent)
-    if parent_directory not in sys.path:
-        sys.path.insert(0, parent_directory)

@@ -26,8 +26,16 @@ class MongoQuery(ABC):
             query_dict = json_util.loads(query_str)
             if 'find' in query_dict:
                 return MongoFindQuery.from_dict(query_dict)
-            else:
+            elif 'aggregate' in query_dict:
                 return MongoAggregateQuery.from_dict(query_dict)
+            elif 'update' in query_dict:
+                return MongoUpdateQuery.from_dict(query_dict)
+            elif 'delete' in query_dict:
+                return MongoDeleteQuery.from_dict(query_dict)
+            elif 'insert' in query_dict:
+                return MongoInsertQuery.from_dict(query_dict)
+            else:
+                raise ValueError('Unsupported MongoDB query type.')
         except (json.JSONDecodeError, KeyError) as e:
             raise ValueError(f'Failed to parse Mongo query from string: {query_str}') from e
 
@@ -89,6 +97,74 @@ class MongoAggregateQuery(MongoQuery):
         return MongoAggregateQuery(
             collection=data['aggregate'],
             pipeline=data['pipeline']
+        )
+
+class MongoUpdateQuery(MongoQuery):
+    """Represents a MongoDB update command (updateOne or updateMany)."""
+    def __init__(self, collection: str, filter: dict, update: dict, multi: bool = False):
+        self.collection = collection
+        self.filter = filter
+        self.update = update
+        self.multi = multi
+
+    @override
+    def to_dict(self) -> dict:
+        return {
+            'update': self.collection,
+            'updates': [{'q': self.filter, 'u': self.update, 'multi': self.multi}],
+        }
+
+    @staticmethod
+    def from_dict(data: dict) -> MongoUpdateQuery:
+        update_info = data['updates'][0]
+        return MongoUpdateQuery(
+            collection=data['update'],
+            filter=update_info['q'],
+            update=update_info['u'],
+            multi=update_info.get('multi', False)
+        )
+
+class MongoDeleteQuery(MongoQuery):
+    """Represents a MongoDB delete command (deleteOne or deleteMany)."""
+    def __init__(self, collection: str, filter: dict, multi: bool = False):
+        self.collection = collection
+        self.filter = filter
+        self.multi = multi
+
+    @override
+    def to_dict(self) -> dict:
+        return {
+            'delete': self.collection,
+            'deletes': [{'q': self.filter, 'limit': 0 if self.multi else 1}],
+        }
+
+    @staticmethod
+    def from_dict(data: dict) -> MongoDeleteQuery:
+        delete_info = data['deletes'][0]
+        return MongoDeleteQuery(
+            collection=data['delete'],
+            filter=delete_info['q'],
+            multi=delete_info.get('limit') == 0
+        )
+
+class MongoInsertQuery(MongoQuery):
+    """Represents a MongoDB insert command (insertOne or insertMany)."""
+    def __init__(self, collection: str, documents: list[dict]):
+        self.collection = collection
+        self.documents = documents
+
+    @override
+    def to_dict(self) -> dict:
+        return {
+            'insert': self.collection,
+            'documents': self.documents,
+        }
+
+    @staticmethod
+    def from_dict(data: dict) -> MongoInsertQuery:
+        return MongoInsertQuery(
+            collection=data['insert'],
+            documents=data['documents']
         )
 
 def _filter_none(data: dict) -> dict:

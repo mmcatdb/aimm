@@ -3,6 +3,7 @@ import os
 import time
 from typing_extensions import override
 from core.drivers import PostgresDriver
+from core.query import SchemaId
 from core.utils import time_quantity
 from .base_loader import BaseLoader
 
@@ -23,14 +24,11 @@ class PostgresIndex:
 class PostgresLoader(BaseLoader):
     """A class to load data into a Postgres database."""
 
-    def _reset(self, driver: PostgresDriver, import_directory: str):
-        self._driver = driver
-        self._import_directory = import_directory
-        self.__times = dict[str, float]()
+    _driver: PostgresDriver
 
     @abstractmethod
     def _get_kinds(self) -> dict[str, list[PostgresColumn]]:
-        """Returns the schemas for each entity kind. The order matters."""
+        """Returns the schema for each entity kind. The order matters."""
         pass
 
     @abstractmethod
@@ -39,8 +37,8 @@ class PostgresLoader(BaseLoader):
         pass
 
     @override
-    def run(self, driver: PostgresDriver, import_directory: str, do_reset: bool):
-        self._reset(driver, import_directory)
+    def run(self, driver: PostgresDriver, schema_id: SchemaId, import_directory: str, do_reset: bool):
+        self._reset(driver, schema_id, import_directory)
 
         print(f'Loading data to Postgres at: {self._driver.config.host}:{self._driver.config.port}')
 
@@ -63,7 +61,7 @@ class PostgresLoader(BaseLoader):
             self.__populate_kind(entity, columns)
         print('Data loading completed.')
 
-        return self.__times
+        return self._times
 
     def __check_files(self):
         """Verify that all files exist in the import directory."""
@@ -155,7 +153,7 @@ class PostgresLoader(BaseLoader):
         with open(path, "r") as file:
             with self._driver.cursor() as cursor:
                 cursor.copy_expert(query, file)
-        self.__times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')
+        self._times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')
 
 def create_database_if_not_exists(driver: PostgresDriver, database_name: str) -> bool:
     """Returns True if the database was created, False if it already existed."""

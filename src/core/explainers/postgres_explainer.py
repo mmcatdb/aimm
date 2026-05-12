@@ -5,7 +5,7 @@ from rich.syntax import Syntax
 from rich.panel import Panel
 from core.drivers import PostgresDriver
 from core.utils import print_info, print_warning
-from core.explainers.common import OperatorNameFormatter
+from .common import OperatorNameFormatter, TreeRenderer
 # FIXME Don't import from latency_estimation. It should be the other way around.
 from latency_estimation.postgres.feature_extractor import FeatureExtractor
 
@@ -40,14 +40,14 @@ class PostgresExplainer:
 DML_RE = re.compile(r'^\s*(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|DROP|ALTER)\b', re.IGNORECASE)
 
 def fetch_plan(driver: PostgresDriver, query: str, do_profile: bool) -> dict:
-    """Return the root plan dict from PostgreSQL EXPLAIN … FORMAT JSON."""
+    """Return the root plan dict from PostgreSQL EXPLAIN ... FORMAT JSON."""
     is_dml = bool(DML_RE.match(query))
 
     if is_dml:
         print_info(
-            'DML query detected — running inside a transaction that will be rolled back (no data will be modified).'
+            'DML query detected - running inside a transaction that will be rolled back (no data will be modified).'
             if do_profile else
-            'DML query detected — using EXPLAIN without ANALYZE (estimated plan only, query will NOT be executed).'
+            'DML query detected - using EXPLAIN without ANALYZE (estimated plan only, query will NOT be executed).'
         )
 
     # For DML with ANALYZE we wrap in a transaction and roll back so nothing is actually committed to the database.
@@ -110,27 +110,21 @@ def plan_tree_to_string(operators: OperatorNameFormatter | None, plan: dict) -> 
     if header_parts:
         header = '  ' + ' | '.join(header_parts) + '\n\n'
 
-    lines = _render_tree(operators, root_node)
+    lines = PostgresTreeRenderer(operators).render_tree(root_node)
     return header + '\n'.join(lines)
 
-def _render_tree(operators: OperatorNameFormatter | None, node: dict, prefix: str = '', is_last: bool = True) -> list[str]:
-    """Recursively render the plan tree into a list of lines."""
-    connector = '└─ ' if is_last else '├─ '
-    lines = [prefix + connector + _node_label(operators, node)]
+class PostgresTreeRenderer(TreeRenderer):
 
-    child_prefix = prefix + ('   ' if is_last else '│  ')
+    def _node_label(self, node: dict) -> str:
+        return _node_label(self._operators, node)
 
-    children: list[dict] = node.get('Plans', [])
-    for i, child in enumerate(children):
-        last = i == len(children) - 1
-        lines.extend(_render_tree(operators, child, child_prefix, last))
-
-    return lines
+    def _get_node_children(self, node: dict) -> list[dict]:
+        return FeatureExtractor.get_node_children(node)
 
 def _node_label(operators: OperatorNameFormatter | None, node: dict) -> str:
     """Generate a descriptive label for a plan node."""
     op_type = FeatureExtractor.get_node_type(node)
-    num_children = len(node.get('Plans', []))
+    num_children = len(FeatureExtractor.get_node_children(node))
     icon = NODE_ICONS.get(op_type, op_type.upper()[:8])
     assert icon is not None, f'Unknown node type: {op_type}'
     if icon is None:
@@ -224,9 +218,9 @@ def _fmt_cost(node: dict) -> str:
         rows = node.get('Actual Rows', '?')
         loops = node.get('Actual Loops', 1)
         t = node['Actual Total Time']
-        parts.append(f'time={t:.3f}ms rows={rows}×{loops}')
+        parts.append(f'time={t:.3f}ms rows={rows}x{loops}')
     elif 'Plan Rows' in node:
-        parts.append(f'rows≈{node["Plan Rows"]}')
+        parts.append(f'rows={node["Plan Rows"]}')
     return '  ' + f'[{", ".join(parts)}]' if parts else ''
 
 #endregion

@@ -53,25 +53,35 @@ class EdbtDataGenerator(DataGenerator):
         # Reviews
         self.__generate_reviews(c.review, customer_products)
 
-    def generate_counts(self, scale: float) -> 'Counts':
+    @dataclass
+    class EdbtCounts:
+        person: int
+        seller: int
+        product: int
+        category: int
+        order: int
+        review: int
+        follows: int
+
+    def generate_counts(self, scale: float) -> EdbtCounts:
         self._reset(scale)
         return self.__generate_counts()
 
-    def __generate_counts(self) -> 'Counts':
+    def __generate_counts(self) -> EdbtCounts:
         """
         scale=1 aims for "several MB total" in csv.
         Bigger scale multiplies size.
         Not all kinds scale the same.
         """
 
-        return Counts(
-            person = self._scaled(5_000, 1.00),
-            seller = self._scaled(500, 0.90),
-            product = self._scaled(2_000, 0.95),
-            category = self._scaled(200, 0.60),
-            order = self._scaled(20_000, 1.05),
-            review = self._scaled(10_000, 1.05),
-            follows = self._scaled(20_000, 1.10),
+        return self.EdbtCounts(
+            person =   self._scaled( 5_000, 1.00),
+            seller =   self._scaled(   500, 0.90),
+            product =  self._scaled( 2_000, 0.95),
+            category = self._scaled(   200, 0.60),
+            order =    self._scaled(20_000, 1.05),
+            review =   self._scaled(10_000, 1.05),
+            follows =  self._scaled(20_000, 1.10),
         )
 
     def __generate_persons(self, n_persons: int) -> list[list]:
@@ -435,13 +445,3 @@ class EdbtDataGenerator(DataGenerator):
             review_id += 1
 
         f.close()
-
-@dataclass
-class Counts:
-    person: int
-    seller: int
-    product: int
-    category: int
-    order: int
-    review: int
-    follows: int

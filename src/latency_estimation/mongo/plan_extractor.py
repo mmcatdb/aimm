@@ -68,11 +68,14 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
 
     @override
     def measure_query(self, query: MongoQuery) -> tuple[float, int]:
+        # FIXME Rollback if it's a write query.
+
         if isinstance(query, MongoFindQuery):
             return self.__measure_find(query)
         elif isinstance(query, MongoAggregateQuery):
             return self.__measure_aggregate(query)
         else:
+            # FIXME Implement other types.
             raise ValueError(f'Unsupported query type for measurement: {type(query)}')
 
     def __measure_find(self, query: MongoFindQuery) -> tuple[float, int]:

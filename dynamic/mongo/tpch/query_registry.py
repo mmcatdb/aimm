@@ -742,7 +742,7 @@ class MongoTpchQueryRegistry(TpchQueryRegistry[MongoQuery]):
             limit=200,
         )
 
-    # $exists (structural predicate — never in training)
+    # $exists (structural predicate - never in training)
 
     @query('predicate-9', 'Customer $exists comment + high balance')
     def _customer_high_balance(self):

@@ -8,7 +8,7 @@ def export():
 class MongoEdbtLoader(MongoLoader):
 
     @override
-    def _get_kinds(self):
+    def _get_csv_kinds(self):
         b = MongoPostgresBuilder.create(get_postgres_edbt_kinds())
 
         person = b.document('person', {

@@ -65,7 +65,7 @@ def run(config: Config, args: argparse.Namespace, database_id: DatabaseId):
 def _get_queries_from_input(args: argparse.Namespace, registry: QueryRegistry, scale: float) -> list[QueryInstance]:
     """Returns a list of (query_id, query_content) tuples. The query_id is empty if the query was provided directly rather than by ID."""
     if args.all_queries:
-        return registry.generate_queries(scale, 0)
+        return registry.generate_queries(scale, 0, True)
 
     content_or_name = _get_query_content_or_name_from_input(args)
 
@@ -74,7 +74,9 @@ def _get_queries_from_input(args: argparse.Namespace, registry: QueryRegistry, s
         print(f'Found query template with name "{template.name}".')
         return [template.generate(scale, 0)]
 
-    return [QueryInstance.create_custom(registry.driver, registry.schema, scale, 0, content_or_name)]
+    # We only care about the query plan so it should be OK to mark it as a read query.
+    is_write = False
+    return [QueryInstance.create_custom(registry.driver, registry.schema, scale, 0, is_write, content_or_name)]
 
 def _get_query_content_or_name_from_input(args: argparse.Namespace) -> str:
     if args.query:

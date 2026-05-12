@@ -1,3 +1,4 @@
+import json
 from typing import Any
 import os
 from pathlib import Path
@@ -62,13 +63,13 @@ class Config:
 
     @staticmethod
     def __loadNeo4j() -> Neo4jConfig:
+        ports_string = _string_optional('NEO4J_PORTS')
+        ports: dict[str, int] = json.loads(ports_string) if ports_string else {}
+
         return Neo4jConfig(
             host = _string('NEO4J_HOST'),
-            ports = {
-                # TODO Use schema names
-                'tpch': _int('NEO4J_TPCH_PORT'),
-                'edbt': _int('NEO4J_EDBT_PORT'),
-            },
+            default_port = _int('NEO4J_DEFAULT_PORT'),
+            ports = ports,
             user = _string('NEO4J_USER'),
             password = _string('NEO4J_PASSWORD'),
         )

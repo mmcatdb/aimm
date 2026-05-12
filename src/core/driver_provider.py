@@ -2,7 +2,8 @@ import re
 from typing import TypeVar
 from core.config import Config
 from core.drivers import DriverType, MongoDriver, Neo4jDriver, PostgresDriver, PostgresConfig, MongoConfig, Neo4jConfig
-from core.query import SchemaName, create_schema_id
+from core.query import SchemaId, SchemaName, create_schema_id, parse_schema_id, print_warning
+from core.utils import print_info
 
 TDriver = TypeVar('TDriver', PostgresDriver, MongoDriver, Neo4jDriver)
 Driver = PostgresDriver | MongoDriver | Neo4jDriver
@@ -25,24 +26,29 @@ class DriverProvider:
     # So we just just have several get methods for different use cases.
 
     def get(self, type: DriverType, schema: SchemaName, scale: float) -> Driver:
-        database = self.compute_database_name(schema, scale)
-        return self.__get_or_create(type, database)
+        schema_id = create_schema_id(schema, scale)
+        database = self.compute_database_name(schema_id)
+        return self.__get_or_create(type, database, schema_id)
 
     def get_typed(self, clazz: type[TDriver], schema: SchemaName, scale: float) -> TDriver:
-        database = self.compute_database_name(schema, scale)
-        return self.get_by_name(clazz, database)
+        schema_id = create_schema_id(schema, scale)
+        database = self.compute_database_name(schema_id)
+        return self._get_or_create_typed(clazz, database, schema_id)
 
     def get_by_name(self, clazz: type[TDriver], database: str) -> TDriver:
         """Use this to get a driver for *any* database, not just one of the predefined datasets."""
+        return self._get_or_create_typed(clazz, database, None)
+
+    def _get_or_create_typed(self, clazz: type[TDriver], database: str, schema_id: SchemaId | None) -> TDriver:
         type = self.__get_driver_type(clazz)
-        driver = self.__get_or_create(type, database)
+        driver = self.__get_or_create(type, database, schema_id)
 
         if not isinstance(driver, clazz):
             raise TypeError(f'Database driver with type "{type.value}" is not of type {clazz.__name__}.')
 
         return driver
 
-    def __get_or_create(self, type: DriverType, database: str) -> Driver:
+    def __get_or_create(self, type: DriverType, database: str, schema_id: SchemaId | None) -> Driver:
         key = self.__compute_key(type, database)
         driver = self._drivers.get(key)
         if not driver:
@@ -50,7 +56,7 @@ class DriverProvider:
             if not config:
                 raise ValueError(f'Database config with type "{type.value}" not found in DriverProvider.')
 
-            driver = self.__create_driver(config, database)
+            driver = self.__create_driver(config, database, schema_id)
             self._drivers[key] = driver
 
         return driver
@@ -58,7 +64,7 @@ class DriverProvider:
     DB_NAME_REPLACE_REGEX = re.compile(r'[^\w]')
 
     @staticmethod
-    def compute_database_name(schema: SchemaName, scale: float) -> str:
+    def compute_database_name(schema_id: SchemaId) -> str:
         """Produces a valid database name for the specific driver type.
 
         For example, Postgres doesn't allow dots in database names, so we replace them with underscores.
@@ -68,7 +74,7 @@ class DriverProvider:
         # Neo4j has something similar but we just can't care less because we have to use the default database for it. But let's just use the similar rules, they seem to be docker-friendly as well.
         # The schema name should be valid already, but just in case ...
 
-        return DriverProvider.DB_NAME_REPLACE_REGEX.sub('_', create_schema_id(schema, scale))
+        return DriverProvider.DB_NAME_REPLACE_REGEX.sub('_', schema_id)
 
     @staticmethod
     def __compute_key(type: DriverType, database: str) -> str:
@@ -86,11 +92,22 @@ class DriverProvider:
             raise ValueError(f'Unsupported driver class: {clazz}')
 
     @staticmethod
-    def __create_driver(config: PostgresConfig | MongoConfig | Neo4jConfig, database: str) -> PostgresDriver | MongoDriver | Neo4jDriver:
+    def __create_driver(config: PostgresConfig | MongoConfig | Neo4jConfig, database: str, schema_id: SchemaId | None) -> PostgresDriver | MongoDriver | Neo4jDriver:
         if isinstance(config, PostgresConfig):
             return PostgresDriver(config, database)
         elif isinstance(config, MongoConfig):
             return MongoDriver(config, database)
         elif isinstance(config, Neo4jConfig):
-            return Neo4jDriver(config, database)
+            if schema_id is None:
+                print_warning(f'No schema provided for Neo4j driver. Using default port {config.default_port}.')
+                port = config.default_port
+            else:
+                port = config.ports.get(schema_id)
+                if port is None:
+                    schema_name, _ = parse_schema_id(schema_id)
+                    port = config.ports.get(schema_name)
+                if port is None:
+                    print_info(f'No specific port configured for schema "{schema_id}" in Neo4jConfig. Using default port {config.default_port}.')
+                    port = config.default_port
 
+            return Neo4jDriver(config, port)

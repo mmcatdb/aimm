@@ -2,20 +2,18 @@ from abc import abstractmethod
 import os
 import time
 from core.drivers import Neo4jDriver, cypher
+from core.query import SchemaId
 from core.utils import ProgressTracker, print_warning, time_quantity
 from .base_loader import BaseLoader
 
 class Neo4jLoader(BaseLoader):
     """A class to load data into a Neo4j database."""
 
-    def _reset(self, driver: Neo4jDriver, import_directory: str):
-        self._driver = driver
-        self._import_directory = import_directory
-        self.__times = dict[str, float]()
+    _driver: Neo4jDriver
 
     @abstractmethod
     def _get_kinds(self) -> list[str]:
-        """Returns the schemas for each entity kind. The order matters."""
+        """Returns the schema for each entity kind. The order matters."""
         pass
 
     @abstractmethod
@@ -28,8 +26,8 @@ class Neo4jLoader(BaseLoader):
         """Loads data from all .tbl files into Neo4j. The order of loading is important to ensure relationships can be formed."""
         pass
 
-    def run(self, driver: Neo4jDriver, import_directory: str, do_reset: bool):
-        self._reset(driver, import_directory)
+    def run(self, driver: Neo4jDriver, schema_id: SchemaId, import_directory: str, do_reset: bool):
+        self._reset(driver, schema_id, import_directory)
 
         print(f'Loading data to Neo4j at: {self._driver.config.host}:{self._driver.port}')
 
@@ -56,7 +54,7 @@ class Neo4jLoader(BaseLoader):
         self._load_data()
         print('Data loading completed.')
 
-        return self.__times
+        return self._times
 
     def __check_files(self):
         """Verify that all files exist in the import directory."""
@@ -125,10 +123,10 @@ class Neo4jLoader(BaseLoader):
 
         start = time.perf_counter()
         self._driver.execute(f'''
-            LOAD CSV FROM 'file:///{csv_name}' AS row FIELDTERMINATOR '|'
+            LOAD CSV FROM 'file:///{self._schema_id}/{csv_name}.tbl' AS row FIELDTERMINATOR '|'
             CALL (row) {{ {content} }} IN TRANSACTIONS OF 500 ROWS
         ''')
-        self.__times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')
+        self._times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')
 
     def _create_relationship(self, label: str, from_entity: str, from_key: str, to_entity: str, to_key: str):
         print(f'Creating {from_entity} -> {to_entity} relationships...')
@@ -140,7 +138,7 @@ class Neo4jLoader(BaseLoader):
                 CREATE (from)-[:{label}]->(to)
             }} IN TRANSACTIONS OF 1000 ROWS
         ''')
-        self.__times[label] = time_quantity.to_base(time.perf_counter() - start, 's')
+        self._times[label] = time_quantity.to_base(time.perf_counter() - start, 's')
 
     def __execute_to_scalar(self, query: str, parameters=None, key=None):
         """

@@ -7,6 +7,7 @@ import os
 import re
 import time
 from pymongo import ASCENDING
+from core.query import JsonLinesReader, SchemaId
 from core.utils import ProgressTracker, print_warning, time_quantity
 from core.drivers import MongoDriver
 from .base_loader import BaseLoader
@@ -15,23 +16,24 @@ from .postgres_loader import PostgresColumn
 class MongoLoader(BaseLoader):
     """A class to load data into a Mongo database."""
 
-    def _reset(self, driver: MongoDriver, import_directory: str):
-        self._driver = driver
-        self._import_directory = import_directory
-        self.__times = dict[str, float]()
+    _driver: MongoDriver
 
     @abstractmethod
-    def _get_kinds(self) -> list['MongoDocument']:
-        """Returns the schemas for each entity kind. The order matters."""
+    def _get_csv_kinds(self) -> list['MongoDocument']:
+        """Returns the schema for each csv entity kind. The order matters."""
         pass
+
+    def _get_json_kinds(self) -> list[str]:
+        """Returns collection names that should be loaded from json files."""
+        return []
 
     @abstractmethod
     def _get_constraints(self) -> list['MongoIndex']:
         """Returns the list of constraints to be created."""
         pass
 
-    def run(self, driver: MongoDriver, import_directory: str, do_reset: bool):
-        self._reset(driver, import_directory)
+    def run(self, driver: MongoDriver, schema_id: SchemaId, import_directory: str, do_reset: bool):
+        self._reset(driver, schema_id, import_directory)
 
         print(f'Loading data to Mongo at: {self._driver.config.host}:{self._driver.config.port}')
 
@@ -49,21 +51,25 @@ class MongoLoader(BaseLoader):
         print('Constraints created.')
 
         print('\nLoading data...')
-        for kind in self._get_kinds():
-            self.__populate_kind(kind)
+        for csv_kind in self._get_csv_kinds():
+            self.__populate_csv_kind(csv_kind)
+        for json_kind in self._get_json_kinds():
+            self.__populate_json_kind(json_kind)
         print('Data loading completed.')
 
-        return self.__times
+        return self._times
 
     def __check_files(self):
         """Verify that all files exist in the import directory."""
         kinds = set[str]()
-        for kind in self._get_kinds():
+        for kind in self._get_csv_kinds():
             kinds.update(self.__find_required_kinds(kind))
 
-        # Verify that all files exist in the import directory.
-        for kind in kinds:
-            path = os.path.join(self._import_directory, kind + '.tbl')
+        filenames = [f'{kind}.tbl' for kind in kinds] + [f'{kind}.jsonl' for kind in self._get_json_kinds()]
+
+        # Verify that all CSV files exist.
+        for filename in filenames:
+            path = os.path.join(self._import_directory, filename)
             if not os.path.isfile(path):
                 raise Exception(f'Required file not found in import directory: {path}')
 
@@ -102,22 +108,34 @@ class MongoLoader(BaseLoader):
         except Exception as e:
             print_warning(f'Could not create {message}', e)
 
-    def __populate_kind(self, document: 'MongoDocument'):
+    def __populate_csv_kind(self, document: 'MongoDocument'):
         collection_name = document.source.name
-
         print(f'Loading collection "{collection_name}"... ')
+
         # We do this one collection at a time. This is somewhat wasteful, since we have to load some files multiple times, but it allows us to fit the whole process in memory.
         cache = self.__build_cache(document)
-
         rows = cache[document.source.name].get_all()
         documents = [self.__create_mongo_document(cache, document, row) for row in rows]
 
+        self.__insert_documents(collection_name, documents)
+
+    def __populate_json_kind(self, collection_name: str):
+        print(f'Loading collection "{collection_name}"...')
+
+        path = os.path.join(self._import_directory, collection_name + '.jsonl')
+        with open(path, 'r') as file:
+            reader = JsonLinesReader(file, extended=True)
+            documents = list(reader)
+
+        self.__insert_documents(collection_name, documents)
+
+    def __insert_documents(self, collection_name: str, documents: list[dict]):
         collection = self._driver.collection(collection_name)
         start = time.perf_counter()
-        print(f'Inserting {len(documents)} documents into collection "{collection_name}"... ')
-        collection.insert_many(documents)
-        self.__times[collection_name] = time_quantity.to_base(time.perf_counter() - start, 's')
-        print(f'Inserted {len(documents)} documents into collection "{collection_name}" in {self.__times[collection_name]} ms.')
+        print(f'Inserting {len(documents)} documents into collection "{collection_name}"... ', end='', flush=True)
+        collection.insert_many(documents, ordered=False)
+        self._times[collection_name] = time_quantity.to_base(time.perf_counter() - start, 's')
+        print(time_quantity.pretty_print(self._times[collection_name]))
 
     def __build_cache(self, document: 'MongoDocument'):
         cache = dict[str, CachedCsvTable]()
@@ -240,8 +258,7 @@ class CachedCsvTable:
         path = os.path.join(import_directory, self.__csv_table.name + '.tbl')
 
         with open(path, 'r') as file:
-            reader = csv.reader(file, delimiter='|')
-
+            reader = csv.reader(file, lineterminator='\n', delimiter='|')
             for row in reader:
                 data = []
                 for index, type in enumerate(self.__csv_table.properties):
@@ -324,15 +341,22 @@ def csv_value_to_mongo(value: str, type: CsvType):
 postgres_to_csv_types: dict[str, CsvType] = {
     # Add more types as needed, but these should be enough for our current datasets.
     'BOOLEAN': CsvType.BOOL,
-    'CHAR': CsvType.STRING,
-    'DATE': CsvType.DATE,
-    'DECIMAL': CsvType.FLOAT,
+
     'INTEGER': CsvType.INT,
-    'JSONB': CsvType.JSON,
     'SMALLINT': CsvType.INT,
+    'BIGINT': CsvType.INT,
+
+    'DECIMAL': CsvType.FLOAT,
+    'FLOAT8': CsvType.FLOAT,
+
     'TEXT': CsvType.STRING,
-    'TIMESTAMPTZ': CsvType.DATETIME,
+    'CHAR': CsvType.STRING,
     'VARCHAR': CsvType.STRING,
+
+    'DATE': CsvType.DATE,
+    'TIMESTAMPTZ': CsvType.DATETIME,
+
+    'JSONB': CsvType.JSON,
 }
 
 #endregion
@@ -388,7 +412,7 @@ class MongoPostgresBuilder:
             raise ValueError(f'CSV table not found for kind: {csv_kind}')
         return table
 
-type_pattern = re.compile(r'([A-Z]+)')
+type_pattern = re.compile(r'([a-zA-Z0-9_()]+)')
 
 def _postgres_to_csv_table(kind: str, columns: list[PostgresColumn]) -> CsvTable:
     properties = []
