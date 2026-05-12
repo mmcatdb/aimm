@@ -9,6 +9,7 @@ from core.utils import exit_with_error
 # from datetime import datetime
 # GLOBAL_RNG_SEED = datetime.now().timestamp()
 GLOBAL_RNG_SEED = 69
+PROJECT_ROOT_DIRECTORY = Path(__file__).resolve().parents[2]
 
 class Config:
     def __init__(self, postgres: PostgresConfig, mongo: MongoConfig, neo4j: Neo4jConfig, rest: dict[str, Any] = {}):
@@ -28,7 +29,7 @@ class Config:
         self.num_epochs: int | None = rest.get('num_epochs')
 
     # Load .env manually if needed (outside Docker).
-    DEFAULT_CONFIG_PATH = Path.joinpath(Path.cwd(), '.env')
+    DEFAULT_CONFIG_PATH = PROJECT_ROOT_DIRECTORY / '.env'
 
     @staticmethod
     def load(path: str | None = None) -> 'Config':
@@ -77,11 +78,11 @@ class Config:
     @staticmethod
     def __loadRest() -> dict[str, Any]:
         return {
-            'import_directory': _string('IMPORT_DIRECTORY', 'data/inputs'),
-            'cache_directory': _string('CACHE_DIRECTORY', 'data/cache'),
-            'checkpoints_directory': _string('CHECKPOINTS_DIRECTORY', 'data/checkpoints'),
-            'results_directory': _string('RESULTS_DIRECTORY', 'data/plots'),
-            'experiments_directory': _string('EXPERIMENTS_DIRECTORY', 'data/experiments'),
+            'import_directory': _path('IMPORT_DIRECTORY', 'data/inputs'),
+            'cache_directory': _path('CACHE_DIRECTORY', 'data/cache'),
+            'checkpoints_directory': _path('CHECKPOINTS_DIRECTORY', 'data/checkpoints'),
+            'results_directory': _path('RESULTS_DIRECTORY', 'data/plots'),
+            'experiments_directory': _path('EXPERIMENTS_DIRECTORY', 'data/experiments'),
             'download_data_url': _string_optional('DOWNLOAD_DATA_URL'),
             'device': _string('DEVICE'),
             'train_num_runs': _int_optional('TRAIN_NUM_RUNS'),
@@ -98,6 +99,12 @@ def _string(key: str, default: str | None = None) -> str:
 def _string_optional(key: str) -> str | None:
     value = os.getenv(key)
     return None if value == '' else value
+
+def _path(key: str, default: str) -> str:
+    path = Path(_string(key, default)).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT_DIRECTORY / path
+    return str(path)
 
 def _int(key: str, default: str | None = None) -> int:
     return int(_string(key, default))

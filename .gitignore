@@ -17,3 +17,6 @@ config.yaml
 *.pkl 
 *.pt
 *.tbl
+data/**/*.json
+data/**/*.jsonl
+data/**/*.png
