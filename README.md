@@ -35,18 +35,20 @@ python -m path.to.file
 
 Training latency estimation models requires data. For that, there is a whole pipeline of scripts. The general idea is to reuse the former steps as much as possible and repeat them only when necessary (their correspondent code or the previous steps have changed).
 
+Generally, the following scripts work for all databases (`postgres`, `mongo`, `neo4j`). This guide uses `postgres` as an example, but feel free to replace it with the database of your choice.
+
 ### Data generation and population
 
-Choose a *schema* (e.g., `art`) and a *scale* (a number >= 0). Use a small scale (e.g., 0) for testing. Then continue with larger scales for experiments. Generally, the data grows like 2^scale, so be careful.
+Choose a *schema* (e.g., `art` and `edbt`) and a *scale* (a number >= 0). Use a small scale (e.g., 0) for testing. Then continue with larger scales for experiments. Generally, the data grows like 2^scale, so be careful.
 - Generate data:
 ```bash
 python -m scripts.generate_data art-0
+python -m scripts.generate_data edbt-0
 ```
 - Populate databases:
 ```bash
 python -m scripts.populate_db postgres/art-0
-python -m scripts.populate_db mongo/art-0
-python -m scripts.populate_db neo4j/art-0
+python -m scripts.populate_db postgres/edbt-0
 ```
 - Some schemas (e.g., TPC-H) are not generated but downloaded (at least partially). In that case, create manually the corresponding directories in `data/inputs` (see the `art-0` example) and put the downloaded data there. Then, run the generate script (if needed to generate the missing data) and populate the databases as usual.
 - [Link](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) to some `tpch` data.
@@ -55,32 +57,32 @@ python -m scripts.populate_db neo4j/art-0
 
 - Run the following to generate queries, measure their latencies and extract their plans:
 ```bash
-python -m scripts.measure_queries postgres/art-0 --num-queries 1000 --num-runs 10 --no-write
+python -m scripts.measure_queries postgres/art-0 --num-queries 1000 --num-runs 10
+python -m scripts.measure_queries postgres/edbt-0 --num-queries 100 --num-runs 10
 ```
-- Repeat for other databases (`mongo`, `neo4j`).
 - Adjust the number of queries and runs as needed.
 
 ### Dataset preparation
 
-- Choose a cool dataset name (e.g., `cool_dataset`) and run the following:
+- Choose a cool dataset name (e.g., `train_dataset`) and run the following:
 ```bash
-python -m scripts.create_dataset postgres/cool_dataset art-0/measured-100-10.jsonl
+python -m scripts.create_dataset postgres/train_dataset art-0/measured-1000-10.jsonl
 ```
 - Multiple schema-scale combinations should be combined into a single dataset. So, if you also generated data for `art-2` with `200` queries and `20` runs, you should add `art-2/measured-200-20.jsonl` to the command above.
-- A validation dataset should reuse the feature extractor from the train dataset. Use:
+- A validation dataset (e.g., `val_dataset`) should reuse the feature extractor from the train dataset. Use:
 ```bash
-python -m scripts.create_dataset postgres/hot_dataset --feature-extractor-dataset cool_dataset art-1/measured-100-10.jsonl
+python -m scripts.create_dataset postgres/val_dataset --feature-extractor-dataset train_dataset edbt-1/measured-100-10.jsonl
 ```
 
 ### Training and evaluation
 
 - Choose a fitting model name (e.g., `fitting_model`). Then, run the following:
 ```bash
-python -m scripts.train postgres/fitting_model cool_dataset hot_dataset
+python -m scripts.train postgres/fitting_model train_dataset val_dataset
 ```
-- To eavaluate a model, choose a checkpoint (e.g., `best`, `epoch/10`, ...) and a test dataset (e.g., `hot_dataset`) and run:
+- To eavaluate a model, choose a checkpoint (e.g., `best`, `epoch/10`, ...) and a test dataset (e.g., `val_dataset`) and run:
 ```bash
-python -m scripts.test postgres/fitting_model/best hot_dataset
+python -m scripts.test postgres/fitting_model/best val_dataset
 ```
 
 ### PostgreSQL flat-feature tree models

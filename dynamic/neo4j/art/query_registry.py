@@ -422,7 +422,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._query('path-1', 'shortestPath between two nodes via LINKED', lambda s: f"""
             MATCH (a:Node {{node_id: {s._param_node_id()}}}),
-                  (b:Node {{node_id: {s._param_int('node_id_b', 1, s._counts.node)}}})
+                  (b:Node {{node_id: {s._param_node_id('node_id_b')}}})
             MATCH p = shortestPath((a)-[:LINKED*..6]->(b))
             RETURN length(p) AS hops, [x IN nodes(p) | x.node_id] AS path_ids
         """)
@@ -453,7 +453,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._query('path-6', 'allShortestPaths between two nodes', lambda s: f"""
             MATCH (a:Node {{node_id: {s._param_node_id()}}}),
-                  (b:Node {{node_id: {s._param_int('node_id_b', 1, s._counts.node)}}})
+                  (b:Node {{node_id: {s._param_node_id('node_id_b')}}})
             MATCH p = allShortestPaths((a)-[:LINKED*]->(b))
             RETURN length(p) AS hops, [x IN nodes(p) | x.node_id] AS path_ids
             LIMIT 10
@@ -461,7 +461,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._query('path-7', 'Common reachable nodes from two sources (intersection via LINKED)', lambda s: f"""
             MATCH (a:Node {{node_id: {s._param_node_id()}}})-[:LINKED*1..2]->(common:Node)
-            MATCH (b:Node {{node_id: {s._param_int('node_id_b', 1, s._counts.node)}}})-[:LINKED*1..2]->(common)
+            MATCH (b:Node {{node_id: {s._param_node_id('node_id_b')}}})-[:LINKED*1..2]->(common)
             RETURN DISTINCT common.node_id, common.tag
             LIMIT 50
         """)
@@ -1041,7 +1041,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._query('graph-3', 'Common out-neighbors of two nodes', lambda s: f"""
             MATCH (a:Node {{node_id: {s._param_node_id()}}})-[:LINKED]->(common:Node)
-            MATCH (b:Node {{node_id: {s._param_int('node_id_b', 1, s._counts.node)}}})-[:LINKED]->(common)
+            MATCH (b:Node {{node_id: {s._param_node_id('node_id_b')}}})-[:LINKED]->(common)
             RETURN DISTINCT common.node_id, common.tag
             LIMIT 50
         """)
@@ -2372,14 +2372,10 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         #region INSERT / CREATE
 
-        self._write_query('ins-0', 'CREATE single Log node + EVENT_OF rel via MAX subquery', lambda s: f"""
+        self._write_query('ins-0', 'CREATE single Log node + EVENT_OF rel (seed id)', lambda s: f"""
             MATCH (n:Node {{node_id: {s._param_node_id()}}})
-            CALL (n) {{
-                MATCH (existing:Log)
-                RETURN max(existing.log_id) AS max_id
-            }}
             CREATE (l:Log {{
-                log_id:      max_id + 1,
+                log_id:      {s._param_seed('log')},
                 node_id:     n.node_id,
                 kind:        {s._param_log_kind()},
                 val:         {s._param_val()},
@@ -2429,14 +2425,10 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
             RETURN count(new_l) AS created
         """)
 
-        self._write_query('ins-3', 'CREATE Measure node via index-filtered source', lambda s: f"""
+        self._write_query('ins-3', 'CREATE Measure node (seed id) via index-filtered source', lambda s: f"""
             MATCH (n:Node {{node_id: {s._param_node_id()}}})
-            CALL (n) {{
-                MATCH (existing:Measure)
-                RETURN max(existing.measure_id) AS max_id
-            }}
             CREATE (m:Measure {{
-                measure_id:  max_id + 1,
+                measure_id:  {s._param_seed('measure')},
                 node_id:     n.node_id,
                 dim:         {s._param_dim()},
                 val:         {s._param_val()},
@@ -2448,7 +2440,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._write_query('ins-4', 'CREATE LINKED relationship between two nodes (conditional)', lambda s: f"""
             MATCH (src:Node {{node_id: {s._param_node_id()}}}),
-                  (dst:Node {{node_id: {s._param_int('dst_id', 1, s._counts.node)}}})
+                  (dst:Node {{node_id: {s._param_node_id('dst_id')}}})
             WHERE src <> dst
               AND NOT EXISTS {{ MATCH (src)-[:LINKED]->(dst) }}
             CREATE (src)-[:LINKED {{
@@ -2486,7 +2478,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._write_query('ins-7', 'MERGE LINKED relationship (upsert edge)', lambda s: f"""
             MATCH (src:Node {{node_id: {s._param_node_id()}}}),
-                  (dst:Node {{node_id: {s._param_int('dst_id', 1, s._counts.node)}}})
+                  (dst:Node {{node_id: {s._param_node_id('dst_id')}}})
             WHERE src <> dst
             MERGE (src)-[r:LINKED {{kind: {s._param_link_kind()}}}]->(dst)
             ON CREATE SET r.weight = {s._param_float('weight', 0.1, 0.9, 4)}, r.created_at = datetime()
@@ -2494,14 +2486,10 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
             RETURN r.weight
         """)
 
-        self._write_query('ins-8', 'CREATE Log + RETURN (ModifyTable with RETURNING equivalent)', lambda s: f"""
+        self._write_query('ins-8', 'CREATE Log (seed id) + RETURN (ModifyTable with RETURNING equivalent)', lambda s: f"""
             MATCH (n:Node {{node_id: {s._param_node_id()}}})
-            CALL (n) {{
-                MATCH (existing:Log)
-                RETURN max(existing.log_id) AS max_id
-            }}
             CREATE (l:Log {{
-                log_id:      max_id + 1,
+                log_id:      {s._param_seed('log')},
                 node_id:     n.node_id,
                 kind:        {s._param_log_kind()},
                 val:         null,
@@ -2610,7 +2598,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._write_query('upd-9', 'SET multiple properties + RETURN (RETURNING equivalent)', lambda s: f"""
             MATCH (l:Log)
-            WHERE l.log_id = {s._param_int('log_id', 1, s._counts.log)}
+            WHERE l.log_id = {s._param_log_id()}
             SET l.val = coalesce(l.val, 0.0) + {s._param_float('val_increment', 0.1, 10.0, 4)},
                 l.kind = {s._param_log_kind()}
             RETURN l.log_id, l.val, l.kind, l.occurred_at
@@ -2620,7 +2608,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
         #region DELETE / DETACH DELETE
 
         self._write_query('del-0', 'DELETE single Log by log_id (PK index)', lambda s: f"""
-            MATCH (l:Log {{log_id: {s._param_int('log_id', 1, s._counts.log)}}})
+            MATCH (l:Log {{log_id: {s._param_log_id()}}})
             DELETE l
             RETURN count(*) AS deleted
         """)
@@ -2692,7 +2680,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
         """)
 
         self._write_query('del-9', 'Batched DELETE via CALL subquery with LIMIT', lambda s: f"""
-            CALL {{
+            CALL () {{
                 MATCH (l:Log)
                 WHERE l.val IS NULL
                   AND l.kind = {s._param_log_kind()}

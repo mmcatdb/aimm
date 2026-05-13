@@ -6,11 +6,6 @@ from core.utils import ProgressTracker, plural, print_warning
 class BasePlanExtractor(ABC, Generic[TQuery]):
 
     @abstractmethod
-    def measure_query(self, query: TQuery) -> tuple[float, int]:
-        """Measures single query execution. Returns tuple of (time, num_results)."""
-        pass
-
-    @abstractmethod
     def explain_query(self, query: TQuery, do_profile: bool) -> dict:
         """Gets query execution plan. Returns plan as dict.
 
@@ -20,6 +15,11 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
 
         # The execution statistics are important for training the model, but they are not used when extracting features. So, we don't need them when evaluating the model.
 
+        pass
+
+    @abstractmethod
+    def measure_query(self, query: TQuery, is_write: bool) -> tuple[float, int]:
+        """Measures single query execution. Returns tuple of (time, num_results)."""
         pass
 
     @abstractmethod
@@ -77,7 +77,7 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
         """
         times = list[float]()
         for _ in range(num_runs):
-            time, _ = self.measure_query(query.content)
+            time, _ = self.measure_query(query.content, query.is_write)
             times.append(time)
 
         plan = self.explain_query(query.content, do_profile=True)

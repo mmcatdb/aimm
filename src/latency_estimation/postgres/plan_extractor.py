@@ -38,22 +38,29 @@ class PlanExtractor(BasePlanExtractor[str]):
             self.driver.put_connection(connection)
 
     @override
-    def measure_query(self, query: str) -> tuple[float, int]:
-        # FIXME Rollback if it's a write query.
-
+    def measure_query(self, query: str, is_write: bool) -> tuple[float, int]:
         connection = self.driver.get_connection()
-        connection.autocommit = True
+        connection.autocommit = not is_write
 
         try:
             with connection.cursor() as cursor:
                 start = time.perf_counter()
                 cursor.execute(query)
-                # Fetch all results to ensure query completes
-                results = cursor.fetchall()
+                if is_write:
+                    num_results = cursor.rowcount
+                else:
+                    results = cursor.fetchall()
+                    num_results = len(results)
                 elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
-                num_results = len(results)
 
-                return elapsed, num_results
+            if is_write:
+                connection.rollback()
+
+            return elapsed, num_results
+        except:
+            if is_write:
+                connection.rollback()
+            raise
         finally:
             self.driver.put_connection(connection)
 

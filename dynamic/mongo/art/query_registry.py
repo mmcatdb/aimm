@@ -300,7 +300,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
     def _register_find_log_queries(self):
         self._query('log-pk-0', 'log by id', lambda s: MongoFindQuery('log',
-            filter={'log_id': s._param_int('log_id', 1, s._counts.log)}
+            filter={'log_id': s._param_log_id()}
         ))
 
         self._query('log-node-0', 'logs for a node', lambda s: MongoFindQuery('log',
@@ -379,7 +379,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
     def _register_find_measure_queries(self):
         self._query('measure-pk-0', 'measure by id', lambda s: MongoFindQuery('measure',
-            filter={'measure_id': s._param_int('measure_id', 1, s._counts.measure)}
+            filter={'measure_id': s._param_measure_id()}
         ))
 
         self._query('measure-node-0', 'measures for a node', lambda s: MongoFindQuery('measure',
@@ -1742,7 +1742,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         # --- PK / point lookup ---
         self._query('event-pk-0', 'event_log by id', lambda s: MongoFindQuery('event_log',
-            filter={'event_id': s._param_int('event_id', 1, s._counts.event_log)},
+            filter={'event_id': s._param_event_id()},
         ))
 
         # --- by node ---
@@ -2636,7 +2636,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         # deleteOne / deleteMany
         self._write_query('delete-0', 'delete a single log entry', lambda s: MongoDeleteQuery('log',
-            filter={'log_id': s._param_int('log_id', 1, s._counts.log)},
+            filter={'log_id': s._param_log_id()},
             multi=False
         ))
 
@@ -2658,7 +2658,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
         # insertOne / insertMany
         self._write_query('insert-0', 'insert a new log entry', lambda s: MongoInsertQuery('log',
             documents=[{
-                'log_id': s._param_int('seed', 1, 1000000),
+                'log_id': s._param_seed('log'),
                 'node_id': s._param_node_id(),
                 'kind': s._param_log_kind(),
                 'val': s._param_val(),
@@ -2668,17 +2668,17 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         self._write_query('insert-1', 'insert a batch of log entries', lambda s: MongoInsertQuery('log',
             documents=[{
-                'log_id': s._param_int(f'seed_{i}', 1, 1000000),
+                'log_id': s._param_seed('log'),
                 'node_id': s._param_node_id(),
                 'kind': s._param_log_kind(),
                 'val': s._param_val(),
                 'occurred_at': '$$NOW',
-            } for i in range(3)]
+            } for i in range(20)]
         ))
 
         self._write_query('insert-2', 'insert a new grp', lambda s: MongoInsertQuery('grp',
             documents=[{
-                'grp_id': s._param_int('seed', 1, 1000000),
+                'grp_id': s._param_seed('grp'),
                 'name': 'generated_group',
                 'parent_id': s._param_grp_id(),
                 'depth': 1,
@@ -2740,7 +2740,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
             filter={'node_id': s._param_node_id()},
             update={
                 '$push': {'connections.outgoing': {
-                    'dst_id': s._param_int('dst_id', 1, s._counts.node),
+                    'dst_id': s._param_node_id('dst_id'),
                     'kind': s._param_link_kind(),
                     'weight': s._param_weight(),
                     'attrs': {'label': 'linked', 'strong': False, 'tags': []},
@@ -2770,7 +2770,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
             filter={'grp_id': s._param_grp_id()},
             update={
                 '$push': {'children': {
-                    'grp_id': s._param_int('child_id', 1, s._counts.grp),
+                    'grp_id': s._param_grp_id('child_id'),
                     'name': 'new_subgroup',
                     'priority': s._param_priority(),
                     'node_count': 0,
@@ -2851,7 +2851,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         self._write_query('insert-3', 'insert a new event_log entry with polymorphic status-change payload', lambda s: MongoInsertQuery('event_log',
             documents=[{
-                'event_id': s._param_int('seed', 1, 1_000_000),
+                'event_id': s._param_seed('event_log'),
                 'node_id': s._param_node_id(),
                 'event_type': 'status_changed',
                 'occurred_at': '$$NOW',
@@ -2875,7 +2875,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         self._write_query('insert-4', 'insert a bucket document with three embedded hourly readings', lambda s: MongoInsertQuery('bucket',
             documents=[{
-                'bucket_id': s._param_int('seed', 1, 1_000_000),
+                'bucket_id': s._param_seed('bucket'),
                 'node_id': s._param_node_id(),
                 'dim': s._param_dim(),
                 'hour_start': s._param_date_minus_days(1, 30),
@@ -2892,11 +2892,11 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         self._write_query('insert-5', 'insert a grp_tree node with full ancestor list and zeroed stats', lambda s: MongoInsertQuery('grp_tree',
             documents=[{
-                'grp_id': s._param_int('seed', 1, 1_000_000),
+                'grp_id': s._param_seed('grp'),
                 'name': 'new_subgroup',
                 'depth': 2,
                 'priority': s._param_priority(),
-                'path': f'/{s._param_grp_id()}/{s._param_int("child_id", 1, 1_000_000)}',
+                'path': f'/{s._param_grp_id()}/{s._param_grp_id("child_id")}',
                 'parent_id': s._param_grp_id(),
                 'ancestors': [
                     {'grp_id': 1, 'name': 'root', 'depth': 0, 'priority': 1.0},
@@ -2909,7 +2909,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         self._write_query('insert-6', 'insert a full node_rich document with all nested sub-documents', lambda s: MongoInsertQuery('node_rich',
             documents=[{
-                'node_id': s._param_node_id(),
+                'node_id': s._param_seed('node'),
                 'identity': {
                     'tag': f'T{s._param_int("tag_num", 1, 9999):04d}',
                     'status': s._param_status(),

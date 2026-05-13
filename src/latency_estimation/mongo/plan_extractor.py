@@ -1,6 +1,7 @@
 import time
+from pymongo.collection import Collection
 from typing_extensions import override
-from core.query import MongoQuery, MongoFindQuery, MongoAggregateQuery
+from core.query import MongoQuery, MongoFindQuery, MongoAggregateQuery, MongoUpdateQuery, MongoDeleteQuery, MongoInsertQuery
 from core.drivers import MongoDriver
 from core.utils import time_quantity
 from latency_estimation.plan_extractor import BasePlanExtractor
@@ -15,16 +16,20 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
 
     @override
     def explain_query(self, query: MongoQuery, do_profile: bool) -> dict:
-        if isinstance(query, MongoFindQuery):
-            return self.__explain_find(query, do_profile)
+        if isinstance(query, (
+            MongoFindQuery,
+            MongoUpdateQuery,
+            MongoDeleteQuery,
+        )):
+            cmd = query.to_dict()
+            return self.__explain_common(cmd, do_profile, query.collection)
         elif isinstance(query, MongoAggregateQuery):
             return self.__explain_aggregate(query, do_profile)
+        elif isinstance(query, MongoInsertQuery):
+            # MongoDB does not support explain for insert commands.
+            return {'stage': 'INSERT', self.GLOBAL_STATS_COLLECTION_KEY: query.collection}
         else:
             raise ValueError(f'Unsupported query type for explain: {type(query)}')
-
-    def __explain_find(self, query: MongoFindQuery, do_profile: bool) -> dict:
-        cmd = query.to_dict()
-        return self.__explain_common(cmd, do_profile, query.collection)
 
     def __explain_aggregate(self, query: MongoAggregateQuery, do_profile: bool) -> dict:
         cmd = query.to_dict()
@@ -67,16 +72,22 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
         return explain_output
 
     @override
-    def measure_query(self, query: MongoQuery) -> tuple[float, int]:
-        # FIXME Rollback if it's a write query.
-
-        if isinstance(query, MongoFindQuery):
-            return self.__measure_find(query)
-        elif isinstance(query, MongoAggregateQuery):
-            return self.__measure_aggregate(query)
+    def measure_query(self, query: MongoQuery, is_write: bool) -> tuple[float, int]:
+        # Event though we don't need the `is_write` argument, we use it to force consistent usage of this flag for mongo.
+        if is_write:
+            if isinstance(query, MongoUpdateQuery):
+                return self.__measure_update(query)
+            elif isinstance(query, MongoDeleteQuery):
+                return self.__measure_delete(query)
+            elif isinstance(query, MongoInsertQuery):
+                return self.__measure_insert(query)
         else:
-            # FIXME Implement other types.
-            raise ValueError(f'Unsupported query type for measurement: {type(query)}')
+            if isinstance(query, MongoFindQuery):
+                return self.__measure_find(query)
+            elif isinstance(query, MongoAggregateQuery):
+                return self.__measure_aggregate(query)
+
+        raise ValueError(f'Unsupported query type for measurement: {type(query)}')
 
     def __measure_find(self, query: MongoFindQuery) -> tuple[float, int]:
         collection = self.db[query.collection]
@@ -107,6 +118,56 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
         elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
 
         return elapsed, len(results)
+
+    def __measure_update(self, query: MongoUpdateQuery) -> tuple[float, int]:
+        collection = self.db[query.collection]
+
+        original_docs = self.__get_original_docs(collection, query.filter, query.multi)
+        try:
+            start = time.perf_counter()
+            result = collection.update_many(query.filter, query.update) if query.multi else collection.update_one(query.filter, query.update)
+            elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
+
+            return elapsed, result.modified_count
+        finally:
+            for doc in original_docs:
+                collection.replace_one({'_id': doc['_id']}, doc)
+
+    def __measure_delete(self, query: MongoDeleteQuery) -> tuple[float, int]:
+        collection = self.db[query.collection]
+
+        original_docs = self.__get_original_docs(collection, query.filter, query.multi)
+        try:
+            start = time.perf_counter()
+            result = collection.delete_many(query.filter) if query.multi else collection.delete_one(query.filter)
+            elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
+
+            return elapsed, result.deleted_count
+        finally:
+            if original_docs:
+                collection.insert_many(original_docs)
+
+    def __get_original_docs(self, collection: Collection, filter: dict, is_multi: bool) -> list[dict]:
+        if is_multi:
+            return list(collection.find(filter))
+
+        doc = collection.find_one(filter)
+        return [doc] if doc is not None else []
+
+    def __measure_insert(self, query: MongoInsertQuery) -> tuple[float, int]:
+        collection = self.db[query.collection]
+
+        inserted_ids = []
+        try:
+            start = time.perf_counter()
+            result = collection.insert_many(query.documents)
+            inserted_ids = result.inserted_ids
+            elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
+
+            return elapsed, len(inserted_ids)
+        finally:
+            if inserted_ids:
+                collection.delete_many({'_id': {'$in': inserted_ids}})
 
     @override
     def collect_global_stats(self) -> dict:

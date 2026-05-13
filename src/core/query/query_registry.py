@@ -62,6 +62,8 @@ class QueryRegistry(Generic[TQuery]):
         if not hasattr(self, '_scale') or self._scale != scale:
             self._scale = scale
             self._setup_cache()
+            self._used_ints = dict[str, set[int]]()
+            """Used for generating unique integers. Maps a key (e.g., parameter name) to the set of already used integers for that key."""
 
     def _setup_cache(self):
         """Called whenever the scale changes. Can be used to reset any cached data that depends on the scale."""
@@ -236,6 +238,19 @@ class QueryRegistry(Generic[TQuery]):
 
     def _rng_int(self, min_value: int, max_value: int):
         return self._rng.randint(min_value, max_value)
+
+    def _rng_unique_int(self, key: str, min_value: int, max_value: int):
+        """Generates a random integer in the given range that is guaranteed to not be generated again for the same key (until the cache is cleared)."""
+        used = self._used_ints.setdefault(key, set())
+        if len(used) >= (max_value - min_value + 1):
+            # There might be false positives but it's better than an infinite loop.
+            raise Exception(f'No more unique integers available for key {key} in the range [{min_value}, {max_value}].')
+
+        candidate = self._rng_int(min_value, max_value)
+        while candidate in used:
+            candidate = self._rng_int(min_value, max_value)
+        used.add(candidate)
+        return candidate
 
     def _param_int(self, name: str, min_value: int, max_value: int):
         return self._param(name, lambda: self._rng_int(min_value, max_value))

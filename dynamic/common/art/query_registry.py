@@ -22,20 +22,39 @@ class ArtQueryRegistry(QueryRegistry[TQuery]):
 
     # ID parameters
 
-    def _param_node_id(self):
-        return self._param_int('node_id', 1, self._counts.node)
+    def _param_node_id(self, name: str = 'node_id'):
+        return self._param_int(name, 1, self._counts.node)
+
+    def _param_seed(self, key: str):
+        """Generates a fresh ID that is guaranteed to not exist in the database.
+        The range is (count, 2*count] for the given ArtCounts key, and the same ID is never generated twice.
+        """
+        def generate():
+            count = getattr(self._counts, key)
+            return self._rng_unique_int(key, count + 1, count * 2)
+
+        return self._param(f'seed_{key}', generate)
 
     def _param_node_ids(self, min_c: int, max_c: int | None = None):
         return self._param_int_array('node_ids', self._counts.node, min_c, max_c)
 
-    def _param_grp_id(self):
-        return self._param_int('grp_id', 1, self._counts.grp)
+    def _param_grp_id(self, name: str = 'grp_id'):
+        return self._param_int(name, 1, self._counts.grp)
 
     def _param_grp_ids(self, min_c: int, max_c: int | None = None):
         return self._param_int_array('grp_ids', self._counts.grp, min_c, max_c)
 
     def _param_doc_id(self):
         return self._param_int('doc_id', 1, self._counts.doc)
+
+    def _param_log_id(self):
+        return self._param_int('log_id', 1, self._counts.log)
+
+    def _param_measure_id(self):
+        return self._param_int('measure_id', 1, self._counts.measure)
+
+    def _param_event_id(self):
+        return self._param_int('event_id', 1, self._counts.event_log)
 
     # Value / attribute parameters
 

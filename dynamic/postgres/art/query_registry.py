@@ -1120,9 +1120,9 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
         self._query('graph-6', 'Common out-neighbors of two nodes via INTERSECT', lambda s: f"""
             SELECT nbr.node_id, nbr.tag, nbr.grp_id
             FROM (
-                SELECT dst_id AS node_id FROM link WHERE src_id = {s._param_int('node_id_1', 1, s._counts.node)}
+                SELECT dst_id AS node_id FROM link WHERE src_id = {s._param_node_id('node_id_1')}
                 INTERSECT
-                SELECT dst_id AS node_id FROM link WHERE src_id = {s._param_int('node_id_2', 1, s._counts.node)}
+                SELECT dst_id AS node_id FROM link WHERE src_id = {s._param_node_id('node_id_2')}
             ) common
             JOIN node nbr ON nbr.node_id = common.node_id
             ORDER BY nbr.node_id
@@ -2155,8 +2155,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._query('memoize-1', 'Memoize: tiny VALUES outer NL-joined to node inner via PK', lambda s: f"""
             SELECT v.id, n.tag, n.grp_id, n.val_int
-            FROM (VALUES {', '.join(f'({s._param_int(f"v{i}", 1, s._counts.node)})'
-                          for i in range(10))}) AS v(id)
+            FROM (VALUES {', '.join(f'({s._param_node_id(f"v{i}")})' for i in range(10))}) AS v(id)
             JOIN node n ON n.node_id = v.id
             ORDER BY v.id
         """)
@@ -2766,7 +2765,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
         self._write_query('insert-0', 'INSERT single log row via VALUES - PK from MAX subquery (InitPlan)', lambda s: f"""
             INSERT INTO log (log_id, node_id, kind, val, occurred_at)
             VALUES (
-                (SELECT COALESCE(MAX(log_id), 0) + 1 FROM log),
+                {s._param_seed('log')},
                 {s._param_node_id()},
                 {s._param_log_kind()},
                 {s._param_float('val', 0.0, 100.0)},
@@ -2895,8 +2894,8 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
         self._write_query('insert-9', 'INSERT into link with composite PK ON CONFLICT DO NOTHING', lambda s: f"""
             INSERT INTO link (src_id, dst_id, kind, weight, created_at)
             VALUES (
-                {s._param_int('src_id', 1, s._counts.node)},
-                {s._param_int('dst_id', 1, s._counts.node)},
+                {s._param_node_id('src_id')},
+                {s._param_node_id('dst_id')},
                 {s._param_link_kind()},
                 {s._param_weight()},
                 NOW()
@@ -3026,7 +3025,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
         # delete by PK -> Index Scan (PK)
         self._write_query('delete-0', 'DELETE single log row by PK: ModifyTable -> Index Scan (PK)', lambda s: f"""
             DELETE FROM log
-            WHERE log_id = {s._param_int('log_id', 1, s._counts.log)}
+            WHERE log_id = {s._param_log_id()}
         """)
 
         # delete by indexed date range on large table
@@ -3104,7 +3103,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
         # delete ... RETURNING
         self._write_query('delete-8', 'DELETE single measure row ... RETURNING: ModifyTable with Returning projection', lambda s: f"""
             DELETE FROM measure
-            WHERE measure_id = {s._param_int('measure_id', 1, s._counts.measure)}
+            WHERE measure_id = {s._param_measure_id()}
             RETURNING measure_id, node_id, dim, val, recorded_at
         """)
 

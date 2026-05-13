@@ -1,4 +1,5 @@
 import time
+from neo4j import Session, Transaction
 from typing_extensions import override
 from core.drivers import Neo4jDriver, cypher
 from core.utils import time_quantity
@@ -27,17 +28,24 @@ class PlanExtractor(BasePlanExtractor[str]):
             return plan
 
     @override
-    def measure_query(self, query: str) -> tuple[float, int]:
-        # FIXME Rollback if it's a write query.
-
+    def measure_query(self, query: str, is_write: bool) -> tuple[float, int]:
         with self.driver.session() as session:
-            start = time.perf_counter()
-            result = session.run(cypher(query))
-            num_results = len(result.data())
-            result.consume() # Ensure full execution
-            elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
+            if is_write:
+                tx = session.begin_transaction()
+                try:
+                    return self.__measure_inner(tx, query)
+                finally:
+                    tx.rollback()
+            else:
+                return self.__measure_inner(session, query)
 
-            return elapsed, num_results
+    def __measure_inner(self, session_or_tx: Session | Transaction, query: str) -> tuple[float, int]:
+        start = time.perf_counter()
+        result = session_or_tx.run(cypher(query))
+        num_results = len(result.data())
+        result.consume()  # Ensure full execution
+        elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
+        return elapsed, num_results
 
     @override
     def collect_global_stats(self) -> dict:
