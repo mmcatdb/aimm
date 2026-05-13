@@ -3,6 +3,7 @@ import os
 import pickle
 from torch.utils.data import Dataset
 from core.drivers import DriverType
+from core.files import open_input, open_output
 from core.nn_operator import NnOperator
 from core.query import QueryInstanceId
 from core.utils import print_warning
@@ -93,9 +94,7 @@ def load_dataset(path: str) -> ArrayDataset:
 
 def try_save_available_operators(path: str, operators: list[NnOperator]):
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-
-        with open(path, 'w') as file:
+        with open_output(path) as file:
             sorted_operators = sorted(operators, key=lambda x: x.key())
             operators_data = [unit.to_dict() for unit in sorted_operators]
             json.dump(operators_data, file, indent=4)
@@ -104,7 +103,7 @@ def try_save_available_operators(path: str, operators: list[NnOperator]):
 
 def try_load_available_operators(path: str) -> list[NnOperator] | None:
     try:
-        with open(path, 'r') as file:
+        with open_input(path) as file:
             operators_data = json.load(file)
             return [NnOperator.from_dict(data) for data in operators_data]
     except FileNotFoundError:

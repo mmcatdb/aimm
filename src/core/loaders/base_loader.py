@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 import json
 import os
-from core.driver_provider import Driver
 from core.query import SchemaId
-from core.utils import JsonEncoder
+from core.files import JsonEncoder, open_input, open_output
 
 class BaseLoader(ABC):
     """Base class for data loaders."""
@@ -24,13 +23,12 @@ class BaseLoader(ABC):
     # The driver is Any because it's overriden by the specific loaders. There is surely a better way to do this (probably with generics), but it works for now.
 
 def save_populate_times(path: str, times: dict[str, float]):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w') as file:
+    with open_output(path) as file:
         json.dump(times, file, cls=JsonEncoder, indent=4)
 
 def load_populate_times(path: str) -> dict[str, float]:
     if not os.path.isfile(path):
         raise Exception(f'Populate times file not found: {path}')
 
-    with open(path, 'r') as file:
+    with open_input(path) as file:
         return json.load(file)

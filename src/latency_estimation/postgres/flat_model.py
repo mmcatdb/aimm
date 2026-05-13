@@ -6,7 +6,8 @@ import pickle
 from dataclasses import asdict, dataclass
 
 import numpy as np
-from core.utils import EPSILON, JsonEncoder
+from core.utils import EPSILON
+from core.files import JsonEncoder, open_output
 from latency_estimation.postgres.flat_dataset import FlatArrayDataset
 from latency_estimation.postgres.flat_feature_extractor import FlatFeatureExtractor
 
@@ -149,6 +150,5 @@ def load_flat_model(path: str) -> PostgresFlatLatencyModel:
 
 
 def save_metrics(path: str, metrics: dict[str, FlatModelMetrics]) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w') as file:
+    with open_output(path) as file:
         json.dump({key: asdict(value) for key, value in metrics.items()}, file, indent=4, cls=JsonEncoder)

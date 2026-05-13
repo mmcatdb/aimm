@@ -289,9 +289,7 @@ class ArtDataGenerator(DataGenerator):
 
         f.close()
 
-    # ------------------------------------------------------------------ #
-    # JSON collections (written to {kind}.json; used only by MongoDB)
-    # ------------------------------------------------------------------ #
+    #region JSON collections
 
     def __generate_node_rich(self) -> None:
         """
@@ -612,3 +610,5 @@ class ArtDataGenerator(DataGenerator):
             })
 
         f.close()
+
+    #endregion

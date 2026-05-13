@@ -3,6 +3,7 @@ import os
 import time
 from typing_extensions import override
 from core.drivers import PostgresDriver
+from core.files import open_input
 from core.query import SchemaId
 from core.utils import time_quantity
 from .base_loader import BaseLoader
@@ -150,7 +151,7 @@ class PostgresLoader(BaseLoader):
         path = os.path.join(self._import_directory, entity + '.tbl')
 
         start = time.perf_counter()
-        with open(path, "r") as file:
+        with open_input(path) as file:
             with self._driver.cursor() as cursor:
                 cursor.copy_expert(query, file)
         self._times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')

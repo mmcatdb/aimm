@@ -4,6 +4,7 @@ import random
 import time
 from core.config import Config
 from core.drivers import DriverType
+from core.files import open_input, open_output
 from core.loaders.base_loader import load_populate_times
 from core.query import create_database_id
 from core.utils import ProgressTracker, exit_with_error, print_warning
@@ -228,13 +229,13 @@ class OutputCollector:
 
 def save_stats(config: Config, run_id: int, output_collector: OutputCollector, scale: float):
     iterations_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_iterations.csv')
-    with open(iterations_path, 'w') as file:
+    with open_output(iterations_path, skip_dir_check=True) as file:
         file.write('time,iteration,processed_states\n')
         for stats in output_collector.iterations:
             file.write(f'{stats[0]:.3f},{stats[1]},{stats[2]}\n')
 
     solutions_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_solutions.csv')
-    with open(solutions_path, 'w') as file:
+    with open_output(solutions_path, skip_dir_check=True) as file:
         header = 'found_in,id,latency,query_latency,migration_latency'
         for db in DriverType:
             header += f',{db.value}'
@@ -262,7 +263,7 @@ def load_stats(config: Config, run_id: int, scale: float) -> tuple[list[Iteratio
     iterations = list[IterationStats]()
 
     iterations_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_iterations.csv')
-    with open(iterations_path, 'r') as file:
+    with open_input(iterations_path) as file:
         next(file) # skip header
         for line in file:
             parts = line.strip().split(',')
@@ -271,7 +272,7 @@ def load_stats(config: Config, run_id: int, scale: float) -> tuple[list[Iteratio
     solutions = list[LoadedAdaptationSolution]()
 
     solutions_path = os.path.join(config.experiments_directory, f'mcts_{SCHEMA.value}_{scale:g}_{run_id}_solutions.csv')
-    with open(solutions_path, 'r') as file:
+    with open_input(solutions_path) as file:
         next(file) # skip header
         for line in file:
             parts = line.strip().split(',')

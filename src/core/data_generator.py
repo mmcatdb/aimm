@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from core.config import GLOBAL_RNG_SEED
 from core.query import SchemaName
-from core.utils import JsonLinesWriter
+from core.files import JsonLinesWriter, open_input, open_output
 
 class DataGenerator(ABC):
     """Base class for data generators."""
@@ -54,8 +54,7 @@ class DataGenerator(ABC):
     def _open_csv_output(self, kind: str, header: list[str]):
         print('Creating', kind)
         path = os.path.join(self._import_directory, kind + '.tbl')
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        file = open(path, 'w', newline='', encoding='utf-8')
+        file = open_output(path)
         writer = csv.writer(file, lineterminator='\n', delimiter = '|')
         # The header is skipped because loaders do not expect it.
         # writer.writerow(header)
@@ -64,7 +63,7 @@ class DataGenerator(ABC):
     def _open_csv_input(self, kind: str, header: list[str]):
         print('Loading', kind)
         path = os.path.join(self._import_directory, kind + '.tbl')
-        file = open(path, 'r', newline='', encoding='utf-8')
+        file = open_input(path)
         reader = csv.reader(file, lineterminator='\n', delimiter = '|')
         # The header is skipped because loaders do not expect it.
         # next(reader, None)
@@ -73,8 +72,7 @@ class DataGenerator(ABC):
     def _open_json_output(self, kind: str):
         print('Creating', kind)
         path = os.path.join(self._import_directory, kind + '.jsonl')
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        file = open(path, 'w', newline='', encoding='utf-8')
+        file = open_output(path)
         writer = JsonLinesWriter(file, extended=True)
         return file, writer
 

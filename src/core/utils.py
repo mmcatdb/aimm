@@ -1,58 +1,11 @@
-from collections.abc import Iterator
-from io import TextIOWrapper
 import sys
 import time
-from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
-import dataclasses
-import json
+from typing import Generic, Literal, NoReturn, Protocol, TypeVar
 from contextlib import contextmanager
 import textwrap
-from bson import json_util
 
 # Add small epsilon to avoid division by zero or log(0).
 EPSILON = 1e-8
-
-class JsonEncoder(json.JSONEncoder):
-    def default(self, o):
-        if dataclasses.is_dataclass(o):
-            dataclass: Any = o
-            return dataclasses.asdict(dataclass)
-        return super().default(o)
-
-class JsonLinesWriter:
-    def __init__(self, file: TextIOWrapper, extended: bool):
-        """If `extended` is True, extended json (via `bson.json_util`) will be used."""
-        self._file = file
-        self._extended = extended
-
-    def writeobject(self, object: dict):
-        if self._extended:
-            self._file.write(json_util.dumps(object))
-        else:
-            json.dump(object, self._file, cls=JsonEncoder)
-        self._file.write('\n')
-
-class JsonLinesReader:
-    def __init__(self, file: TextIOWrapper, extended: bool):
-        """If `extended` is True, extended json (via `bson.json_util`) will be used."""
-        self._file = file
-        self._extended = extended
-
-    def readobject(self) -> dict:
-        line = self._file.readline()
-        if not line:
-            raise EOFError()
-        return self._parse(line)
-
-    def readobjects(self) -> list[dict]:
-        return [self._parse(line) for line in self._file]
-
-    def __iter__(self) -> Iterator[dict]:
-        for line in self._file:
-            yield self._parse(line)
-
-    def _parse(self, line: str) -> dict:
-        return json_util.loads(line) if self._extended else json.loads(line)
 
 class Closeable(Protocol):
     def close(self) -> None: ...

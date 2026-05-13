@@ -2,7 +2,8 @@ import os
 import argparse
 import json
 from core.config import Config
-from core.utils import JsonEncoder, exit_with_exception, print_warning
+from core.utils import exit_with_exception, print_warning
+from core.files import JsonEncoder, open_output
 from latency_estimation.class_provider import get_model_evaluator
 from latency_estimation.dataset import create_dataset_id, load_dataset
 from latency_estimation.model import parse_checkpoint_id
@@ -51,10 +52,9 @@ def run(ctx: Context, args: argparse.Namespace):
 
 def save_results(config: Config, results: list):
     path = os.path.join(config.results_directory, 'evaluation_results.json')
-    os.makedirs(os.path.dirname(path), exist_ok=True)
 
     print(f'\nSaving results to {path}...')
-    with open(path, 'w') as file:
+    with open_output(path) as file:
         json.dump(results, file, indent=4, cls=JsonEncoder)
 
 if __name__ == '__main__':

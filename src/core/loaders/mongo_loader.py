@@ -7,6 +7,7 @@ import os
 import re
 import time
 from pymongo import ASCENDING
+from core.files import open_input
 from core.query import JsonLinesReader, SchemaId
 from core.utils import ProgressTracker, print_warning, time_quantity
 from core.drivers import MongoDriver
@@ -123,7 +124,7 @@ class MongoLoader(BaseLoader):
         print(f'Loading collection "{collection_name}"...')
 
         path = os.path.join(self._import_directory, collection_name + '.jsonl')
-        with open(path, 'r') as file:
+        with open_input(path) as file:
             reader = JsonLinesReader(file, extended=True)
             documents = list(reader)
 
@@ -257,7 +258,7 @@ class CachedCsvTable:
 
         path = os.path.join(import_directory, self.__csv_table.name + '.tbl')
 
-        with open(path, 'r') as file:
+        with open_input(path) as file:
             reader = csv.reader(file, lineterminator='\n', delimiter='|')
             for row in reader:
                 data = []

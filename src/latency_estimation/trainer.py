@@ -6,6 +6,7 @@ from typing import Protocol
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+from core.files import open_input, open_output
 from core.utils import INFO_TEXT, BOLD_TEXT, RESET_TEXT, CLEAR_TEXT_LINE, exit_with_error, print_warning
 from .config import TrainerConfig
 from .dataset import DatasetItem
@@ -281,14 +282,14 @@ METRIC_FORMATTERS = {
 
 def try_save_metrics(path: str, metrics: TrainerMetrics) -> None:
     try:
-        with open(path, 'w') as file:
+        with open_output(path, skip_dir_check=True) as file:
             json.dump(metrics, file, indent=4)
     except Exception as e:
         print_warning(f'Could not save metrics to {path}.', e)
 
 def load_metrics(path: str) -> TrainerMetrics:
     try:
-        with open(path, 'r') as file:
+        with open_input(path) as file:
             return json.load(file)
     except FileNotFoundError:
         exit_with_error(f'Metrics file not found at {path}.')

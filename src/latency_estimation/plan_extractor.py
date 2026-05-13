@@ -31,44 +31,6 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
 
         pass
 
-    def measure_and_explain_queries(self, queries: list[QueryInstance[TQuery]], num_runs: int) -> list[QueryMeasurement[TQuery]]:
-        """Generates and measures queries.
-
-        Args:
-            num_queries: Total number of queries to generate and measure. Should be larger than the number of templates.
-            num_runs: Number of executions per query for averaging
-        """
-
-        progress = ProgressTracker.limited(len(queries))
-        progress.start(f'Measuring {plural(len(queries), "query", "queries")} ({num_runs} runs each) ... ')
-
-        measurements = list[QueryMeasurement[TQuery]]()
-        invalid_queries = list[QueryInstance[TQuery]]()
-
-        for query in queries:
-            is_exception = False
-            try:
-                measurement = self.measure_and_explain_query(query, num_runs)
-                measurements.append(measurement)
-            except Exception as e:
-                is_exception = True
-                print()
-                # Don't print the stack trace as we don't care about some random internals of the driver.
-                print_warning(f'Could not execute query {query.label}.', e, suppress_stacktrace=True)
-                print()
-                invalid_queries.append(query)
-            progress.track(force_print=is_exception)
-
-        progress.finish()
-        print(f'\nCollected {plural(len(measurements), "measurement")} successfully.')
-
-        if invalid_queries:
-            queries_str = '\n'.join(f'  {q.label}' for q in invalid_queries)
-            print()
-            print_warning(f'Failed to execute {plural(len(invalid_queries), "query", "queries")}:\n{queries_str}')
-
-        return measurements
-
     def measure_and_explain_query(self, query: QueryInstance[TQuery], num_runs: int) -> QueryMeasurement[TQuery]:
         """Returns a comprehensive measurement of the query, including the execution plan and latency.
 

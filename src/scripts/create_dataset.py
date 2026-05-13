@@ -101,15 +101,23 @@ def _save_dataset_artifacts(pp: PathProvider, dataset_id: DatasetId, dataset_ite
 
 def _load_all_measured(pp: PathProvider, driver_type: DriverType, measurement_suffixes: list[str]) -> list[MeasuredQueries[TQuery]]:
     all = list[MeasuredQueries[TQuery]]()
+    not_fully_measured = list[str]()
     for suffix in measurement_suffixes:
         path = pp.measured_by_suffix(driver_type, suffix)
         try:
-            all.append(load_measured(path))
+            measured = load_measured(path)
+            all.append(measured)
+            if not measured.is_fully_measured():
+                not_fully_measured.append(suffix)
         except Exception as e:
             print_warning(f'Error processing measurements file "{path}". Skipping.', e)
 
     if not all:
         exit_with_error('No valid measurements files found for driver type "{driver_type}" and suffixes {measurement_suffixes}.')
+
+    if not_fully_measured:
+        suffixes_str = '\n'.join(f'  {suffix}' for suffix in not_fully_measured)
+        print_warning(f'The following measurement files are not fully measured: {suffixes_str}')
 
     return all
 

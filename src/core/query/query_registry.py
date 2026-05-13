@@ -83,14 +83,13 @@ class QueryRegistry(Generic[TQuery]):
     #region Generation
 
     def generate_queries(self, scale: float, num_queries: int, allow_write: bool) -> list[QueryInstance[TQuery]]:
-        """Generates `num_queries` query instances. At least one query will be generated for each template."""
+        """Generates `num_queries` query instances. At least one query will be generated for each template. If `allow_write` is False, only non-write queries will be generated."""
         queries = list[QueryInstance[TQuery]]()
         templates = list(self._get_templates().values())
         if not allow_write:
             templates = [t for t in templates if not t.is_write]
 
-        if num_queries <= 0:
-            num_queries = len(templates)
+        num_queries = max(num_queries, len(templates))
 
         for i in range(num_queries):
             template = templates[i % len(templates)]

@@ -1,8 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from io import TextIOWrapper
 import os
 from typing import Generic, cast
-from core.utils import JsonLinesReader, JsonLinesWriter
+from core.files import JsonLinesReader, JsonLinesWriter, open_input, open_output
 from .query_id import DatabaseId, QueryInstanceId, parse_query_instance_driver_type
 from .query_instance import QueryInstance, TQuery, parse_query
 
@@ -75,10 +76,29 @@ class MeasuredQueries(Generic[TQuery]):
         self.num_runs = config.num_runs
         self.allow_write = config.allow_write
 
-def save_measured(path: str, measured: MeasuredQueries):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    def is_fully_measured(self) -> bool:
+        return len(self.items) == self.num_queries
 
-    with open(path, 'w') as file:
+class MeasuredQueriesPersistor(Generic[TQuery]):
+
+    def __init__(self, file: TextIOWrapper, writer: JsonLinesWriter) -> None:
+        self._file = file
+        self._writer = writer
+
+    @staticmethod
+    def open(path: str) -> MeasuredQueriesPersistor[TQuery]:
+        file = open(path, 'a', newline='', encoding='utf-8')
+        writer = JsonLinesWriter(file, extended=True)
+        return MeasuredQueriesPersistor(file, writer)
+
+    def append(self, measurement: QueryMeasurement[TQuery]):
+        self._writer.writeobject(measurement.to_dict())
+
+    def close(self):
+        self._file.close()
+
+def save_measured(path: str, measured: MeasuredQueries):
+    with open_output(path) as file:
         writer = JsonLinesWriter(file, extended=True)
 
         # Let's use json lines for better readability.
@@ -94,7 +114,7 @@ def save_measured(path: str, measured: MeasuredQueries):
             writer.writeobject(item.to_dict())
 
 def load_measured(path: str) -> MeasuredQueries:
-    with open(path, 'r') as file:
+    with open_input(path) as file:
         reader = JsonLinesReader(file, extended=True)
         header = reader.readobject()
         items = [QueryMeasurement.from_dict(item) for item in reader]
