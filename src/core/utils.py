@@ -1,6 +1,7 @@
+import argparse
 import sys
 import time
-from typing import Generic, Literal, NoReturn, Protocol, TypeVar
+from typing import Callable, Generic, Literal, NoReturn, Protocol, TypeVar
 from contextlib import contextmanager
 import textwrap
 
@@ -226,3 +227,29 @@ def plural(count: int, singular: str, plural: str | None = None) -> str:
     """Automatic pluralization of a word based for en-US. If plural form is not provided, it will be formed by adding 's' to the singular form."""
     word = singular if count == 1 else (plural or singular + 's')
     return f'{count} {word}'
+
+def create_int_parser(min: int | None = None, max: int | None = None) -> Callable[[str], int]:
+    """Type function for argparse to parse an integer with specified bounds."""
+    if min is not None and max is not None and min > max:
+        raise ValueError('Invalid int parser: min should be less than or equal to max.')
+
+    def parser(arg: str) -> int:
+        try:
+            parsed = int(arg)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f'invalid int value: \'{arg}\'')
+
+        if (min is not None and parsed < min) or (max is not None and parsed > max):
+            if min is not None:
+                if max is not None:
+                    should_be = f'between {min} and {max}'
+                else:
+                    should_be = f'greater than or equal to {min}'
+            else:
+                should_be = f'less than or equal to {max}'
+
+            raise argparse.ArgumentTypeError(f'int value out of bounds: {arg} (should be {should_be})')
+
+        return parsed
+
+    return parser

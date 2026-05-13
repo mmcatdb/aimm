@@ -2,18 +2,15 @@ import argparse
 import os
 import random
 import numpy as np
-from core.config import Config
+from core.config import GLOBAL_RNG_SEED, Config
 from core.drivers import DriverType
 from core.query import QueryMeasurement, MeasuredQueries, TQuery, load_measured, parse_query_instance_id
-from core.utils import exit_with_error, exit_with_exception, print_warning
+from core.utils import create_int_parser, exit_with_error, exit_with_exception, print_warning
 from latency_estimation.class_provider import BaseFeatureExtractor, get_feature_extractor
 from latency_estimation.dataset import ArrayDataset, DatasetId, DatasetItem, create_dataset_id, parse_dataset_id, save_dataset, try_save_available_operators
 from latency_estimation.feature_extractor import load_feature_extractor, save_feature_extractor
 from latency_estimation.model import OperatorCollector
 from providers.path_provider import PathProvider
-
-# TODO argument? config? some more robust function?
-SKIP_FIRST_MEASURED_LATENCIES = 5
 
 def main(rawArgs: list[str] | None = None):
     parser = argparse.ArgumentParser(description='Combine query measurements from multiple databases into a single dataset and a feature extractor, optimized for ML training.')
@@ -35,7 +32,8 @@ def add_args(parser: argparse.ArgumentParser):
 
     parser.add_argument('--val-dataset', type=str, help='Optional validation dataset id. Pattern: {driver_type}/{dataset_name}.')
     parser.add_argument('--val-ratio',   type=float, default=0.2, help='Fraction of measurements to put into --val-dataset.')
-    parser.add_argument('--split-seed',  type=int, default=69, help='Random seed used for train/validation splitting.')
+    parser.add_argument('--split-seed',  type=int, default=GLOBAL_RNG_SEED, help='Random seed used for train/validation splitting.')
+    parser.add_argument('--skip-first',  type=create_int_parser(min = 0), default=5, help='Number of initial latencies to skip when creating the dataset.')
 
 def run(config: Config, args: argparse.Namespace):
     pp = PathProvider(config)
@@ -80,7 +78,7 @@ def run(config: Config, args: argparse.Namespace):
     for measured in all_measured:
         feature_extractor.set_global_stats(measured.global_stats)
         for measurement in measured.items:
-            dataset_items.append(create_dataset_item(feature_extractor, measurement))
+            dataset_items.append(create_dataset_item(feature_extractor, measurement, args.skip_first))
 
     if val_dataset_id is None:
         _save_dataset_artifacts(pp, dataset_id, dataset_items, feature_extractor)
@@ -121,13 +119,14 @@ def _load_all_measured(pp: PathProvider, driver_type: DriverType, measurement_su
 
     return all
 
-def create_dataset_item(feature_extractor: BaseFeatureExtractor, measurement: QueryMeasurement[TQuery]) -> DatasetItem:
+def create_dataset_item(feature_extractor: BaseFeatureExtractor, measurement: QueryMeasurement[TQuery], skip_first: int) -> DatasetItem:
     plan = feature_extractor.extract_plan(measurement.plan)
     structure_hash = feature_extractor.compute_plan_structure_hash(plan)
     # TODO Do some statistics about the measured latencies, filter outliers, etc.
-    trimmed_times = measurement.times[SKIP_FIRST_MEASURED_LATENCIES:]
+    trimmed_times = measurement.times[skip_first:]
     if not trimmed_times:
-        trimmed_times = measurement.times
+        raise ValueError(f"Cannot create dataset item for measurement {measurement.id}. Only {len(measurement.times)} latencies were recorded but {skip_first} should be skipped. Consider reducing --skip-first or providing measurements with more runs.")
+
     latency = np.mean(trimmed_times).item()
 
     return DatasetItem(measurement.id, measurement.label, latency, plan, structure_hash)

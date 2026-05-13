@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from core.config import Config
+from core.config import GLOBAL_RNG_SEED, Config
 from core.drivers import DriverType
 from core.utils import exit_with_exception, print_warning
 from latency_estimation.dataset import create_dataset_id, parse_dataset_id
@@ -43,7 +43,7 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--subsample', type=float, default=0.9, help='XGBoost row subsampling.')
     parser.add_argument('--colsample-bytree', type=float, default=0.9, help='XGBoost feature subsampling.')
     parser.add_argument('--n-jobs', type=int, default=-1, help='Parallel jobs for supported estimators.')
-    parser.add_argument('--seed', type=int, default=69, help='Random seed.')
+    parser.add_argument('--seed', type=int, default=GLOBAL_RNG_SEED, help='Random seed.')
     parser.add_argument('--dry-run', action='store_true', help='Only print dataset/model setup. Do not train.')
 
 

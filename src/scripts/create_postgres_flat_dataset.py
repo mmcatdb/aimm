@@ -4,10 +4,10 @@ import random
 
 import numpy as np
 
-from core.config import Config
+from core.config import GLOBAL_RNG_SEED, Config
 from core.drivers import DriverType
 from core.query import QueryMeasurement, TQuery, load_measured, parse_query_instance_id
-from core.utils import exit_with_error, exit_with_exception, print_warning
+from core.utils import create_int_parser, exit_with_error, exit_with_exception, print_warning
 from latency_estimation.dataset import DatasetId, create_dataset_id, parse_dataset_id
 from latency_estimation.postgres.flat_dataset import FlatArrayDataset, FlatDatasetItem, save_flat_dataset
 from latency_estimation.postgres.flat_feature_extractor import (
@@ -16,9 +16,6 @@ from latency_estimation.postgres.flat_feature_extractor import (
     save_flat_feature_extractor,
 )
 from providers.path_provider import PathProvider
-
-
-SKIP_FIRST_MEASURED_LATENCIES = 5
 
 
 def main(rawArgs: list[str] | None = None):
@@ -38,9 +35,9 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--feature-extractor-dataset', type=str, help='Dataset name whose flat feature extractor should be reused.')
     parser.add_argument('--val-dataset', type=str, help='Optional validation dataset id. Pattern: postgres/{dataset_name}.')
     parser.add_argument('--val-ratio', type=float, default=0.2, help='Fraction of measurements to put into --val-dataset.')
-    parser.add_argument('--split-seed', type=int, default=69, help='Random seed used for train/validation splitting.')
+    parser.add_argument('--split-seed', type=int, default=GLOBAL_RNG_SEED, help='Random seed used for train/validation splitting.')
     parser.add_argument('--include-schema-identifiers', action='store_true', help='Include Relation Name and Index Name features. Off by default for cross-schema evaluation.')
-
+    parser.add_argument('--skip-first',  type=create_int_parser(min = 0), default=5, help='Number of initial latencies to skip when creating the dataset.')
 
 def run(config: Config, args: argparse.Namespace):
     pp = PathProvider(config)
@@ -74,7 +71,7 @@ def run(config: Config, args: argparse.Namespace):
     items = list[FlatDatasetItem]()
     for measured in all_measured:
         for measurement in measured.items:
-            items.append(create_flat_dataset_item(feature_extractor, measurement))
+            items.append(create_flat_dataset_item(feature_extractor, measurement, args.skip_first))
 
     if val_dataset_id is None:
         _save_flat_dataset_artifacts(pp, dataset_id, items, feature_extractor)
@@ -86,10 +83,11 @@ def run(config: Config, args: argparse.Namespace):
     _save_flat_dataset_artifacts(pp, val_dataset_id, val_items, feature_extractor)
 
 
-def create_flat_dataset_item(feature_extractor: FlatFeatureExtractor, measurement: QueryMeasurement[TQuery]) -> FlatDatasetItem:
-    trimmed_times = measurement.times[SKIP_FIRST_MEASURED_LATENCIES:]
+def create_flat_dataset_item(feature_extractor: FlatFeatureExtractor, measurement: QueryMeasurement[TQuery], skip_first: int) -> FlatDatasetItem:
+    trimmed_times = measurement.times[skip_first:]
     if not trimmed_times:
-        trimmed_times = measurement.times
+        raise ValueError(f"Cannot create dataset item for measurement {measurement.id}. Only {len(measurement.times)} latencies were recorded but {skip_first} should be skipped. Consider reducing --skip-first or providing measurements with more runs.")
+
     latency = np.mean(trimmed_times).item()
 
     return FlatDatasetItem(
