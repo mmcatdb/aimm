@@ -4,7 +4,7 @@ import random
 from typing import Generic, Protocol
 from core.drivers import DriverType
 from core.utils import print_warning
-from .query_id import SchemaName, create_database_id, create_query_instance_id, TemplateName, TemplateId, create_template_id
+from .query_id import SchemaName, create_database_id_2, create_query_instance_id, TemplateName, TemplateId, create_template_id
 from .query_instance import QueryInstance, TQuery, TQuery_cov
 
 class QueryGenerator(Protocol[TQuery_cov]):
@@ -36,7 +36,7 @@ class QueryTemplate(Generic[TQuery]):
     def generate(self, scale: float, index: int) -> QueryInstance[TQuery]:
         """Generates a query by filling the template with parameters."""
         content = self._generator(scale, is_raw=False)
-        database_id = create_database_id(self.driver, self.schema, scale)
+        database_id = create_database_id_2(self.driver, self.schema, scale)
         query_id = create_query_instance_id(database_id, self.name, index)
         return QueryInstance(query_id, self.label(), self.is_write, content)
 

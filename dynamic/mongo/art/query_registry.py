@@ -1,5 +1,6 @@
 from core.drivers import DriverType
 from core.query import MongoQuery, MongoFindQuery, MongoAggregateQuery, MongoUpdateQuery, MongoDeleteQuery, MongoInsertQuery
+from dynamic.common.art.data_generator import ArtDataGenerator
 from ...common.art.query_registry import ArtQueryRegistry
 
 def export():
@@ -24,12 +25,22 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
         self._register_graphlookup_queries()
         self._register_window_queries()
         self._register_facet_queries()
-        self._register_event_log_queries()
-        self._register_node_rich_queries()
-        self._register_bucket_queries()
-        self._register_grp_tree_queries()
         self._register_advanced_pattern_queries()
+
+        if self.allow_large_kinds():
+            self._register_event_log_queries()
+            self._register_node_rich_queries()
+            self._register_bucket_queries()
+            self._register_grp_tree_queries()
+            self._register_advanced_pattern_queries_large()
+
         self._register_write_queries()
+
+        if self.allow_large_kinds():
+            self._register_write_queries_large()
+
+    def allow_large_kinds(self) -> bool:
+        return ArtDataGenerator.allow_large_kinds(self._scale)
 
     #region Find node
 
@@ -1737,9 +1748,6 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
     #region Polymorphic
 
     def _register_event_log_queries(self):
-        _EVENT_TYPES = ['status_changed', 'link_added', 'measure_recorded', 'doc_updated', 'tag_changed', 'activated', 'deactivated']
-        _ROLES = ['admin', 'user', 'system', 'service']
-
         # --- PK / point lookup ---
         self._query('event-pk-0', 'event_log by id', lambda s: MongoFindQuery('event_log',
             filter={'event_id': s._param_event_id()},
@@ -1755,14 +1763,14 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
         self._query('event-node-1', 'events for node + type', lambda s: MongoFindQuery('event_log',
             filter={
                 'node_id': s._param_node_id(),
-                'event_type': s._param_choice('event_type', _EVENT_TYPES),
+                'event_type': s._param_choice('event_type', ArtDataGenerator.EVENT_TYPES),
             },
             sort={'occurred_at': -1},
         ))
 
         # --- by event_type ---
         self._query('event-type-0', 'events by type', lambda s: MongoFindQuery('event_log',
-            filter={'event_type': s._param_choice('event_type', _EVENT_TYPES)},
+            filter={'event_type': s._param_choice('event_type', ArtDataGenerator.EVENT_TYPES)},
             sort={'occurred_at': -1},
             limit=s._param_limit(),
         ))
@@ -1778,7 +1786,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         # --- by actor ---
         self._query('event-role-0', 'events by actor.role', lambda s: MongoFindQuery('event_log',
-            filter={'actor.role': s._param_choice('role', _ROLES)},
+            filter={'actor.role': s._param_choice('role', ArtDataGenerator.ROLES)},
             sort={'occurred_at': -1},
             limit=s._param_limit(),
         ))
@@ -1931,9 +1939,6 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
     #region Deep nesting
 
     def _register_node_rich_queries(self):
-        _TIERS  = ['bronze', 'silver', 'gold', 'platinum']
-        _LABELS = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'critical', 'experimental', 'deprecated', 'important', 'temp']
-
         self._query('rich-pk-0', 'node_rich by id', lambda s: MongoFindQuery('node_rich',
             filter={'node_id': s._param_node_id()},
         ))
@@ -1970,7 +1975,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         # Labels array
         self._query('rich-labels-0', 'nodes with specific label in identity.labels', lambda s: MongoFindQuery('node_rich',
-            filter={'identity.labels': s._param_choice('label', _LABELS)},
+            filter={'identity.labels': s._param_choice('label', ArtDataGenerator.LINK_LABELS)},
             sort={'scores.composite': -1},
             limit=s._param_limit(),
         ))
@@ -1985,7 +1990,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         # Scores
         self._query('rich-score-tier-0', 'node_rich by scores.tier', lambda s: MongoFindQuery('node_rich',
-            filter={'scores.tier': s._param_choice('tier', _TIERS)},
+            filter={'scores.tier': s._param_choice('tier', ArtDataGenerator.LINK_TIERS)},
             sort={'scores.composite': -1},
             limit=s._param_limit(),
         ))
@@ -2395,45 +2400,10 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
     #region Cross-cutting
 
     def _register_advanced_pattern_queries(self):
-
-        # --- $unionWith ---
-        self._query('advanced-union-0', '$unionWith: event_log + log for one node', lambda s: MongoAggregateQuery('event_log', [
-            {'$match': {'node_id': s._param_node_id()}},
-            {'$project': {'src': {'$literal': 'event_log'}, 'node_id': 1, 'occurred_at': 1, '_id': 0}},
-            {'$unionWith': {'coll': 'log', 'pipeline': [
-                {'$match': {'node_id': s._param_node_id()}},
-                {'$project': {'src': {'$literal': 'log'}, 'node_id': 1, 'occurred_at': 1, '_id': 0}},
-            ]}},
-            {'$sort': {'occurred_at': -1}},
-            {'$limit': 50},
-        ]))
-
-        self._query('advanced-union-1', '$unionWith: merge log + event_log by date', lambda s: MongoAggregateQuery('log', [
-            {'$match': {
-                'node_id': {'$in': s._param_node_ids(3, 8)},
-                'occurred_at': {'$gte': s._param_date_minus_days(30, 90)},
-            }},
-            {'$project': {'src': {'$literal': 'log'}, 'node_id': 1, 'occurred_at': 1, 'kind': 1, '_id': 0}},
-            {'$unionWith': {'coll': 'event_log', 'pipeline': [
-                {'$match': {
-                    'node_id': {'$in': s._param_node_ids(3, 8)},
-                    'occurred_at': {'$gte': s._param_date_minus_days(30, 90)}
-                }},
-                {'$project': {'src': {'$literal': 'event_log'}, 'node_id': 1, 'occurred_at': 1, 'kind': '$event_type', '_id': 0}},
-            ]}},
-            {'$sort': {'occurred_at': -1}},
-        ]))
-
-        # --- $sample ---
+                # --- $sample ---
         self._query('advanced-sample-0', '$sample: random node selection', lambda s: MongoAggregateQuery('node', [
             {'$sample': {'size': 100}},
             {'$project': {'node_id': 1, 'tag': 1, 'status': 1, '_id': 0}},
-        ]))
-
-        self._query('advanced-sample-1', '$sample: random events of a type', lambda s: MongoAggregateQuery('event_log', [
-            {'$match': {'event_type': s._param_choice('event_type', ['status_changed', 'link_added'])}},
-            {'$sample': {'size': 50}},
-            {'$project': {'event_id': 1, 'node_id': 1, 'event_type': 1, 'occurred_at': 1, '_id': 0}},
         ]))
 
         # --- String operators ---
@@ -2473,18 +2443,6 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
                 'avg_val': {'$avg': '$val'},
             }},
             {'$sort': {'_id.year': 1, '_id.month': 1}},
-        ]))
-
-        self._query('advanced-date-1', '$dayOfWeek distribution for event_log', lambda s: MongoAggregateQuery('event_log', [
-            {'$match': {'event_type': s._param_choice('event_type', ['status_changed', 'link_added'])}},
-            {'$group': {'_id': {'$dayOfWeek': '$occurred_at'}, 'count': {'$sum': 1}}},
-            {'$sort': {'_id': 1}},
-        ]))
-
-        self._query('advanced-date-2', '$hour distribution for bucket.hour_start', lambda s: MongoAggregateQuery('bucket', [
-            {'$match': {'dim': s._param_dim()}},
-            {'$group': {'_id': {'$hour': '$hour_start'}, 'avg_avg': {'$avg': '$avg'}, 'count': {'$sum': 1}}},
-            {'$sort': {'_id': 1}},
         ]))
 
         self._query('advanced-date-3', '$isoWeek trends for log', lambda s: MongoAggregateQuery('log', [
@@ -2537,6 +2495,69 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
             {'$limit': s._param_limit()},
         ]))
 
+        # --- Window $shift ---
+        self._query('advanced-window-shift-0', '$shift: compare log val with previous', lambda s: MongoAggregateQuery('log', [
+            {'$match': {'node_id': s._param_node_id(), 'val': {'$ne': None}}},
+            {'$sort': {'occurred_at': 1}},
+            {'$setWindowFields': {
+                'partitionBy': '$node_id',
+                'sortBy': {'occurred_at': 1},
+                'output': {'prev_val': {'$shift': {'output': '$val', 'by': -1, 'default': None}}},
+            }},
+            {'$addFields': {'delta': {'$subtract': ['$val', {'$ifNull': ['$prev_val', '$val']}]}}},
+            {'$project': {'log_id': 1, 'val': 1, 'occurred_at': 1, 'prev_val': 1, 'delta': 1, '_id': 0}},
+        ]))
+
+    def _register_advanced_pattern_queries_large(self):
+
+        # --- $unionWith ---
+        self._query('advanced-union-0', '$unionWith: event_log + log for one node', lambda s: MongoAggregateQuery('event_log', [
+            {'$match': {'node_id': s._param_node_id()}},
+            {'$project': {'src': {'$literal': 'event_log'}, 'node_id': 1, 'occurred_at': 1, '_id': 0}},
+            {'$unionWith': {'coll': 'log', 'pipeline': [
+                {'$match': {'node_id': s._param_node_id()}},
+                {'$project': {'src': {'$literal': 'log'}, 'node_id': 1, 'occurred_at': 1, '_id': 0}},
+            ]}},
+            {'$sort': {'occurred_at': -1}},
+            {'$limit': 50},
+        ]))
+
+        self._query('advanced-union-1', '$unionWith: merge log + event_log by date', lambda s: MongoAggregateQuery('log', [
+            {'$match': {
+                'node_id': {'$in': s._param_node_ids(3, 8)},
+                'occurred_at': {'$gte': s._param_date_minus_days(30, 90)},
+            }},
+            {'$project': {'src': {'$literal': 'log'}, 'node_id': 1, 'occurred_at': 1, 'kind': 1, '_id': 0}},
+            {'$unionWith': {'coll': 'event_log', 'pipeline': [
+                {'$match': {
+                    'node_id': {'$in': s._param_node_ids(3, 8)},
+                    'occurred_at': {'$gte': s._param_date_minus_days(30, 90)}
+                }},
+                {'$project': {'src': {'$literal': 'event_log'}, 'node_id': 1, 'occurred_at': 1, 'kind': '$event_type', '_id': 0}},
+            ]}},
+            {'$sort': {'occurred_at': -1}},
+        ]))
+
+        # --- $sample ---
+        self._query('advanced-sample-1', '$sample: random events of a type', lambda s: MongoAggregateQuery('event_log', [
+            {'$match': {'event_type': s._param_choice('event_type', ['status_changed', 'link_added'])}},
+            {'$sample': {'size': 50}},
+            {'$project': {'event_id': 1, 'node_id': 1, 'event_type': 1, 'occurred_at': 1, '_id': 0}},
+        ]))
+
+        # --- Date extraction operators ---
+        self._query('advanced-date-1', '$dayOfWeek distribution for event_log', lambda s: MongoAggregateQuery('event_log', [
+            {'$match': {'event_type': s._param_choice('event_type', ['status_changed', 'link_added'])}},
+            {'$group': {'_id': {'$dayOfWeek': '$occurred_at'}, 'count': {'$sum': 1}}},
+            {'$sort': {'_id': 1}},
+        ]))
+
+        self._query('advanced-date-2', '$hour distribution for bucket.hour_start', lambda s: MongoAggregateQuery('bucket', [
+            {'$match': {'dim': s._param_dim()}},
+            {'$group': {'_id': {'$hour': '$hour_start'}, 'avg_avg': {'$avg': '$avg'}, 'count': {'$sum': 1}}},
+            {'$sort': {'_id': 1}},
+        ]))
+
         # --- $setUnion / $reduce to merge label sets ---
         self._query('advanced-set-0', '$reduce+$setUnion: all labels per status', lambda s: MongoAggregateQuery('node_rich', [
             {'$match': {'identity.labels': {'$ne': []}}},
@@ -2549,19 +2570,6 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
                     'in': {'$setUnion': ['$$value', '$$this']},
                 }},
             }},
-        ]))
-
-        # --- Window $shift ---
-        self._query('advanced-window-shift-0', '$shift: compare log val with previous', lambda s: MongoAggregateQuery('log', [
-            {'$match': {'node_id': s._param_node_id(), 'val': {'$ne': None}}},
-            {'$sort': {'occurred_at': 1}},
-            {'$setWindowFields': {
-                'partitionBy': '$node_id',
-                'sortBy': {'occurred_at': 1},
-                'output': {'prev_val': {'$shift': {'output': '$val', 'by': -1, 'default': None}}},
-            }},
-            {'$addFields': {'delta': {'$subtract': ['$val', {'$ifNull': ['$prev_val', '$val']}]}}},
-            {'$project': {'log_id': 1, 'val': 1, 'occurred_at': 1, 'prev_val': 1, 'delta': 1, '_id': 0}},
         ]))
 
     #endregion
@@ -2686,6 +2694,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
             }]
         ))
 
+    def _register_write_queries_large(self):
         # -- complex updates for node_rich ------------------------------------
 
         self._write_query('update-10', 'push status-change event into node_rich audit history and update status', lambda s: MongoUpdateQuery('node_rich',

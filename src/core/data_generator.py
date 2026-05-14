@@ -5,8 +5,9 @@ import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from core.config import GLOBAL_RNG_SEED
-from core.query import SchemaName
+from core.query import SchemaName, create_schema_seed
 from core.files import JsonLinesWriter, open_input, open_output
+from core.utils import number_quantity
 
 class DataGenerator(ABC):
     """Base class for data generators."""
@@ -19,7 +20,8 @@ class DataGenerator(ABC):
 
     def _reset(self, scale: float):
         self._scale = scale
-        self._rng = random.Random(GLOBAL_RNG_SEED)
+        self._seed = create_schema_seed(self._schema, scale)
+        self._rng = random.Random(self._seed)
         self._now = datetime.now(timezone.utc)
 
     @abstractmethod
@@ -33,7 +35,7 @@ class DataGenerator(ABC):
 
         title = f'--- {self._schema} Data Generator ---'
         print(title)
-        print(f'Scale factor: {self._scale:g}')
+        print(f'Scale factor: {self._scale:g}, seed: {self._seed}')
         print('-' * len(title) + '\n')
 
         self._create_generators()
@@ -43,7 +45,6 @@ class DataGenerator(ABC):
         print(f'Data generation completed. Data saved to: {self._import_directory}')
 
     def _create_generators(self):
-        # TODO This should be scaled ...
         self._rng_word = create_word_generator(self._rng, [ 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 11, 11, 11, 12, 12 ], 10000)
         self._rng_name = create_word_generator(self._rng, [ 3, 4, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 10, 10 ], 2000)
         self._rng_subdomain = create_word_generator(self._rng, [ 4, 5, 5, 6, 6, 7, 7, 8 ], 200)
@@ -114,9 +115,9 @@ class DataGenerator(ABC):
         words = [self._rng_word() for _ in range(word_count)]
         return ' '.join(words)
 
-    def _rng_timestamp_since(self, years: int) -> datetime:
+    def _rng_timestamp_since(self, years: float) -> datetime:
         """Uniform timestamp between the specified start (in years) now."""
-        seconds = years * 365 * 24 * 60 * 60
+        seconds = int(years * 365 * 24 * 60 * 60)
         return self._now - timedelta(seconds = self._rng.randint(0, seconds))
 
     def _rng_date(self, start_year: int, end_year: int) -> datetime:
@@ -167,6 +168,10 @@ def iso(datetime: datetime) -> str:
 
 def clamp_int(value: int, low: int, high: int) -> int:
     return max(low, min(high, value))
+
+def print_counts(object: object) -> str:
+    values = ', '.join(f'{key}: {number_quantity.pretty_print(value)}' for key, value in object.__dict__.items() if isinstance(value, int))
+    return f'{{ {values} }}'
 
 class AliasSampler:
     """O(1) discrete sampling after O(n) build. Good for many picks from a fixed weight list."""

@@ -57,6 +57,9 @@ class PostgresDriver():
             password = config.password,
         )
 
+    def type(self):
+        return DriverType.POSTGRES
+
     @contextmanager
     def cursor(self, *args, **kwargs) -> Generator[PostgresCursor, None, None]:
         """Most high-level method. Doesn't expose the connection."""
@@ -136,6 +139,9 @@ class MongoDriver():
         self._client = MongoClient(f'mongodb://{config.host}:{config.port}')
         self._database = self._client[database]
 
+    def type(self):
+        return DriverType.MONGO
+
     def database(self):
         return self._database
 
@@ -176,6 +182,9 @@ class Neo4jDriver():
         self.config = config
         self.port = port
         self._driver = GraphDatabase.driver(f'bolt://{config.host}:{self.port}', auth=(config.user, config.password))
+
+    def type(self):
+        return DriverType.NEO4J
 
     def session(self):
         """No need to specify database since Neo4j doesn't support multiple databases in community edition (they should be deeply ashamed)."""

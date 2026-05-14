@@ -1,4 +1,6 @@
+from core.config import GLOBAL_RNG_SEED
 from core.drivers import DriverType
+from core.utils import deterministic_hash
 
 # This is just a string instead of an enum so that the schemas can be added dynamically.
 SchemaName = str
@@ -26,14 +28,23 @@ def parse_schema_id(id: SchemaId) -> tuple[SchemaName, float]:
     except Exception as e:
         raise IdError.schema(id) from e
 
+def create_schema_seed(schema_name: SchemaName, scale: float) -> int:
+    """Creates a random generator for the specified schema and scale."""
+    # The scale is reflected in the random generator so that smaller scales aren't just subsets of larger ones.
+    # For some reason, this constant gives us the best distribution of random values for both data and query parameters.
+    return GLOBAL_RNG_SEED + deterministic_hash(schema_name) + int(scale * 80085)
+
 DatabaseId = str
 """Identifies a specific database instance to which we can connect and run queries on.
 
 Pattern: {driver_type}/{schema_id}.
 Example: `mongo/tpch-1`, `postgres/edbt-10`."""
 
-def create_database_id(driver_type: DriverType, schema_name: SchemaName, scale: float) -> DatabaseId:
-    return f'{driver_type.value}/{schema_name}-{scale:g}'
+def create_database_id_1(driver_type: DriverType, schema_id: SchemaId) -> DatabaseId:
+    return f'{driver_type.value}/{schema_id}'
+
+def create_database_id_2(driver_type: DriverType, schema_name: SchemaName, scale: float) -> DatabaseId:
+    return create_database_id_1(driver_type, create_schema_id(schema_name, scale))
 
 def parse_database_id(id: DatabaseId) -> tuple[DriverType, SchemaName, float]:
     """Parses a database id into `driver_type`, `schema_name`, `scale`."""

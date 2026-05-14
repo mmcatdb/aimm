@@ -1,6 +1,6 @@
 from typing import Generic, Literal, TypeVar, overload
 from core.drivers import DriverType
-from .query_id import QueryInstanceId, SchemaName, create_database_id, create_query_instance_id
+from .query_id import QueryInstanceId, SchemaName, create_database_id_2, create_query_instance_id
 from .mongo_query import MongoQuery
 
 TQuery = TypeVar('TQuery', str, MongoQuery)
@@ -18,7 +18,7 @@ class QueryInstance(Generic[TQuery]):
     @staticmethod
     def create_custom(driver: DriverType, schema: SchemaName, scale: float, index: int, is_write: bool, content: TQuery):
         """Creates a QueryInstance with given content. Useful for testing and debugging."""
-        database_id = create_database_id(driver, schema, scale)
+        database_id = create_database_id_2(driver, schema, scale)
         id = create_query_instance_id(database_id, 'custom', index)
         return QueryInstance(id, f'Custom Query {index}', is_write, content)
 

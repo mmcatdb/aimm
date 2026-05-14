@@ -2,7 +2,7 @@ import json
 import sys
 import ast
 from core.dynamic_provider import get_dynamic_class_instance
-from core.query import QueryInstance, QueryInstanceId, QueryRegistry, SchemaId, create_database_id, create_query_instance_id, parse_schema_id
+from core.query import QueryInstance, QueryInstanceId, QueryRegistry, SchemaId, create_database_id_2, create_query_instance_id, parse_schema_id
 from latency_estimation.class_provider import get_plan_extractor
 from latency_estimation.dataset import create_dataset_id
 from latency_estimation.feature_extractor import load_feature_extractor
@@ -58,7 +58,7 @@ def get_query_id(driver_type: DriverType, query_index: int) -> QueryInstanceId:
     # FIXME Not ideal. We should allow passing arbitrary queries. But that would require to group all generated queries by template_name, and then store them in the state by template_name.
     template_name = f"edbt-{query_index}"
 
-    database_id = create_database_id(driver_type, *parse_schema_id(SCHEMA_ID))
+    database_id = create_database_id_2(driver_type, *parse_schema_id(SCHEMA_ID))
     return create_query_instance_id(database_id, template_name, 0)
 
 def load_driver_type(ctx: Context, driver_type: DriverType):
@@ -72,7 +72,7 @@ def load_driver_type(ctx: Context, driver_type: DriverType):
 
 def load_database(ctx: Context, driver_type: DriverType, schema_id: SchemaId):
     schema_name, scale = parse_schema_id(schema_id)
-    database_id = create_database_id(driver_type, schema_name, scale)
+    database_id = create_database_id_2(driver_type, schema_name, scale)
 
     driver = ctx.dp.get(driver_type, schema_name, scale)
     plan_extractor = get_plan_extractor(driver)

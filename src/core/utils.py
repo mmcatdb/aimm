@@ -94,7 +94,7 @@ class Quantity(Generic[TUnit]):
 
         omit_decimal = (is_integer if is_integer is not None else self.is_base_integer) and unit == self.units[0]
         number_part = str(int(value)) if omit_decimal else f'{value:.2f}'
-        return f'{number_part} {unit}'
+        return f'{number_part} {unit}' if unit != '' else number_part
 
     def find_unit(self, value_in_base: float) -> tuple[float, TUnit]:
         index = 0
@@ -120,12 +120,20 @@ class Quantity(Generic[TUnit]):
             base_value *= self.thresholds[i]
         raise ValueError('Impossibruh')
 
+NumberUnit = Literal['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']
+NUMBER_UNITS = ('', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+number_quantity = Quantity[NumberUnit](
+    NUMBER_UNITS,
+    (1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000),
+    is_base_integer=True,
+)
+
 DataSizeUnit = Literal['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
 DATA_SIZE_UNITS = ('B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB')
 data_size_quantity = Quantity[DataSizeUnit](
     DATA_SIZE_UNITS,
     (1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024),
-    True,
+    is_base_integer=True,
 )
 
 TimeUnit = Literal['ms', 's', 'min', 'h', 'd', 'y']
@@ -133,7 +141,7 @@ TIME_UNITS = ('ms', 's', 'min', 'h', 'd', 'y')
 time_quantity = Quantity[TimeUnit](
     TIME_UNITS,
     (1000, 60, 60, 24, 365),
-    False,
+    is_base_integer=False,
 )
 
 # def trim_to_block(text: str, tabsize: int = 4) -> str:
@@ -253,3 +261,11 @@ def create_int_parser(min: int | None = None, max: int | None = None) -> Callabl
         return parsed
 
     return parser
+
+def deterministic_hash(value: str) -> int:
+    """Returns a deterministic hash of the given value. Useful for seeding random generators based on string values."""
+    # This is a simple hash function that should be good enough for our purposes. It is not meant to be cryptographically secure or to have good distribution properties.
+    hash = 0
+    for char in value:
+        hash = (hash * 31 + ord(char)) % (2 ** 32)
+    return hash

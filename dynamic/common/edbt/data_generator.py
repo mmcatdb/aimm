@@ -1,9 +1,9 @@
+from dataclasses import dataclass
 import json
 import math
 from typing_extensions import override
-from dataclasses import dataclass
 from datetime import timedelta, datetime
-from core.data_generator import AliasSampler, DataGenerator, clamp_int, iso
+from core.data_generator import AliasSampler, DataGenerator, clamp_int, iso, print_counts
 
 def export():
     return EdbtDataGenerator()
@@ -22,8 +22,8 @@ class EdbtDataGenerator(DataGenerator):
 
     @override
     def _generate_data(self):
-        c = self.__generate_counts()
-        print('Counts:', c)
+        c = self.EdbtCounts(self)
+        print('Counts:', print_counts(c))
 
         # Base kinds
         persons = self.__generate_persons(c.person)
@@ -55,34 +55,18 @@ class EdbtDataGenerator(DataGenerator):
 
     @dataclass
     class EdbtCounts:
-        person: int
-        seller: int
-        product: int
-        category: int
-        order: int
-        review: int
-        follows: int
+        def __init__(self, gen: EdbtDataGenerator):
+            self.person =   gen._scaled( 5_000, 1.00)
+            self.seller =   gen._scaled(   500, 0.90)
+            self.product =  gen._scaled( 2_000, 0.95)
+            self.category = gen._scaled(   200, 0.60)
+            self.order =    gen._scaled(20_000, 1.05)
+            self.review =   gen._scaled(10_000, 1.05)
+            self.follows =  gen._scaled(20_000, 1.10)
 
     def generate_counts(self, scale: float) -> EdbtCounts:
         self._reset(scale)
-        return self.__generate_counts()
-
-    def __generate_counts(self) -> EdbtCounts:
-        """
-        scale=1 aims for "several MB total" in csv.
-        Bigger scale multiplies size.
-        Not all kinds scale the same.
-        """
-
-        return self.EdbtCounts(
-            person =   self._scaled( 5_000, 1.00),
-            seller =   self._scaled(   500, 0.90),
-            product =  self._scaled( 2_000, 0.95),
-            category = self._scaled(   200, 0.60),
-            order =    self._scaled(20_000, 1.05),
-            review =   self._scaled(10_000, 1.05),
-            follows =  self._scaled(20_000, 1.10),
-        )
+        return self.EdbtCounts(self)
 
     def __generate_persons(self, n_persons: int) -> list[list]:
         """

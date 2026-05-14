@@ -1,9 +1,7 @@
 import json
 import math
-from dataclasses import dataclass
-from datetime import timedelta
 from typing_extensions import override
-from core.data_generator import DataGenerator, clamp_int, iso
+from core.data_generator import DataGenerator, clamp_int, iso, print_counts
 
 def export():
     return ArtDataGenerator()
@@ -30,54 +28,44 @@ class ArtDataGenerator(DataGenerator):
 
     @override
     def _generate_data(self):
-        c = self.__generate_counts()
-        print('Counts:', c)
-        self.__generate_grp(c.grp)
-        self.__generate_nodes(c.node, c.grp, c.n_tag)
-        self.__generate_links(c.link, c.node)
-        self.__generate_logs(c.log, c.node)
-        self.__generate_measures(c.measure, c.node)
-        self.__generate_docs(c.doc, c.node)
-        # JSON-based collections (MongoDB-specific; ignored by other loaders)
-        self.__generate_node_rich()
-        self.__generate_grp_tree()
-        self.__generate_event_log(c)
-        self.__generate_buckets(c)
+        c = self.ArtCounts(self)
+        print('Counts:', print_counts(c))
 
-    @dataclass
+        # Approximate file sizes for scales:            0       |  9       |
+        self.__generate_grp(c.grp)                    # 8   kB  |  192 kB  |
+        self.__generate_nodes(c.node, c.grp, c.n_tag) # 2   MB  |  1   GB  |
+        self.__generate_links(c.link, c.node)         # 1.5 MB  |  1.6 GB  |
+        self.__generate_logs(c.log, c.node)           # 4   MB  |  3.1 GB  |
+        self.__generate_measures(c.measure, c.node)   # 4.4 MB  |  3.6 GB  |
+        self.__generate_docs(c.doc, c.node)           # 13  MB  |  3.3 GB  |
+        # JSON-based collections (MongoDB-specific). Won't be generated for large scales.
+        if self.allow_large_kinds(self._scale):
+            self.__generate_node_rich()               # 20  MB  |  12  GB  |
+            self.__generate_grp_tree()                # 68  kB  |  2.3 MB  |
+            self.__generate_event_log(c)              # 21  MB  |  15  GB  |
+            self.__generate_buckets(c)                # 12  MB  |  3   GB  |
+
     class ArtCounts:
-        grp: int
-        node: int
-        link: int
-        log: int
-        measure: int
-        doc: int
-        n_tag: int
-        event_log: int
-        bucket: int
+        def __init__(self, gen: ArtDataGenerator):
+            self.grp       = gen._scaled(    200, 0.60)
+            self.node      = gen._scaled( 10_000, 1.00)
+            self.link      = gen._scaled( 30_000, 1.10)
+            self.log       = gen._scaled( 80_000, 1.05)
+            self.measure   = gen._scaled(150_000, 1.05)
+            self.doc       = gen._scaled(  5_000, 0.90)
+            self.n_tag     = gen._scaled(    500, 0.70)
+            self.event_log = gen._scaled( 60_000, 1.05)
+            self.bucket    = gen._scaled(  5_000, 0.90)
+
+    @staticmethod
+    def allow_large_kinds(scale) -> bool:
+        """For larger scales, we can't reliably generate the larger JSON-based collections within memory and time constraints, so we skip them. All queries and loaders should skip them as well."""
+        return scale <= 9.0
 
     def generate_counts(self, scale: float) -> ArtCounts:
         """Returns row counts for the given scale without generating any data."""
         self._reset(scale)
-        return self.__generate_counts()
-
-    def __generate_counts(self) -> ArtCounts:
-        """
-        scale = 0  -> base sizes (the default small dataset).
-        scale = 1  -> roughly 2x the base.
-        Not all tables scale at the same rate.
-        """
-        return self.ArtCounts(
-            grp       = self._scaled(    200, 0.60),
-            node      = self._scaled( 10_000, 1.00),
-            link      = self._scaled( 30_000, 1.10),
-            log       = self._scaled( 80_000, 1.05),
-            measure   = self._scaled(150_000, 1.05),
-            doc       = self._scaled(  5_000, 0.90),
-            n_tag     = self._scaled(    500, 0.70),
-            event_log = self._scaled( 60_000, 1.05),
-            bucket    = self._scaled(  5_000, 0.90),
-        )
+        return self.ArtCounts(self)
 
     def __generate_grp(self, n_grp: int) -> None:
         """2-level hierarchy: sqrt(n) roots (depth 0), rest are direct children (depth 1)."""
@@ -247,8 +235,7 @@ class ArtDataGenerator(DataGenerator):
             dim = self._rng.randint(0, 4)
             lo, hi = dim_ranges[dim]
             val = round(lo + self._rng.random() * (hi - lo), 2)
-            days_ago = int((self._rng.random() ** 1.5) * 365)
-            recorded_at = (self._now - timedelta(days=days_ago)).date()
+            recorded_at = self._rng_timestamp_since(self._rng.random() ** 1.5).date()
             w.writerow([
                 measure_id,
                 node_id,
@@ -290,6 +277,9 @@ class ArtDataGenerator(DataGenerator):
         f.close()
 
     #region JSON collections
+
+    LINK_LABELS = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'critical', 'experimental', 'deprecated', 'important', 'temp']
+    LINK_TIERS = ['bronze', 'silver', 'gold', 'platinum']
 
     def __generate_node_rich(self) -> None:
         """
@@ -339,9 +329,7 @@ class ArtDataGenerator(DataGenerator):
         f_in.close()
 
         # --- Pass 3: read nodes and produce rich documents ----------------
-        labels_vocab = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'critical', 'experimental', 'deprecated', 'important', 'temp']
-        link_labels = ['depends_on', 'related_to', 'blocks', 'follows', 'derived_from', 'references']
-        tiers = ['bronze', 'silver', 'gold', 'platinum']
+        attribute_labels = ['depends_on', 'related_to', 'blocks', 'follows', 'derived_from', 'references']
 
         f_in, r = self._open_csv_input('node', ['node_id', 'tag', 'val_int', 'val_float', 'note', 'status', 'grp_id', 'created_at', 'is_active'])
 
@@ -361,7 +349,7 @@ class ArtDataGenerator(DataGenerator):
             composite  = round(val_int + val_float * 100, 2)
             tier_idx   = min(3, int(composite / 275))
             n_labels   = self._rng.randint(0, 3)
-            labels     = self._rng.sample(labels_vocab, n_labels)
+            labels     = self._rng.sample(self.LINK_LABELS, n_labels)
 
             # Build per-dimension summaries
             dim_data: dict[str, object] = {}
@@ -387,7 +375,7 @@ class ArtDataGenerator(DataGenerator):
                     'kind':   lk['kind'],
                     'weight': lk['weight'],
                     'attrs':  {
-                        'label':  self._rng.choice(link_labels),
+                        'label':  self._rng.choice(attribute_labels),
                         'strong': lk['weight'] >= 0.7,
                         'tags':   [self._rng_word() for _ in range(self._rng.randint(0, 2))],
                     },
@@ -421,7 +409,7 @@ class ArtDataGenerator(DataGenerator):
                 'scores': {
                     'raw': {'val_int': val_int, 'val_float': val_float},
                     'composite': composite,
-                    'tier':      tiers[tier_idx],
+                    'tier':      self.LINK_TIERS[tier_idx],
                 },
                 'context': {
                     'grp_id':     grp_id,
@@ -498,6 +486,9 @@ class ArtDataGenerator(DataGenerator):
 
         f.close()
 
+    EVENT_TYPES = ['status_changed', 'link_added', 'measure_recorded', 'doc_updated', 'tag_changed', 'activated', 'deactivated']
+    ROLES = ['admin', 'user', 'system', 'service']
+
     def __generate_event_log(self, c: 'ArtCounts') -> None:
         """
         Polymorphic event journal.  Each event_type has a distinct payload shape,
@@ -505,13 +496,11 @@ class ArtDataGenerator(DataGenerator):
         """
         f, w = self._open_json_output('event_log')
 
-        event_types = ['status_changed', 'link_added', 'measure_recorded', 'doc_updated', 'tag_changed', 'activated', 'deactivated']
-        roles = ['admin', 'user', 'system', 'service']
         type_sampler = self._create_sampler([3.0, 2.0, 3.0, 1.0, 2.0, 2.0, 2.0])
 
         for event_id in range(1, c.event_log + 1):
             node_id    = self._rng.randint(1, c.node)
-            event_type = event_types[type_sampler.sample_index()]
+            event_type = self.EVENT_TYPES[type_sampler.sample_index()]
 
             # Polymorphic payload
             if event_type == 'status_changed':
@@ -539,7 +528,7 @@ class ArtDataGenerator(DataGenerator):
                 'occurred_at': self._rng_timestamp_since(2),
                 'actor': {
                     'user_id': f'u{self._rng.randint(1, 100):04d}',
-                    'role':    self._rng.choice(roles),
+                    'role':    self._rng.choice(self.ROLES),
                     'session': f'sess_{self._rng_word()}',
                 },
                 'payload': payload,

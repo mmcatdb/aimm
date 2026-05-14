@@ -13,11 +13,11 @@ class PathProvider:
     def imports(self, schema_id: SchemaId) -> str:
         return os.path.join(self.config.import_directory, schema_id)
 
-    def populate_times(self, database_id: DatabaseId) -> str:
-        return os.path.join(self.config.populate_directory, f'{database_id}.json')
-
     def _cache_dir(self, *parts: str) -> str:
         return os.path.join(self.config.cache_directory, *parts)
+
+    def populate_times(self, database_id: DatabaseId) -> str:
+        return self._cache_dir(database_id, 'populate.json')
 
     def measured(self, database_id: DatabaseId, mc: MeasurementConfig) -> str:
         nowrite_suffix = '' if mc.allow_write else '-nowrite'

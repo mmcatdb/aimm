@@ -8,7 +8,7 @@ import re
 import time
 from pymongo import ASCENDING
 from core.files import open_input
-from core.query import JsonLinesReader, SchemaId
+from core.query import JsonLinesReader, SchemaId, create_database_id_1
 from core.utils import ProgressTracker, print_warning, time_quantity
 from core.drivers import MongoDriver
 from .base_loader import BaseLoader
@@ -36,7 +36,7 @@ class MongoLoader(BaseLoader):
     def run(self, driver: MongoDriver, schema_id: SchemaId, import_directory: str, do_reset: bool):
         self._reset(driver, schema_id, import_directory)
 
-        print(f'Loading data to Mongo at: {self._driver.config.host}:{self._driver.config.port}')
+        print(f'Loading data to {create_database_id_1(self._driver.type(), schema_id)} at: {self._driver.config.host}:{self._driver.config.port}')
 
         self.__check_files()
 

@@ -7,7 +7,7 @@ from typing import Any, Generic, TypeVar, cast
 from typing_extensions import Self
 from core.config import GLOBAL_RNG_SEED
 from core.drivers import DriverType
-from .query_id import SchemaName, TemplateName
+from .query_id import SchemaName, TemplateName, create_schema_seed
 from .query_instance import TQuery, QueryInstance
 from .query_template import QueryGenerator, QueryTemplate
 
@@ -49,7 +49,7 @@ class QueryRegistry(Generic[TQuery]):
     def __init__(self, driver: DriverType, schema: SchemaName):
         self.driver = driver
         self.schema = schema
-        self._rng = random.Random(GLOBAL_RNG_SEED)
+        self._rng: random.Random
         self._scale: float
         """The current scale factor for which the parameters are being generated. Set when generating queries."""
         self.__is_raw = False
@@ -60,6 +60,7 @@ class QueryRegistry(Generic[TQuery]):
     def __set_scale(self, scale: float):
         """If needed, sets the current scale factor for which the parameters are being generated. Is used lazily by the parameter generators."""
         if not hasattr(self, '_scale') or self._scale != scale:
+            self._rng = random.Random(create_schema_seed(self.schema, scale))
             self._scale = scale
             self._setup_cache()
             self._used_ints = dict[str, set[int]]()

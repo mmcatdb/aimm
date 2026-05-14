@@ -6,7 +6,7 @@ from core.config import Config
 from core.drivers import DriverType
 from core.files import open_input, open_output
 from core.loaders.base_loader import load_populate_times
-from core.query import create_database_id
+from core.query import create_database_id_2
 from core.utils import ProgressTracker, exit_with_error, print_warning
 from providers.path_provider import PathProvider
 from search.mcts import MCTS, StateMapping
@@ -99,7 +99,7 @@ def create_query_engine(config: Config, scale: float, query_weights: list[float]
     migration_times = dict[DriverType, KindCosts]()
 
     for type in DriverType:
-        database_id = create_database_id(type, SCHEMA, scale)
+        database_id = create_database_id_2(type, SCHEMA, scale)
         results = load_database_measurement(config, info)
 
         times_by_query = QueryCosts()

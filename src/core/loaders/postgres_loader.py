@@ -4,7 +4,7 @@ import time
 from typing_extensions import override
 from core.drivers import PostgresDriver
 from core.files import open_input
-from core.query import SchemaId
+from core.query import SchemaId, create_database_id_1
 from core.utils import time_quantity
 from .base_loader import BaseLoader
 
@@ -41,7 +41,7 @@ class PostgresLoader(BaseLoader):
     def run(self, driver: PostgresDriver, schema_id: SchemaId, import_directory: str, do_reset: bool):
         self._reset(driver, schema_id, import_directory)
 
-        print(f'Loading data to Postgres at: {self._driver.config.host}:{self._driver.config.port}')
+        print(f'Loading data to {create_database_id_1(self._driver.type(), schema_id)} at: {self._driver.config.host}:{self._driver.config.port}')
 
         self.__check_files()
 

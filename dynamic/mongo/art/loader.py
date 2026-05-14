@@ -1,5 +1,7 @@
 from typing_extensions import override
 from core.loaders.mongo_loader import MongoLoader, MongoPostgresBuilder, MongoIndex
+from core.query import parse_schema_id
+from ...common.art.data_generator import ArtDataGenerator
 from ...postgres.art.loader import _get_art_kinds
 
 def export():
@@ -83,9 +85,13 @@ class MongoArtLoader(MongoLoader):
 
         return [grp, node, log, measure, link, doc]
 
+    def _allow_large_kinds(self) -> bool:
+        _, scale = parse_schema_id(self._schema_id)
+        return ArtDataGenerator.allow_large_kinds(scale)
+
     @override
     def _get_json_kinds(self):
-        return ['node_rich', 'grp_tree', 'event_log', 'bucket']
+        return ['node_rich', 'grp_tree', 'event_log', 'bucket'] if self._allow_large_kinds() else []
 
     @override
     def _get_constraints(self):
@@ -131,8 +137,13 @@ class MongoArtLoader(MongoLoader):
             # doc
             MongoIndex('doc', ['doc_id'], is_unique=True),
             MongoIndex('doc', ['node_id'], is_unique=True),
-
+        ] + (
             # ---- JSON collections ----
+            self.__get_json_constraints() if self._allow_large_kinds() else []
+        )
+
+    def __get_json_constraints(self):
+        return [
             # node_rich
             MongoIndex('node_rich', ['node_id'], is_unique=True),
             MongoIndex('node_rich', ['identity.status']),

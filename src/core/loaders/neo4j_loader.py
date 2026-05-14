@@ -2,7 +2,7 @@ from abc import abstractmethod
 import os
 import time
 from core.drivers import Neo4jDriver, cypher
-from core.query import SchemaId
+from core.query import SchemaId, create_database_id_1
 from core.utils import ProgressTracker, print_warning, time_quantity
 from .base_loader import BaseLoader
 
@@ -29,7 +29,7 @@ class Neo4jLoader(BaseLoader):
     def run(self, driver: Neo4jDriver, schema_id: SchemaId, import_directory: str, do_reset: bool):
         self._reset(driver, schema_id, import_directory)
 
-        print(f'Loading data to Neo4j at: {self._driver.config.host}:{self._driver.port}')
+        print(f'Loading data to {create_database_id_1(self._driver.type(), schema_id)} at: {self._driver.config.host}:{self._driver.port}')
 
         try:
             self._driver.verify()
