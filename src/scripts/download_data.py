@@ -16,15 +16,15 @@ def main(rawArgs: list[str] | None = None):
     config = Config.load()
 
     try:
-        run(config, args.filter, args.keep_local)
+        run(config, args.filter, args.force)
     except Exception as e:
         exit_with_exception(e)
 
 def add_args(parser: argparse.ArgumentParser):
-    parser.add_argument('filter',       nargs='*',           help='If provided, only databases matching at least one filter will be considered. Pattern: {driver_type}/{schema_name}-{scale} (parts can be omitted from the right). Example: `postgres`, `postgres/art`, `postgres/art-0`.')
-    parser.add_argument('--keep-local', action='store_true', help='If a local cache file already exists, it will be kept (even if the file is incomplete).')
+    parser.add_argument('filter',  nargs='*',           help='If provided, only databases matching at least one filter will be considered. Pattern: {driver_type}/{schema_name}-{scale} (parts can be omitted from the right). Example: `postgres`, `postgres/art`, `postgres/art-0`.')
+    parser.add_argument('--force', action='store_true', help='Download all files even if they already exist in the cache. By default, existing files are not overwritten and are skipped instead.')
 
-def run(config: Config, filter: list[str], keep_local: bool):
+def run(config: Config, filter: list[str], force: bool):
     try:
         matcher = Matcher.create(filter)
     except ValueError as e:
@@ -36,7 +36,7 @@ def run(config: Config, filter: list[str], keep_local: bool):
         exit_with_error('No DOWNLOAD_DATA_URL provided in config.')
 
     progress = ProgressTracker.unlimited()
-    ctx = Context(matcher, config, keep_local, progress)
+    ctx = Context(matcher, config, force, progress)
 
     progress.start('Processing files... ')
     process_root(ctx, root_url)
@@ -105,7 +105,7 @@ def process_database(ctx: Context, database_url: str, database_id: DatabaseId):
             display_filename = f'{database_id}/{filename}'
 
             already_exists = os.path.exists(local_path)
-            if already_exists and ctx.keep_local:
+            if already_exists and not ctx.force:
                 ctx.skipped_files.append(display_filename)
             else:
                 os.makedirs(os.path.dirname(local_path), exist_ok=True)
@@ -122,10 +122,10 @@ def process_database(ctx: Context, database_url: str, database_id: DatabaseId):
         ctx.progress.track()
 
 class Context:
-    def __init__(self, matcher: Matcher, config: Config, keep_local: bool, progress: ProgressTracker):
+    def __init__(self, matcher: Matcher, config: Config, force: bool, progress: ProgressTracker):
         self.matcher = matcher
         self.config = config
-        self.keep_local = keep_local
+        self.force = force
         self.pp = PathProvider(config)
         self.written_files = list[str]()
         self.overwritten_files = list[str]()
