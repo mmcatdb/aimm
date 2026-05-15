@@ -3,7 +3,7 @@ import os
 from core.config import Config
 from core.driver_provider import DriverProvider
 from core.query import DatabaseId, MeasuredQueriesPersistor, MeasurementConfig, MeasuredQueries, QueryInstance, QueryMeasurement, QueryRegistry, TQuery, load_measured, parse_database_id, print_warning, save_measured
-from core.utils import ProgressTracker, exit_with_exception, plural
+from core.utils import ProgressTracker, exit_with_error, exit_with_exception, plural
 from core.dynamic_provider import get_dynamic_class_instance
 from latency_estimation.class_provider import get_plan_extractor
 from latency_estimation.plan_extractor import BasePlanExtractor
@@ -54,14 +54,17 @@ def run(config: Config, database_id: DatabaseId, mc: MeasurementConfig, use_cach
     missing_queries = [q for q in queries if q.id not in {m.id for m in cached.items}]
     if not missing_queries:
         print('All queries have already been measured in the cache. No new measurements needed.')
+        fix_query_order_if_needed(queries, cached, cache_path)
         return
 
     persistor = MeasuredQueriesPersistor.open(cache_path)
     try:
-        measure_and_explain_queries(persistor, plan_extractor, missing_queries, mc.num_runs)
+        cached.items = measure_and_explain_queries(persistor, plan_extractor, missing_queries, mc.num_runs)
     finally:
         # This should flush all measurements even if keyboard interrupt or other exception happens during measurement.
         persistor.close()
+
+    fix_query_order_if_needed(queries, cached, cache_path)
 
 def get_or_create_initial_cache(cache_path: str, use_cache: bool, plan_extractor: BasePlanExtractor[TQuery], database_id: DatabaseId, mc: MeasurementConfig) -> MeasuredQueries[TQuery]:
     if use_cache and os.path.exists(cache_path):
@@ -82,15 +85,15 @@ def measure_and_explain_queries(persistor: MeasuredQueriesPersistor[TQuery], pla
     progress = ProgressTracker.limited(len(queries))
     progress.start(f'Measuring {plural(len(queries), "query", "queries")} ({num_runs} runs each) ... ')
 
+    measured_queries = list[QueryMeasurement[TQuery]]()
     invalid_queries = list[QueryInstance[TQuery]]()
-    measured_count = 0
 
     for query in queries:
         is_exception = False
         try:
             measurement = plan_extractor.measure_and_explain_query(query, num_runs)
             persistor.append(measurement)
-            measured_count += 1
+            measured_queries.append(measurement)
         except KeyboardInterrupt:
             print('\nMeasurement interrupted by user. Stopping...')
             break
@@ -103,7 +106,7 @@ def measure_and_explain_queries(persistor: MeasuredQueriesPersistor[TQuery], pla
             invalid_queries.append(query)
         progress.track(force_print=is_exception)
 
-    remaining_count = len(queries) - measured_count - len(invalid_queries)
+    remaining_count = len(queries) - len(measured_queries) - len(invalid_queries)
     # If there was an interrupt, we don't want to print this.
     if remaining_count == 0:
         progress.finish()
@@ -111,12 +114,37 @@ def measure_and_explain_queries(persistor: MeasuredQueriesPersistor[TQuery], pla
     else:
         remaining_message = f' Remaining queries: {remaining_count}.'
 
-    print(f'\nCollected {plural(measured_count, "measurement")} successfully.{remaining_message}')
+    print(f'\nCollected {plural(len(measured_queries), "measurement")} successfully.{remaining_message}')
 
     if invalid_queries:
         queries_str = '\n'.join(f'  {q.label}' for q in invalid_queries)
         print()
         print_warning(f'Failed to execute {plural(len(invalid_queries), "query", "queries")}:\n{queries_str}')
+
+    return measured_queries
+
+def fix_query_order_if_needed(queries: list[QueryInstance[TQuery]], cached: MeasuredQueries[TQuery], cache_path: str):
+    if len(queries) != len(cached.items):
+        return
+
+    correct_order = {q.id: i for i, q in enumerate(queries)}
+    sorted_items = list(cached.items) # This is just for the type and size. Each element will be replaced in the loop below.
+    is_changed = False
+
+    for item in cached.items:
+        if item.id not in correct_order:
+            # This should not happpen.
+            exit_with_error(f'Cached query with id {item.id} not found in the generated queries.')
+        index = correct_order[item.id]
+
+        if sorted_items[index] != item:
+            sorted_items[index] = item
+            is_changed = True
+
+    if is_changed:
+        cached.items = sorted_items
+        save_measured(cache_path, cached)
+        print(f'Updated the order of cached measurements to match the order of generated queries.')
 
 if __name__ == '__main__':
     main()

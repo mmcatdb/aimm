@@ -23,7 +23,7 @@ def create_schema_id(schema_name: SchemaName, scale: float) -> SchemaId:
 def parse_schema_id(id: SchemaId) -> tuple[SchemaName, float]:
     """Parses a schema id into `schema_name`, `scale`."""
     try:
-        schema_name, scale_factor_str = id.rsplit('-', 1)
+        schema_name, scale_factor_str = id.split('-')
         return schema_name, float(scale_factor_str)
     except Exception as e:
         raise IdError.schema(id) from e
@@ -49,7 +49,7 @@ def create_database_id_2(driver_type: DriverType, schema_name: SchemaName, scale
 def parse_database_id(id: DatabaseId) -> tuple[DriverType, SchemaName, float]:
     """Parses a database id into `driver_type`, `schema_name`, `scale`."""
     try:
-        driver_type_str, schema_id = id.split('/', 1)
+        driver_type_str, schema_id = id.split('/')
         schema_name, scale = parse_schema_id(schema_id)
         return DriverType(driver_type_str), schema_name, scale
     except Exception as e:
@@ -77,7 +77,7 @@ def create_template_id(driver_type: DriverType, schema_name: SchemaName, templat
 def parse_template_id(id: TemplateId) -> tuple[DriverType, SchemaName, TemplateName]:
     """Parses a template id into `driver_type`, `schema_name`, `template_name`."""
     try:
-        driver_type_str, schema_name, template_name = id.split('/', 2)
+        driver_type_str, schema_name, template_name = id.split('/')
         return (
             DriverType(driver_type_str),
             schema_name,
@@ -102,7 +102,8 @@ def parse_query_instance_id(id: QueryInstanceId) -> tuple[DatabaseId, TemplateNa
     """Parses a query instance id into its components."""
     try:
         database_id, rest = id.rsplit('/', 1)
-        template_name, index_str = rest.split(':', 1)
+        parse_database_id(database_id) # Just to validate the database id part.
+        template_name, index_str = rest.split(':')
 
         return (
             database_id,
@@ -115,7 +116,7 @@ def parse_query_instance_id(id: QueryInstanceId) -> tuple[DatabaseId, TemplateNa
 def parse_query_instance_driver_type(id: QueryInstanceId) -> DriverType:
     """Extracts the driver type from a query instance id."""
     try:
-        driver_type_str, _ = id.split('/', 1)
+        driver_type_str, _ = id.split('/')
         return DriverType(driver_type_str)
     except Exception as e:
         raise IdError.query_instance(id) from e

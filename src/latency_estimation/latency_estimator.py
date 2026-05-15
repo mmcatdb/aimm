@@ -48,12 +48,12 @@ class LatencyEstimator(Generic[TQuery]):
         if value is None:
             database_id, _, _ = parse_query_instance_id(query.id)
             plan = query.plan if isinstance(query, QueryMeasurement) else None
-            value = self.estimate_uncached(database_id, query.content, plan)
+            value = self.estimate_uncached(database_id, query.content, query.is_write, plan)
             self.__estimate_cache[query.id] = value
 
         return value
 
-    def estimate_uncached(self, database_id: DatabaseId, content: TQuery, plan: dict | None) -> float:
+    def estimate_uncached(self, database_id: DatabaseId, content: TQuery, is_write: bool, plan: dict | None) -> float:
         """Estimates query latency without executing the query. Returns the latency in milliseconds."""
         plan_extractor, global_stats, driver_type = self.__per_database[database_id]
         feature_extractor, model = self.__per_driver_type[driver_type]
@@ -61,7 +61,7 @@ class LatencyEstimator(Generic[TQuery]):
         if plan is None:
             if plan_extractor is None:
                 raise ValueError('A query plan has to be provided when estimating from a database without a registered plan extractor.')
-            plan = plan_extractor.explain_query(content, do_profile=False)
+            plan = plan_extractor.explain_query(content, is_write, do_profile=False)
 
         feature_extractor.set_global_stats(global_stats)
         extracted_plan = feature_extractor.extract_plan(plan)

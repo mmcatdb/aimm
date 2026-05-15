@@ -29,7 +29,7 @@ def create_dataset_id(driver_type: DriverType, dataset_name: DatasetName) -> Dat
 def parse_dataset_id(dataset_id: DatasetId) -> tuple[DriverType, DatasetName]:
     """Parses a dataset id into `driver_type`, `dataset_name`."""
     try:
-        driver_type_str, dataset_name = dataset_id.split('/', 1)
+        driver_type_str, dataset_name = dataset_id.split('/')
         return DriverType(driver_type_str), dataset_name
     except Exception as e:
         raise ValueError(f'Invalid dataset id: "{dataset_id}".') from e

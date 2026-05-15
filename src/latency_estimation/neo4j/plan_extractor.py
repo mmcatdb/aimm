@@ -17,7 +17,7 @@ class PlanExtractor(BasePlanExtractor[str]):
         self.driver = driver
 
     @override
-    def explain_query(self, query: str, do_profile: bool) -> dict:
+    def explain_query(self, query: str, is_write: bool, do_profile: bool) -> dict:
         # FIXME do_profile
 
         with self.driver.session() as session:

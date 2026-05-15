@@ -27,6 +27,7 @@ def create_model_id(driver_type: DriverType, model_name: ModelName) -> ModelId:
 
 def parse_model_id(id: ModelId) -> tuple[DriverType, ModelName]:
     """Parses a model id into `driver_type`, `model_name`."""
+    # model_name can contain slashes, so we only split on the first slash.
     driver_type_str, model_name = id.split('/', 1)
     return DriverType(driver_type_str), model_name
 

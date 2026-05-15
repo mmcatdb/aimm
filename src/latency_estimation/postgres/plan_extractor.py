@@ -13,28 +13,31 @@ class PlanExtractor(BasePlanExtractor[str]):
     EXECUTION_TIME_KEY = '$executionTime'
 
     @override
-    def explain_query(self, query: str, do_profile: bool) -> dict:
-        # FIXME do_profile
-
+    def explain_query(self, query: str, is_write: bool, do_profile: bool) -> dict:
+        do_rollback = is_write and do_profile
         connection = self.driver.get_connection()
         # Set autocommit to avoid transaction block issues
-        connection.autocommit = True
+        connection.autocommit = not do_rollback
 
         try:
             with connection.cursor() as cursor:
-                # Get the plan without execution (no ANALYZE)
-                cursor.execute(f'EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS, VERBOSE) {query}')
+                analyze_option = 'ANALYZE, ' if do_profile else ''
+                cursor.execute(f'EXPLAIN ({analyze_option}FORMAT JSON, BUFFERS, VERBOSE) {query}')
                 result = cursor.fetchone()
-                assert result is not None, 'No plan returned from EXPLAIN.'
 
-                # EXPLAIN returns list of plans
-                explain = result[0][0]
-                plan: dict = explain['Plan']
-                # FIXME This is not used anywhere right now.
-                plan[self.EXECUTION_TIME_KEY] = explain['Execution Time']
+            assert result is not None, 'No plan returned from EXPLAIN.'
 
-                return plan
+            # EXPLAIN returns list of plans
+            explain = result[0][0]
+            plan: dict = explain['Plan']
+            # FIXME This is not used anywhere right now.
+            plan[self.EXECUTION_TIME_KEY] = explain['Execution Time']
+
+            return plan
         finally:
+            if do_rollback:
+                connection.rollback()
+
             self.driver.put_connection(connection)
 
     @override
@@ -53,15 +56,11 @@ class PlanExtractor(BasePlanExtractor[str]):
                     num_results = len(results)
                 elapsed = time_quantity.to_base(time.perf_counter() - start, 's')
 
+            return elapsed, num_results
+        finally:
             if is_write:
                 connection.rollback()
 
-            return elapsed, num_results
-        except:
-            if is_write:
-                connection.rollback()
-            raise
-        finally:
             self.driver.put_connection(connection)
 
     @override

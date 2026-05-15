@@ -226,8 +226,9 @@ class ProgressTracker:
 
         elapsed = now - self.start_time
         rate = self.count / elapsed if elapsed > 0 else 0
+        rate_string = pretty_print_double(rate) if rate < 100 else f'{rate:,.0f}'
         percents = f', {self.count / self.show_percents_from_total * 100:.1f}%' if self.show_percents_from_total is not None else ''
-        message = f'{self.prefix}{self.count:,} ({rate:,.0f}/s{percents})'
+        message = f'{self.prefix}{self.count:,} ({rate_string}/s{percents})'
         sys.stdout.write('\r' + message)
         sys.stdout.flush()
 

@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Generic
 from core.query import QueryInstance, QueryMeasurement, TQuery
-from core.utils import ProgressTracker, plural, print_warning
 
 class BasePlanExtractor(ABC, Generic[TQuery]):
 
     @abstractmethod
-    def explain_query(self, query: TQuery, do_profile: bool) -> dict:
+    def explain_query(self, query: TQuery, is_write: bool, do_profile: bool) -> dict:
         """Gets query execution plan. Returns plan as dict.
 
         Args:
@@ -42,6 +41,6 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
             time, _ = self.measure_query(query.content, query.is_write)
             times.append(time)
 
-        plan = self.explain_query(query.content, do_profile=True)
+        plan = self.explain_query(query.content, query.is_write, do_profile=True)
 
         return QueryMeasurement.from_instance(query, plan, times)

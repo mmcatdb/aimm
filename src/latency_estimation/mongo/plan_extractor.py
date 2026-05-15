@@ -15,7 +15,7 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
         self._collection_stats_cache = dict[str, dict]()
 
     @override
-    def explain_query(self, query: MongoQuery, do_profile: bool) -> dict:
+    def explain_query(self, query: MongoQuery, is_write: bool, do_profile: bool) -> dict:
         if isinstance(query, (
             MongoFindQuery,
             MongoUpdateQuery,

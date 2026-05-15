@@ -16,14 +16,17 @@ class PathProvider:
     def _cache_dir(self, *parts: str) -> str:
         return os.path.join(self.config.cache_directory, *parts)
 
+    def database_dir(self, database_id: DatabaseId, filename: str) -> str:
+        return self._cache_dir(database_id, filename)
+
     def populate_times(self, database_id: DatabaseId) -> str:
-        return self._cache_dir(database_id, 'populate.json')
+        return self.database_dir(database_id, 'populate.json')
 
     def measured(self, database_id: DatabaseId, mc: MeasurementConfig) -> str:
         nowrite_suffix = '' if mc.allow_write else '-nowrite'
         # Json lines!
         filename = f'measured-{mc.num_queries}-{mc.num_runs}{nowrite_suffix}.jsonl'
-        return self._cache_dir(database_id, filename)
+        return self.database_dir(database_id, filename)
 
     def measured_by_suffix(self, driver_type: DriverType, suffix: str) -> str:
         """Suffix pattern: {schema_id}/measured-{num_queries}-{num_runs}.jsonl"""
