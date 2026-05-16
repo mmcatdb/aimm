@@ -116,7 +116,7 @@ def parse_query_instance_id(id: QueryInstanceId) -> tuple[DatabaseId, TemplateNa
 def parse_query_instance_driver_type(id: QueryInstanceId) -> DriverType:
     """Extracts the driver type from a query instance id."""
     try:
-        driver_type_str, _ = id.split('/')
+        driver_type_str, _ = id.split('/', 1)
         return DriverType(driver_type_str)
     except Exception as e:
         raise IdError.query_instance(id) from e
