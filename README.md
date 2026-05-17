@@ -115,6 +115,27 @@ python -m scripts.test_postgres_flat postgres/tpch-2-flat-rf edbt-2-flat
 python -m scripts.predict_postgres_flat postgres/tpch-2-flat-rf postgres/tpch-2 "SELECT * FROM orders LIMIT 10"
 ```
 
+### MongoDB flat-feature tree models
+
+MongoDB flat models use only `global_stats` and `queryPlanner` plans for
+prediction. `executionStats` and Python query timing are used only by
+`scripts.measure_queries` when collecting training labels.
+
+```bash
+# Create train/validation flat datasets from measured MongoDB queries.
+python -m scripts.create_mongo_flat_dataset mongo/tpch-2-flat-train tpch-2/measured-1000-5.jsonl --val-dataset mongo/tpch-2-flat-val --val-ratio 0.2 --split-seed 42 --refresh-queryplanner
+
+# Create an EDBT test set with the training feature vocabulary.
+python -m scripts.create_mongo_flat_dataset mongo/edbt-3-flat edbt-3/measured-1000-5.jsonl --feature-extractor-dataset tpch-2-flat-train --refresh-queryplanner
+
+# Train and evaluate tree models.
+python -m scripts.train_mongo_flat mongo/tpch-2-flat-rf tpch-2-flat-train tpch-2-flat-val --model-type random_forest
+python -m scripts.test_mongo_flat mongo/tpch-2-flat-rf edbt-3-flat
+
+# Predict a single query without executing it.
+python -m scripts.predict_mongo_flat mongo/tpch-2-flat-rf mongo/tpch-2 '{"find":"orders","filter":{"o_orderkey":1}}'
+```
+
 ## Experiments
 
 - Explain query plan:

@@ -977,6 +977,193 @@ class MongoTpchQueryRegistry(TpchQueryRegistry[MongoQuery]):
             {'$count': 'total'},
         ])
 
+    @query('count-2', 'Partsupp $count low stock expensive supply')
+    def _partsupp_count_low_stock_expensive(self):
+        return MongoAggregateQuery('partsupp', [
+            {'$match': {
+                'ps_availqty': {'$lt': self._param_int('quantity', 100, 2000)},
+                'ps_supplycost': {'$gt': self._param_float('cost', 500, 1000)},
+            }},
+            {'$count': 'total'},
+        ])
+
+    @query('date-bucket-0', 'Lineitem monthly revenue by shipmode')
+    def _lineitem_monthly_revenue_by_shipmode(self):
+        return MongoAggregateQuery('lineitem', [
+            {'$match': {'l_shipdate': {
+                '$gte': self._param_date(1995, 1996),
+                '$lt': self._param_date(1997, 1998),
+            }}},
+            {'$project': {
+                'month': {'$dateTrunc': {'date': '$l_shipdate', 'unit': 'month'}},
+                'l_shipmode': 1,
+                'revenue': {'$multiply': ['$l_extendedprice', {'$subtract': [1, '$l_discount']}]},
+            }},
+            {'$group': {
+                '_id': {'month': '$month', 'shipmode': '$l_shipmode'},
+                'line_count': {'$sum': 1},
+                'revenue': {'$sum': '$revenue'},
+            }},
+            {'$sort': {'_id.month': 1, 'revenue': -1}},
+        ])
+
+    @query('date-bucket-1', 'Orders monthly totals by status and priority')
+    def _orders_monthly_status_priority(self):
+        return MongoAggregateQuery('orders', [
+            {'$match': {'o_orderdate': {'$gte': self._param_date(1995, 1997)}}},
+            {'$group': {
+                '_id': {
+                    'month': {'$dateTrunc': {'date': '$o_orderdate', 'unit': 'month'}},
+                    'status': '$o_orderstatus',
+                    'priority': '$o_orderpriority',
+                },
+                'orders': {'$sum': 1},
+                'total_price': {'$sum': '$o_totalprice'},
+            }},
+            {'$sort': {'_id.month': 1, 'orders': -1}},
+        ])
+
+    @query('embedded-10', 'orders embedded lineitem fulfillment delay summary')
+    def _orders_embedded_fulfillment_delay(self):
+        return MongoAggregateQuery('orders', [
+            {'$match': {'o_orderdate': {'$gte': self._param_date(1995, 1997)}}},
+            {'$unwind': '$lineitems'},
+            {'$match': {'lineitems.l_receiptdate': {'$gte': self._param_date(1996, 1998)}}},
+            {'$project': {
+                'o_orderpriority': 1,
+                'shipmode': '$lineitems.l_shipmode',
+                'delay_days': {
+                    '$dateDiff': {
+                        'startDate': '$lineitems.l_commitdate',
+                        'endDate': '$lineitems.l_receiptdate',
+                        'unit': 'day',
+                    },
+                },
+            }},
+            {'$group': {
+                '_id': {'priority': '$o_orderpriority', 'shipmode': '$shipmode'},
+                'lines': {'$sum': 1},
+                'avg_delay_days': {'$avg': '$delay_days'},
+                'max_delay_days': {'$max': '$delay_days'},
+            }},
+            {'$sort': {'avg_delay_days': -1}},
+        ])
+
+    @query('embedded-11', 'orders with embedded lineitems for selected parts and suppliers')
+    def _orders_embedded_part_supplier_match(self):
+        return MongoFindQuery('orders',
+            filter={
+                'lineitems': {
+                    '$elemMatch': {
+                        'l_partkey': {'$in': self._param_partkeys(10, 50)},
+                        'l_suppkey': {'$in': self._param_int_array('suppkeys', 2000, 5, 30)},
+                        'l_quantity': {'$gte': self._param_int('quantity', 1, 50)},
+                    },
+                },
+            },
+            projection={'o_orderkey': 1, 'o_orderdate': 1, 'lineitems': {'$slice': 10}, '_id': 0},
+            limit=self._param_limit(20, 4),
+        )
+
+    @query('embedded-12', 'part embedded partsupp supplier availability bands')
+    def _part_embedded_partsupp_availability_bands(self):
+        return MongoAggregateQuery('part', [
+            {'$match': {
+                'partsupps.ps_suppkey': {'$in': self._param_int_array('suppkeys', 2000, 20, 100)},
+            }},
+            {'$unwind': '$partsupps'},
+            {'$bucket': {
+                'groupBy': '$partsupps.ps_availqty',
+                'boundaries': [0, 1000, 2500, 5000, 7500, 10000],
+                'default': '10000+',
+                'output': {
+                    'supplies': {'$sum': 1},
+                    'avg_supplycost': {'$avg': '$partsupps.ps_supplycost'},
+                },
+            }},
+        ])
+
+    @query('embedded-13', 'orders embedded lineitem revenue without unwind')
+    def _orders_embedded_revenue_projection(self):
+        return MongoAggregateQuery('orders', [
+            {'$match': {'o_orderdate': {'$gte': self._param_date(1996, 1998)}}},
+            {'$project': {
+                'o_orderkey': 1,
+                'o_orderpriority': 1,
+                'line_count': {'$size': {'$ifNull': ['$lineitems', []]}},
+                'computed_revenue': {
+                    '$sum': {
+                        '$map': {
+                            'input': '$lineitems',
+                            'as': 'li',
+                            'in': {'$multiply': ['$$li.l_extendedprice', {'$subtract': [1, '$$li.l_discount']}]},
+                        },
+                    },
+                },
+            }},
+            {'$sort': {'computed_revenue': -1}},
+            {'$limit': 200},
+        ])
+
+    @query('geo-0', 'customer embedded geography directory')
+    def _customer_embedded_geography_directory(self):
+        return MongoFindQuery('customer',
+            filter={
+                'nation.region.r_name': self._param_region(),
+                'c_acctbal': {'$gt': self._param_int('balance', -1000, 9000)},
+            },
+            projection={'c_custkey': 1, 'c_name': 1, 'c_mktsegment': 1, 'nation.n_name': 1, 'nation.region.r_name': 1, '_id': 0},
+            sort={'c_acctbal': -1},
+            limit=self._param_limit(50, 4),
+        )
+
+    @query('geo-1', 'supplier embedded geography balance buckets')
+    def _supplier_embedded_geography_balance_buckets(self):
+        return MongoAggregateQuery('supplier', [
+            {'$match': {'nation.region.r_name': {'$in': [self._param_region('region_a'), self._param_region('region_b')]}}},
+            {'$bucket': {
+                'groupBy': '$s_acctbal',
+                'boundaries': [-1000, 0, 2500, 5000, 7500, 10000],
+                'default': '10000+',
+                'output': {
+                    'suppliers': {'$sum': 1},
+                    'avg_balance': {'$avg': '$s_acctbal'},
+                },
+            }},
+        ])
+
+    @query('array-size-0', 'orders basket size distribution from embedded lineitems')
+    def _orders_basket_size_distribution(self):
+        return MongoAggregateQuery('orders', [
+            {'$match': {'o_orderdate': {'$gte': self._param_date(1994, 1998)}}},
+            {'$project': {
+                'line_count': {'$size': {'$ifNull': ['$lineitems', []]}},
+                'o_totalprice': 1,
+            }},
+            {'$group': {
+                '_id': '$line_count',
+                'orders': {'$sum': 1},
+                'avg_totalprice': {'$avg': '$o_totalprice'},
+            }},
+            {'$sort': {'_id': 1}},
+        ])
+
+    @query('array-size-1', 'part supplier count and retail price summary')
+    def _part_supplier_count_summary(self):
+        return MongoAggregateQuery('part', [
+            {'$project': {
+                'p_brand': 1,
+                'p_retailprice': 1,
+                'supplier_count': {'$size': {'$ifNull': ['$partsupps', []]}},
+            }},
+            {'$group': {
+                '_id': '$supplier_count',
+                'parts': {'$sum': 1},
+                'avg_retailprice': {'$avg': '$p_retailprice'},
+            }},
+            {'$sort': {'_id': 1}},
+        ])
+
 
 
     #endregion

@@ -173,7 +173,7 @@ class MongoEdbtLoader(MongoLoader):
             MongoIndex('order', ['status']),
             MongoIndex('order', ['customer.customer_id']),
             MongoIndex('order', ['customer.person_id']),
-            MongoIndex('order', ['items.product_id']),
+            MongoIndex('order', ['items.product.product_id']),
 
             MongoIndex('review', ['review_id'], is_unique=True),
             MongoIndex('review', ['product_id', 'customer_id'], is_unique=True),

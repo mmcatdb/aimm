@@ -2,11 +2,31 @@ import argparse
 import sys
 import time
 from typing import Callable, Generic, Literal, NoReturn, Protocol, TypeVar
+from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
+import dataclasses, json
+from datetime import date, datetime
 from contextlib import contextmanager
 import textwrap
 
+from bson import json_util
+
 # Add small epsilon to avoid division by zero or log(0).
 EPSILON = 1e-8
+
+class JsonEncoder(json.JSONEncoder):
+    def default(self, o):
+        if dataclasses.is_dataclass(o):
+            dataclass: Any = o
+            return dataclasses.asdict(dataclass)
+        if isinstance(o, datetime):
+            return json_util.default(o)
+        if isinstance(o, date):
+            return o.isoformat()
+        try:
+            return json_util.default(o)
+        except TypeError:
+            pass
+        return super().default(o)
 
 class Closeable(Protocol):
     def close(self) -> None: ...

@@ -34,13 +34,14 @@ class BasePlanExtractor(ABC, Generic[TQuery]):
         """Returns a comprehensive measurement of the query, including the execution plan and latency.
 
         The query is run `num_runs` times to get a more stable latency measurement.
-        After that, the plan is extracted, ensuring that the best possible plan is captured.
+        After that, the plan is extracted without profiling so the saved
+        features match what is available during inference.
         """
         times = list[float]()
         for _ in range(num_runs):
             time, _ = self.measure_query(query.content, query.is_write)
             times.append(time)
 
-        plan = self.explain_query(query.content, query.is_write, do_profile=True)
+        plan = self.explain_query(query.content, query.is_write, do_profile=False)
 
         return QueryMeasurement.from_instance(query, plan, times)
