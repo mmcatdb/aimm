@@ -180,7 +180,7 @@ def _refresh_queryplanner_plans(config: Config, all_measured):
             plan_extractor = PlanExtractor(driver)
             print(f'Refreshing queryPlanner plans for {len(measured.items)} queries from {measured.database_id} without executing them.')
             for measurement in measured.items:
-                measurement.plan = plan_extractor.explain_query(measurement.content, do_profile=False)
+                measurement.plan = plan_extractor.explain_query(measurement.content, measurement.is_write, do_profile=False)
 
 
 def _require_mongo(driver_type: DriverType):

@@ -4,7 +4,7 @@ import sys
 from core.config import Config
 from core.driver_provider import DriverProvider
 from core.drivers import DriverType, MongoDriver
-from core.query import MongoQuery, parse_database_id
+from core.query import MongoDeleteQuery, MongoInsertQuery, MongoQuery, MongoUpdateQuery, parse_database_id
 from core.utils import auto_close, exit_with_error, exit_with_exception, trim_to_block
 from latency_estimation.dataset import parse_dataset_id
 from latency_estimation.mongo.flat_model import load_flat_model
@@ -49,7 +49,7 @@ def run(config: Config, args: argparse.Namespace):
 
     with auto_close(driver):
         global_stats = plan_extractor.collect_global_stats()
-        plan = plan_extractor.explain_query(query, do_profile=False)
+        plan = plan_extractor.explain_query(query, _is_write_query(query), do_profile=False)
         predicted = model.predict_plan(plan, global_stats)
 
     print(trim_to_block(query.serialize()))
@@ -76,6 +76,9 @@ def _get_query(args: argparse.Namespace) -> str:
     if not query:
         exit_with_error('No query provided.')
     return query
+
+def _is_write_query(query: MongoQuery) -> bool:
+    return isinstance(query, (MongoUpdateQuery, MongoDeleteQuery, MongoInsertQuery))
 
 
 if __name__ == '__main__':

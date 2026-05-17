@@ -4,6 +4,7 @@ from io import TextIOWrapper
 import os
 from typing import Generic, cast
 from core.files import JsonLinesReader, JsonLinesWriter, open_input, open_output
+from .mongo_query import MongoDeleteQuery, MongoInsertQuery, MongoUpdateQuery
 from .query_id import DatabaseId, QueryInstanceId, parse_query_instance_driver_type
 from .query_instance import QueryInstance, TQuery, parse_query
 
@@ -44,7 +45,7 @@ class QueryMeasurement(QueryInstance[TQuery]):
         return QueryMeasurement(
             id=id,
             label=data['label'],
-            is_write=data['is_write'],
+            is_write=data.get('is_write', _infer_is_write(content)),
             # This is probably necessary due to the limitations of python's type system.
             content=cast(TQuery, content),
             plan=data['plan'],
@@ -55,6 +56,9 @@ def serialize_query(query: TQuery) -> str:
     if isinstance(query, str):
         return query
     return query.serialize()
+
+def _infer_is_write(query: TQuery) -> bool:
+    return isinstance(query, (MongoUpdateQuery, MongoDeleteQuery, MongoInsertQuery))
 
 @dataclass
 class MeasurementConfig:
@@ -121,7 +125,7 @@ def load_measured(path: str) -> MeasuredQueries:
         mc = MeasurementConfig(
             num_queries=int(header['num_queries']),
             num_runs=int(header['num_runs']),
-            allow_write=bool(header['allow_write'])
+            allow_write=bool(header.get('allow_write', any(item.is_write for item in items)))
         )
 
         return MeasuredQueries(items, header['global_stats'], header['database_id'], mc)
