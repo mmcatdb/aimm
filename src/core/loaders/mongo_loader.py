@@ -410,7 +410,7 @@ class MongoPostgresBuilder:
             raise ValueError(f'CSV table not found for kind: {csv_kind}')
         return table
 
-type_pattern = re.compile(r'([a-zA-Z0-9_()]+)')
+type_pattern = re.compile(r'([a-zA-Z0-9_]+)')
 
 def _postgres_to_csv_table(kind: str, columns: list[PostgresColumn]) -> CsvTable:
     properties = []
@@ -419,7 +419,7 @@ def _postgres_to_csv_table(kind: str, columns: list[PostgresColumn]) -> CsvTable
         match = type_pattern.match(column.type)
         if not match:
             raise ValueError(f'Invalid Postgres type: {column.type}')
-        type_name = match.group(1)
+        type_name = match.group(1).upper()
 
         type = postgres_to_csv_types.get(type_name)
         if not type:
