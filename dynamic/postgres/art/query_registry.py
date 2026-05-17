@@ -1395,7 +1395,9 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                 ORDER BY n.val_int DESC
                 LIMIT 100
             """
-        self._query('nested-0', '3-level nested subquery: node > grp avg of nodes with above-avg measure', q_99)
+        # This query takes ~100 s for art-4 which is like 10 hours (in the 2000-40 configuration).
+        # And it doesn't seem to scale linearry - it's ~18 s on art-3 which is just 2x smaller.
+        self._query('nested-0', '3-level nested subquery: node > grp avg of nodes with above-avg measure', q_99, max_scale=4)
 
         self._query('nested-1', 'ALL and ANY: val_int exceeds ALL group averages and ANY top-100 measure vals', lambda s: f"""
             SELECT node_id, tag, val_int

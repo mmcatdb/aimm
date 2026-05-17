@@ -12,26 +12,27 @@ from .query_instance import TQuery, QueryInstance
 from .query_template import QueryGenerator, QueryTemplate
 
 class QueryMetadata():
-    def __init__(self, name: str, title: str, weight: float, is_write: bool):
+    def __init__(self, name: str, title: str, weight: float, is_write: bool, max_scale: float | None):
         self.name = name
         self.title = title
         self.weight = weight
         self.is_write = is_write
+        self.max_scale = max_scale
 
 QueryFunction = TypeVar('QueryFunction', bound=Callable[..., Any])
 
-def query(name: str, title: str, weight: float = 1.0) -> Callable[[QueryFunction], QueryFunction]:
+def query(name: str, title: str, weight: float = 1.0, max_scale: float | None = None) -> Callable[[QueryFunction], QueryFunction]:
     """Decorator to mark a method as a query generator. The method should take a `QueryRegistry` as input and return a `TQuery`."""
-    return _common_query(name, title, weight, is_write=False)
+    return _common_query(name, title, weight, is_write=False, max_scale=max_scale)
 
-def write_query(name: str, title: str, weight: float = 1.0) -> Callable[[QueryFunction], QueryFunction]:
+def write_query(name: str, title: str, weight: float = 1.0, max_scale: float | None = None) -> Callable[[QueryFunction], QueryFunction]:
     """Decorator to mark a method as a write query generator. The method should take a `QueryRegistry` as input and return a `TQuery`. Write queries are meant to modify the database."""
-    return _common_query(name, title, weight, is_write=True)
+    return _common_query(name, title, weight, is_write=True, max_scale=max_scale)
 
-def _common_query(name: str, title: str, weight: float, is_write: bool) -> Callable[[QueryFunction], QueryFunction]:
+def _common_query(name: str, title: str, weight: float, is_write: bool, max_scale: float | None) -> Callable[[QueryFunction], QueryFunction]:
     def decorator(function: QueryFunction) -> QueryFunction:
         setattr(function, '_is_query', True)
-        setattr(function, '_query_metadata', QueryMetadata(name, title, weight, is_write))
+        setattr(function, '_query_metadata', QueryMetadata(name, title, weight, is_write, max_scale))
         return function
 
     return decorator
@@ -85,12 +86,15 @@ class QueryRegistry(Generic[TQuery]):
 
     def generate_queries(self, scale: float, num_queries: int, allow_write: bool) -> list[QueryInstance[TQuery]]:
         """Generates `num_queries` query instances. At least one query will be generated for each template. If `allow_write` is False, only non-write queries will be generated."""
-        queries = list[QueryInstance[TQuery]]()
         templates = list(self._get_templates().values())
         if not allow_write:
             templates = [t for t in templates if not t.is_write]
+        # Exclude queries that might take too much time for larger scales.
+        templates = [t for t in templates if not t.max_scale or t.max_scale >= scale]
 
         num_queries = max(num_queries, len(templates))
+
+        queries = list[QueryInstance[TQuery]]()
 
         for i in range(num_queries):
             template = templates[i % len(templates)]
@@ -119,7 +123,7 @@ class QueryRegistry(Generic[TQuery]):
 
             function = cast('Callable[[QueryRegistry[TQuery]], TQuery]', attribute)
             metadata = cast(QueryMetadata, getattr(function, '_query_metadata'))
-            self.__register_query(metadata.name, metadata.title, metadata.weight, function, metadata.is_write)
+            self.__register_query(metadata.name, metadata.title, metadata.weight, function, metadata.is_write, metadata.max_scale)
 
         self._register_queries()
 
@@ -137,23 +141,23 @@ class QueryRegistry(Generic[TQuery]):
         """Override this to register write queries programmatically using the `_query` method."""
         pass
 
-    def _query(self, name: str, title: str, function: Callable[[Self], TQuery], weight: float = 1.0):
+    def _query(self, name: str, title: str, function: Callable[[Self], TQuery], weight: float = 1.0, max_scale: float | None = None):
         """Register query programatically.
 
         Works the same way as the `@query` decorator but can be used dynamically.
         Has to be called within `_register_queries`.
         """
-        self.__register_query(name, title, weight, function, is_write=False)
+        self.__register_query(name, title, weight, function, is_write=False, max_scale=max_scale)
 
-    def _write_query(self, name: str, title: str, function: Callable[[Self], TQuery], weight: float = 1.0):
+    def _write_query(self, name: str, title: str, function: Callable[[Self], TQuery], weight: float = 1.0, max_scale: float | None = None):
         """Register write query programatically. Write queries are meant to modify the database.
 
         Works the same way as the `@query` decorator but can be used dynamically.
         Has to be called within `_register_queries`.
         """
-        self.__register_query(name, title, weight, function, is_write=True)
+        self.__register_query(name, title, weight, function, is_write=True, max_scale=max_scale)
 
-    def __register_query(self, name: str, title: str, weight: float, function: Callable[[Self], TQuery], is_write: bool):
+    def __register_query(self, name: str, title: str, weight: float, function: Callable[[Self], TQuery], is_write: bool, max_scale: float | None):
         if self.__collected_templates is None:
             raise Exception('Query can only be registered within _register_queries method.')
 
@@ -166,6 +170,7 @@ class QueryRegistry(Generic[TQuery]):
             weight=weight,
             title=title,
             is_write=is_write,
+            max_scale=max_scale,
             generator=generator,
         ))
 

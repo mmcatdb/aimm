@@ -18,15 +18,16 @@ class QueryGenerator(Protocol[TQuery_cov]):
 class QueryTemplate(Generic[TQuery]):
     """A template that can be instantiated with parameters to produce a `QueryInstance`."""
 
-    def __init__(self, driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str, is_write: bool, generator: QueryGenerator[TQuery]):
+    def __init__(self, driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str, is_write: bool, max_scale: float | None, generator: QueryGenerator[TQuery]):
         self.driver = driver
         self.schema = schema
         self.name = name
         self.weight = weight
-        self.is_write = is_write
         """Used both for determining the frequency of query generation and the weight of the query during evaluation / MCTS."""
         self.id: TemplateId = create_template_id(driver, schema, name)
         self._title = title
+        self.is_write = is_write
+        self.max_scale = max_scale
         self._generator = generator
 
     def label(self) -> str:
@@ -51,7 +52,7 @@ class CategorizedQueryTemplate(QueryTemplate[TQuery]):
     """A QueryTemplate with an associated category and weight for generation frequency."""
 
     def __init__(self, driver: DriverType, schema: SchemaName, name: TemplateName, weight: float, title: str, is_write: bool, generator: QueryGenerator[TQuery], category: str):
-        super().__init__(driver, schema, name, weight, title, is_write, generator)
+        super().__init__(driver, schema, name, weight, title, is_write, None, generator)
         self.category = category
 
 class CategorizedQueryGenerator:
