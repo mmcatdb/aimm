@@ -59,6 +59,7 @@ KNOWN_STAGE_GROUPS = (
     'AGG_SKIP',
     'AGG_COUNT',
     'AGG_FACET',
+    'AGG_BUCKET',
 )
 
 FILTER_OPS = (
@@ -242,6 +243,18 @@ class FlatFeatureExtractor:
             'shape.log1p.projection_field_sum',
             'shape.sort_field_sum',
             'shape.log1p.sort_field_sum',
+            'shape.unwind_input_work',
+            'shape.log1p.unwind_input_work',
+            'shape.group_key_field_sum',
+            'shape.log1p.group_key_field_sum',
+            'shape.accumulator_sum',
+            'shape.log1p.accumulator_sum',
+            'shape.expression_operator_count',
+            'shape.log1p.expression_operator_count',
+            'shape.array_expression_operator_count',
+            'shape.log1p.array_expression_operator_count',
+            'shape.date_expression_operator_count',
+            'shape.log1p.date_expression_operator_count',
         ])
 
         for op in FILTER_OPS:
@@ -366,12 +379,26 @@ class FlatFeatureExtractor:
         has_collscan = any(self._node_stage(node) == 'COLLSCAN' for node in nodes)
         has_sort = any(self._is_sort_stage(self._node_stage(node)) for node in nodes)
         has_group = any(self._is_group_stage(self._node_stage(node)) for node in nodes)
-        min_limit_or_count = min(root_limit, count) if root_limit > 0 and count > 0 else max(root_limit, count)
+        has_unwind = any(self._node_stage(node) == 'AGG_UNWIND' for node in nodes)
+        estimated_input_docs = self._estimated_input_docs(nodes, root_stats)
+        min_limit_or_count = min(root_limit, estimated_input_docs) if root_limit > 0 and estimated_input_docs > 0 else max(root_limit, estimated_input_docs)
         projection_fields = sum(len(node.get('transformBy', {})) for node in nodes if isinstance(node.get('transformBy'), dict))
         sort_fields = sum(len(node.get('sortPattern', {})) for node in nodes if isinstance(node.get('sortPattern'), dict))
+        group_key_fields = sum(self._expression_field_count(node.get('groupBy')) for node in nodes if self._is_group_stage(self._node_stage(node)))
+        accumulators = sum(len([key for key in node.get('accumulators', {}) if not key.startswith('$')]) for node in nodes if isinstance(node.get('accumulators'), dict))
+        expression_summary = Counter[str]()
+        for node in nodes:
+            self._summarize_expression(node.get('transformBy'), expression_summary)
+            self._summarize_expression(node.get('groupBy'), expression_summary)
+            self._summarize_expression(node.get('accumulators'), expression_summary)
+            self._summarize_expression(node.get('filter'), expression_summary)
         collscan_work = count if has_collscan else 0.0
-        sort_work = count if has_sort else 0.0
-        group_work = count if has_group else 0.0
+        sort_work = estimated_input_docs if has_sort else 0.0
+        group_work = estimated_input_docs if has_group else 0.0
+        unwind_work = estimated_input_docs if has_unwind else 0.0
+        expression_operator_count = sum(expression_summary.values())
+        array_expression_operator_count = sum(expression_summary[op] for op in ('$size', '$filter', '$map', '$sortArray', '$slice'))
+        date_expression_operator_count = sum(expression_summary[op] for op in ('$dateTrunc', '$dateDiff'))
 
         return [
             root_limit,
@@ -389,7 +416,41 @@ class FlatFeatureExtractor:
             math.log1p(projection_fields),
             float(sort_fields),
             math.log1p(sort_fields),
+            unwind_work,
+            math.log1p(max(0.0, unwind_work)),
+            float(group_key_fields),
+            math.log1p(group_key_fields),
+            float(accumulators),
+            math.log1p(accumulators),
+            float(expression_operator_count),
+            math.log1p(expression_operator_count),
+            float(array_expression_operator_count),
+            math.log1p(array_expression_operator_count),
+            float(date_expression_operator_count),
+            math.log1p(date_expression_operator_count),
         ]
+
+    def _estimated_input_docs(self, nodes: list[dict], root_stats: dict) -> float:
+        count = self._numeric(root_stats.get('count', 0.0))
+        ixscan_nodes = [node for node in nodes if self._node_stage(node) in ('IXSCAN', 'EXPRESS_IXSCAN')]
+        if ixscan_nodes:
+            summary = IndexBoundsSummary()
+            for node in ixscan_nodes:
+                node_summary = self._summarize_index_bounds(node.get('indexBounds'))
+                summary.fields += node_summary.fields
+                summary.intervals += node_summary.intervals
+                summary.point_intervals += node_summary.point_intervals
+                summary.range_intervals += node_summary.range_intervals
+                summary.unbounded_intervals += node_summary.unbounded_intervals
+                summary.numeric_bounds.extend(node_summary.numeric_bounds)
+                summary.widths.extend(node_summary.widths)
+
+            return count * self._heuristic_index_selectivity(summary, count)
+
+        if any(self._node_stage(node) == 'COLLSCAN' for node in nodes):
+            return count
+
+        return count
 
     def _filter_features(self, nodes: list[dict]) -> list[float]:
         summary = FilterSummary()
@@ -630,7 +691,7 @@ class FlatFeatureExtractor:
         return stage in ('SORT', 'SORT_MERGE', 'AGG_SORT')
 
     def _is_group_stage(self, stage: str) -> bool:
-        return stage in ('GROUP', 'AGG_GROUP')
+        return stage in ('GROUP', 'AGG_GROUP', 'AGG_BUCKET', 'AGG_BUCKET_AUTO')
 
     def _is_limit_stage(self, stage: str) -> bool:
         return stage in ('LIMIT', 'AGG_LIMIT')
@@ -674,6 +735,26 @@ class FlatFeatureExtractor:
         if isinstance(value, list):
             for child in value:
                 self._collect_numeric_values(child, output)
+
+    def _summarize_expression(self, value, output: Counter[str]) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key.startswith('$'):
+                    output[key] += 1
+                self._summarize_expression(child, output)
+            return
+
+        if isinstance(value, list):
+            for child in value:
+                self._summarize_expression(child, output)
+
+    def _expression_field_count(self, value) -> int:
+        if isinstance(value, dict):
+            non_operator_keys = [key for key in value if not key.startswith('$')]
+            return len(non_operator_keys) if non_operator_keys else 1
+        if value is None:
+            return 0
+        return 1
 
     @staticmethod
     def _mapping_keys(value) -> list[str]:

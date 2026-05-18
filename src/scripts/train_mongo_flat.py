@@ -1,6 +1,8 @@
 import argparse
 import os
 
+import numpy as np
+
 from core.config import Config
 from core.drivers import DriverType
 from core.utils import exit_with_exception, print_warning
@@ -44,6 +46,7 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--colsample-bytree', type=float, default=0.9, help='XGBoost feature subsampling.')
     parser.add_argument('--n-jobs', type=int, default=-1, help='Parallel jobs for supported estimators.')
     parser.add_argument('--seed', type=int, default=69, help='Random seed.')
+    parser.add_argument('--sample-weight', default='none', choices=['none', 'log_latency', 'sqrt_latency', 'capped_latency'], help='Optional training-row weighting based only on measured training latency.')
     parser.add_argument('--dry-run', action='store_true', help='Only print dataset/model setup. Do not train.')
 
 
@@ -80,11 +83,12 @@ def run(config: Config, args: argparse.Namespace):
     model = MongoFlatLatencyModel(estimator, feature_extractor, model_id, model_type)
     train_x = transform_dataset_features(model.feature_extractor, train_dataset, train_id)
     train_y = train_dataset.y()
+    train_weight = create_sample_weight(train_y, args.sample_weight)
     val_x = transform_dataset_features(model.feature_extractor, val_dataset, val_id)
     val_y = val_dataset.y()
 
     print('\nTraining flat MongoDB model...')
-    model.fit(train_x, train_y)
+    model.fit(train_x, train_y, sample_weight=train_weight)
 
     train_metrics = compute_metrics(model.predict(train_x), train_y)
     val_metrics = compute_metrics(model.predict(val_x), val_y)
@@ -97,6 +101,18 @@ def run(config: Config, args: argparse.Namespace):
         'validation': val_metrics,
     })
     print(f'\nSaved flat model to {output_path}')
+
+
+def create_sample_weight(y, mode: str):
+    if mode == 'none':
+        return None
+    if mode == 'log_latency':
+        return np.log1p(y) + 1.0
+    if mode == 'sqrt_latency':
+        return np.sqrt(y + 1.0)
+    if mode == 'capped_latency':
+        return np.minimum(y, 200.0) + 1.0
+    raise ValueError(f'Unsupported sample-weight mode: {mode}')
 
 
 if __name__ == '__main__':

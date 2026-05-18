@@ -36,8 +36,12 @@ class MongoFlatLatencyModel:
         self.model_id = model_id
         self.model_type = model_type
 
-    def fit(self, x: np.ndarray, y: np.ndarray) -> None:
-        self.estimator.fit(x, np.log1p(y))
+    def fit(self, x: np.ndarray, y: np.ndarray, sample_weight: np.ndarray | None = None) -> None:
+        if sample_weight is None:
+            self.estimator.fit(x, np.log1p(y))
+            return
+
+        self.estimator.fit(x, np.log1p(y), sample_weight=sample_weight)
 
     def predict(self, x: np.ndarray) -> np.ndarray:
         predictions = np.expm1(self.estimator.predict(x))

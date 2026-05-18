@@ -102,12 +102,13 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
     @query('edbt-3', 'Seller daily revenue for last 30 days (order, order_item, product)')
     def _seller_daily_revenue(self):
         date = self._param_date_minus_days(30, 120)
-        seller_ids = self._param_seller_ids(100, 1000)
+        seller_ids = self._param_seller_ids(5, 50)
 
         return MongoAggregateQuery('order', [
             {'$match': {
                 'ordered_at': {'$gte': date},
                 'status': {'$in': ['paid', 'shipped']},
+                'items.product.seller_id': {'$in': seller_ids},
             }},
             {'$unwind': '$items'},
             {'$match': {'items.product.seller_id': {'$in': seller_ids}}},
@@ -172,8 +173,11 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
 
     @query('edbt-5', 'Customer spend buckets (order, customer)')
     def _customer_spend_buckets(self):
+        person_ids = self._param_person_ids(100, 1000)
+
         return MongoAggregateQuery('order', [
             {'$match': {
+                'customer.person_id': {'$in': person_ids},
                 'ordered_at': {'$gte': self._param_date_minus_days(30, 180)},
                 'status': {'$in': ['paid', 'shipped']},
             }},
@@ -635,8 +639,13 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
 
     @query('edbt-29', 'Hot products by recent review volume')
     def _hot_products_by_recent_reviews(self):
+        product_ids = self._param_product_ids(100, 1000)
+
         return MongoAggregateQuery('review', [
-            {'$match': {'created_at': {'$gte': self._param_date_minus_days(7, 180)}}},
+            {'$match': {
+                'product_id': {'$in': product_ids},
+                'created_at': {'$gte': self._param_date_minus_days(7, 180)},
+            }},
             {'$group': {
                 '_id': '$product_id',
                 'reviews': {'$sum': 1},
@@ -649,8 +658,14 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
 
     @query('edbt-30', 'Basket size distribution for recent orders')
     def _basket_size_distribution(self):
+        product_ids = self._param_product_ids(10, 80)
+
         return MongoAggregateQuery('order', [
-            {'$match': {'ordered_at': {'$gte': self._param_date_minus_days(7, 180)}}},
+            {'$match': {
+                'ordered_at': {'$gte': self._param_date_minus_days(7, 180)},
+                'status': {'$in': ['paid', 'shipped']},
+                'items.product.product_id': {'$in': product_ids},
+            }},
             {'$project': {
                 'status': 1,
                 'item_count': {'$size': {'$ifNull': ['$items', []]}},
