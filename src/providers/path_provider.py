@@ -22,6 +22,9 @@ class PathProvider:
     def populate_times(self, database_id: DatabaseId) -> str:
         return self.database_dir(database_id, 'populate.json')
 
+    def global_stats(self, database_id: DatabaseId) -> str:
+        return self.database_dir(database_id, 'global_stats.json')
+
     def measured(self, database_id: DatabaseId, mc: MeasurementConfig) -> str:
         nowrite_suffix = '' if mc.allow_write else '-nowrite'
         # Json lines!

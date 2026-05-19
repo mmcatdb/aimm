@@ -1,5 +1,8 @@
 import argparse
+import os
 import sys
+
+from bson import json_util
 
 from core.config import Config
 from core.driver_provider import DriverProvider
@@ -27,6 +30,7 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('model_id', nargs=1, help='Id of the flat model. Pattern: mongo/{model_name}.')
     parser.add_argument('database_id', nargs=1, help='Id of the database. Pattern: mongo/{schema_name}-{scale}.')
     parser.add_argument('query', nargs='?', help='Mongo query as JSON command. If omitted, read from stdin.')
+    parser.add_argument('--collect-global-stats', action='store_true', help='Collect and cache Mongo field stats if no precomputed cache exists. Intended for data prep, not per-query inference.')
 
 
 def run(config: Config, args: argparse.Namespace):
@@ -48,14 +52,23 @@ def run(config: Config, args: argparse.Namespace):
     plan_extractor = PlanExtractor(driver)
 
     with auto_close(driver):
-        global_stats = plan_extractor.collect_global_stats()
+        global_stats = _load_cached_global_stats(pp, database_id)
+        if global_stats is None:
+            if not args.collect_global_stats:
+                exit_with_error(
+                    f'No cached Mongo global stats with field distributions found for "{database_id}". '
+                    'Recreate the Mongo flat dataset/measurements first, or run this command once with '
+                    '--collect-global-stats during data prep.'
+                )
+            global_stats = plan_extractor.collect_global_stats()
+            _save_cached_global_stats(pp, database_id, global_stats)
         plan = plan_extractor.explain_query(query, _is_write_query(query), do_profile=False)
         predicted = model.predict_plan(plan, global_stats)
 
     print(trim_to_block(query.serialize()))
     print(f'\nPredicted latency: {predicted:.2f} ms')
     print('Plan source: MongoDB explain verbosity "queryPlanner"; the query was not executed.')
-    print('Global stats were collected once before prediction and reused as inference features.')
+    print('Global stats were loaded from the precomputed cache and reused as inference features.')
 
 
 def _get_query(args: argparse.Namespace) -> str:
@@ -79,6 +92,31 @@ def _get_query(args: argparse.Namespace) -> str:
 
 def _is_write_query(query: MongoQuery) -> bool:
     return isinstance(query, (MongoUpdateQuery, MongoDeleteQuery, MongoInsertQuery))
+
+
+def _load_cached_global_stats(pp: PathProvider, database_id: str) -> dict | None:
+    path = pp.global_stats(database_id)
+    if not os.path.exists(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as file:
+        stats = json_util.loads(file.read())
+    if not _has_mongo_field_stats(stats):
+        return None
+    return stats
+
+
+def _save_cached_global_stats(pp: PathProvider, database_id: str, global_stats: dict) -> None:
+    path = pp.global_stats(database_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as file:
+        file.write(json_util.dumps(global_stats))
+
+
+def _has_mongo_field_stats(global_stats: dict) -> bool:
+    if not isinstance(global_stats, dict) or not global_stats:
+        return False
+    collection_stats = [stats for stats in global_stats.values() if isinstance(stats, dict)]
+    return bool(collection_stats) and all(PlanExtractor.FIELD_STATS_KEY in stats for stats in collection_stats)
 
 
 if __name__ == '__main__':

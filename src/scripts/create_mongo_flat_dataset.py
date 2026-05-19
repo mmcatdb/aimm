@@ -3,6 +3,7 @@ import os
 import random
 
 import numpy as np
+from bson import json_util
 
 from core.config import Config
 from core.driver_provider import DriverProvider
@@ -72,6 +73,8 @@ def run(config: Config, args: argparse.Namespace):
     all_measured = _load_all_measured(pp, args.measurement_suffixes)
     if args.refresh_queryplanner:
         _refresh_queryplanner_plans(config, all_measured)
+    _attach_query_filters_to_cached_plans(all_measured)
+    _refresh_global_stats_if_needed(config, all_measured)
 
     if args.feature_extractor_dataset:
         fe_dataset_id = create_dataset_id(DriverType.MONGO, args.feature_extractor_dataset)
@@ -181,6 +184,99 @@ def _refresh_queryplanner_plans(config: Config, all_measured):
             print(f'Refreshing queryPlanner plans for {len(measured.items)} queries from {measured.database_id} without executing them.')
             for measurement in measured.items:
                 measurement.plan = plan_extractor.explain_query(measurement.content, measurement.is_write, do_profile=False)
+
+
+def _attach_query_filters_to_cached_plans(all_measured):
+    for measured in all_measured:
+        for measurement in measured.items:
+            if not isinstance(measurement.plan, dict):
+                continue
+            if PlanExtractor.QUERY_FILTERS_KEY in measurement.plan:
+                continue
+
+            query_filters = _extract_query_filters(measurement.content.to_dict())
+            if not query_filters:
+                continue
+
+            measurement.plan[PlanExtractor.QUERY_FILTERS_KEY] = query_filters
+            if len(query_filters) == 1:
+                measurement.plan[PlanExtractor.QUERY_FILTER_KEY] = query_filters[0]
+
+
+def _extract_query_filters(cmd: dict) -> list[dict]:
+    filters = list[dict]()
+
+    filter_doc = cmd.get('filter')
+    if isinstance(filter_doc, dict) and filter_doc:
+        filters.append(filter_doc)
+
+    for update in cmd.get('updates') or []:
+        query_doc = update.get('q') if isinstance(update, dict) else None
+        if isinstance(query_doc, dict) and query_doc:
+            filters.append(query_doc)
+
+    for delete in cmd.get('deletes') or []:
+        query_doc = delete.get('q') if isinstance(delete, dict) else None
+        if isinstance(query_doc, dict) and query_doc:
+            filters.append(query_doc)
+
+    pipeline = cmd.get('pipeline')
+    if isinstance(pipeline, list):
+        for stage in pipeline:
+            if not isinstance(stage, dict):
+                continue
+            match_doc = stage.get('$match')
+            if isinstance(match_doc, dict) and match_doc:
+                filters.append(match_doc)
+
+    return filters
+
+
+def _refresh_global_stats_if_needed(config: Config, all_measured):
+    dp = DriverProvider.default(config)
+    pp = PathProvider(config)
+
+    for measured in all_measured:
+        if _has_mongo_field_stats(measured.global_stats):
+            _save_global_stats_cache(pp, measured.database_id, measured.global_stats)
+            continue
+
+        cached_global_stats = _load_global_stats_cache(pp, measured.database_id)
+        if cached_global_stats is not None:
+            measured.global_stats = cached_global_stats
+            continue
+
+        driver_type, schema, scale = parse_database_id(measured.database_id)
+        _require_mongo(driver_type)
+        driver = dp.get(driver_type, schema, scale)
+        with auto_close(driver):
+            plan_extractor = PlanExtractor(driver)
+            print(f'Refreshing Mongo global field stats for {measured.database_id} without executing target queries.')
+            measured.global_stats = plan_extractor.collect_global_stats()
+            _save_global_stats_cache(pp, measured.database_id, measured.global_stats)
+
+
+def _has_mongo_field_stats(global_stats: dict) -> bool:
+    if not isinstance(global_stats, dict) or not global_stats:
+        return False
+    collection_stats = [stats for stats in global_stats.values() if isinstance(stats, dict)]
+    return bool(collection_stats) and all(PlanExtractor.FIELD_STATS_KEY in stats for stats in collection_stats)
+
+
+def _save_global_stats_cache(pp: PathProvider, database_id: str, global_stats: dict):
+    path = pp.global_stats(database_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as file:
+        file.write(json_util.dumps(global_stats))
+
+
+def _load_global_stats_cache(pp: PathProvider, database_id: str) -> dict | None:
+    path = pp.global_stats(database_id)
+    if not os.path.exists(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as file:
+        global_stats = json_util.loads(file.read())
+    return global_stats if _has_mongo_field_stats(global_stats) else None
 
 
 def _require_mongo(driver_type: DriverType):
