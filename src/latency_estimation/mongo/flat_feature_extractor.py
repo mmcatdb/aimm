@@ -99,6 +99,7 @@ SCHEMA_IDENTIFIER_CATEGORICAL_KEYS = (
 )
 
 BOUND_NUMBER_RE = re.compile(r'-?\d+(?:\.\d+)?')
+BOUND_QUOTED_STRING_RE = re.compile(r'"([^"]*)"')
 UNBOUNDED_MARKERS = ('MinKey', 'MaxKey', '-inf', 'inf', 'Infinity', '9223372036854775807', '-9223372036854775808')
 
 
@@ -637,6 +638,10 @@ class FlatFeatureExtractor:
             return [], None, False, False
 
         unbounded = any(marker in text for marker in UNBOUNDED_MARKERS)
+        quoted_values = BOUND_QUOTED_STRING_RE.findall(text)
+        if len(quoted_values) >= 2 and quoted_values[0] == quoted_values[-1] and not unbounded:
+            return [], 0.0, False, True
+
         values = []
         for match in BOUND_NUMBER_RE.findall(text):
             try:
@@ -665,9 +670,12 @@ class FlatFeatureExtractor:
             return min(1.0, max(1.0, summary.point_intervals) / collection_count)
 
         range_fraction = 0.5 if summary.unbounded_intervals else 0.25
+        point_multiplier = 0.1 ** min(summary.point_intervals, 6)
         point_fraction = self._ratio(summary.point_intervals, collection_count)
         interval_penalty = min(1.0, math.log1p(summary.intervals) / 10.0)
-        return min(1.0, max(0.000001, range_fraction + point_fraction + interval_penalty * 0.05))
+        if summary.point_intervals > 0:
+            interval_penalty *= min(1.0, max(point_multiplier, point_fraction))
+        return min(1.0, max(0.000001, range_fraction * point_multiplier + point_fraction + interval_penalty * 0.05))
 
     def _iter_nodes(self, root: dict, depth: int = 0):
         yield root, depth
@@ -722,11 +730,9 @@ class FlatFeatureExtractor:
         if isinstance(value, (int, float)):
             output.append(float(value))
             return
-        if isinstance(value, datetime):
-            output.append(value.timestamp())
-            return
-        if isinstance(value, date):
-            output.append(float(value.toordinal()))
+        if isinstance(value, (datetime, date)):
+            # Absolute calendar values do not transfer well across schemas. The
+            # plan shape and index bounds carry the useful selectivity signal.
             return
         if isinstance(value, dict):
             for child in value.values():
