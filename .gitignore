@@ -20,5 +20,4 @@ config.yaml
 data/**/*.json
 data/**/*.jsonl
 data/**/*.png
-
-*.sh
+*ign.*
