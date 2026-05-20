@@ -22,6 +22,8 @@ services:
         # restart: always
         environment:
             NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+            NEO4J_server_directories_import: /import
+
         ports:
             - ${NEO4J_DEFAULT_PORT}:7687
             # No bolt port because it can't be easily remapped and we would have multiple of them.
@@ -35,6 +37,7 @@ services:
         # restart: always
         environment:
             NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+            NEO4J_server_directories_import: /import
         ports:
             - ${NEO4J_A_PORT}:7687
             # No bolt port because it can't be easily remapped and we would have multiple of them.
