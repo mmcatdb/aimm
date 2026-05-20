@@ -6,7 +6,8 @@ import pickle
 from dataclasses import asdict, dataclass
 
 import numpy as np
-from core.utils import EPSILON, JsonEncoder
+from core.files import JsonEncoder, open_output
+from core.utils import EPSILON
 from latency_estimation.mongo.flat_dataset import MongoFlatArrayDataset
 from latency_estimation.mongo.flat_feature_extractor import FlatFeatureExtractor
 
@@ -180,6 +181,5 @@ def load_flat_model(path: str) -> MongoFlatLatencyModel:
 
 
 def save_metrics(path: str, metrics: dict[str, FlatModelMetrics]) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w') as file:
+    with open_output(path) as file:
         json.dump({key: asdict(value) for key, value in metrics.items()}, file, indent=4, cls=JsonEncoder)

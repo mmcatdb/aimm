@@ -10,45 +10,6 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
     def __init__(self):
         super().__init__(DriverType.MONGO)
 
-    def _param_customer_id(self):
-        return self._param_int('customer_id', 1, self._counts.order)
-
-    def _param_customer_ids(self, min_count: int, max_count: int | None = None):
-        return self._param_int_array('customer_ids', self._counts.order, min_count, max_count)
-
-    def _param_order_id(self):
-        return self._param_int('order_id', 1, self._counts.order)
-
-    def _param_order_ids(self, min_count: int, max_count: int | None = None):
-        return self._param_int_array('order_ids', self._counts.order, min_count, max_count)
-
-    def _param_country_code(self):
-        return self._param_choice('country_code', COUNTRY_CODES)
-
-    def _param_country_codes(self, min_count: int = 2, max_count: int = 5):
-        return self._param('country_codes', lambda: self._convert_array(
-            self._rng.sample(COUNTRY_CODES, self._rng_int(min_count, max_count)),
-            ValueType.STRING,
-        ))
-
-    def _param_order_status(self):
-        return self._param_choice('status', ORDER_STATUSES)
-
-    def _param_order_statuses(self):
-        return self._param('statuses', lambda: self._convert_array(
-            self._rng.sample(ORDER_STATUSES, self._rng_int(1, 3)),
-            ValueType.STRING,
-        ))
-
-    def _param_currency(self):
-        return self._param_choice('currency', CURRENCIES)
-
-    def _param_payment_method(self):
-        return self._param_choice('payment_method', PAYMENT_METHODS)
-
-    def _param_shipping_method(self):
-        return self._param_choice('shipping_method', SHIPPING_METHODS)
-
     @query('edbt-0', 'Order history for a person (order, customer)')
     def _order_history_for_person(self):
         return MongoFindQuery('order',
@@ -705,10 +666,3 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             sort={'total_cents': -1},
             limit=self._param_limit(20, 4),
         )
-
-
-COUNTRY_CODES = ['AU', 'BR', 'CA', 'CZ', 'DE', 'ES', 'FR', 'GB', 'IN', 'IT', 'NL', 'PL', 'SE', 'US']
-ORDER_STATUSES = ['paid', 'shipped', 'canceled', 'refunded']
-CURRENCIES = ['AUD', 'BRL', 'CAD', 'EUR', 'GBP', 'INR', 'USD']
-PAYMENT_METHODS = ['card', 'paypal', 'bank']
-SHIPPING_METHODS = ['standard', 'express']

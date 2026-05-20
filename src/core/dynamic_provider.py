@@ -17,7 +17,6 @@ class ScriptFile(Enum):
     def module_name(self):
         return self.value[:-3]
 
-
 DYNAMIC_ROOT_DIRECTORY = 'dynamic'
 NO_DRIVER_DIRECTORY = 'common'
 FACTORY_FUNCTION_NAME = 'export'

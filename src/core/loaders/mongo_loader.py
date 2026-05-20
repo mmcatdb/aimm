@@ -340,21 +340,26 @@ def csv_value_to_mongo(value: str, type: CsvType):
         return [x.strip() for x in value.split(',')]
 
 postgres_to_csv_types: dict[str, CsvType] = {
-    'BIGINT': CsvType.INT,
     'BOOLEAN': CsvType.BOOL,
-    'CHAR': CsvType.STRING,
-    'DATE': CsvType.DATE,
-    'DECIMAL': CsvType.FLOAT,
-    'DOUBLE': CsvType.FLOAT,
-    'FLOAT8': CsvType.FLOAT,
+
     'INTEGER': CsvType.INT,
-    'JSONB': CsvType.JSON,
-    'NUMERIC': CsvType.FLOAT,
-    'REAL': CsvType.FLOAT,
     'SMALLINT': CsvType.INT,
+    'BIGINT': CsvType.INT,
+
+    'DECIMAL': CsvType.FLOAT,
+    'FLOAT8': CsvType.FLOAT,
+    'DOUBLE': CsvType.FLOAT,
+    'REAL': CsvType.FLOAT,
+    'NUMERIC': CsvType.FLOAT,
+
     'TEXT': CsvType.STRING,
-    'TIMESTAMPTZ': CsvType.DATETIME,
+    'CHAR': CsvType.STRING,
     'VARCHAR': CsvType.STRING,
+
+    'DATE': CsvType.DATE,
+    'TIMESTAMPTZ': CsvType.DATETIME,
+
+    'JSONB': CsvType.JSON,
 }
 
 #endregion

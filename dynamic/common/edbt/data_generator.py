@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 import json
 import math
@@ -283,6 +282,11 @@ class EdbtDataGenerator(DataGenerator):
 
         f.close()
 
+    ORDER_STATUSES = ['paid', 'shipped', 'canceled', 'refunded']
+    SHIPPING_METHODS = ['standard', 'express']
+    PAYMENT_METHODS = ['card', 'paypal', 'bank']
+
+
     def __generate_customers_orders_items(self, n_orders: int, persons: list[list], products: list[list], product_sampler: 'AliasSampler') -> list[tuple[datetime, list[int]]]:
         """
         Stream customers, orders and items together.
@@ -293,7 +297,6 @@ class EdbtDataGenerator(DataGenerator):
         fo, wo = self._open_csv_output('order', ['order_id', 'customer_id', 'ordered_at', 'status', 'total_cents', 'currency', 'shipping', 'payment'])
         fi, wi = self._open_csv_output('order_item', ['order_item_id', 'order_id', 'product_id', 'unit_price_cents', 'quantity', 'line_total_cents', 'created_at'])
 
-        statuses = ['paid', 'shipped', 'canceled', 'refunded']
         status_w = [0.70, 0.20, 0.07, 0.03]
 
         order_item_id = 1
@@ -303,7 +306,7 @@ class EdbtDataGenerator(DataGenerator):
         for order_id in range(1, n_orders + 1):
             person = self._rng.choice(persons)
             ts = self._rng_timestamp_since(1)
-            status = statuses[self._weighted_choice_int(status_w)]
+            status = self.ORDER_STATUSES[self._weighted_choice_int(status_w)]
 
             # Write customer snapshot (table per class child)
             wc.writerow([
@@ -369,8 +372,8 @@ class EdbtDataGenerator(DataGenerator):
 
             customer_products.append((ts, product_ids))
 
-            shipping = {'method': self._rng.choice(['standard', 'express']), 'country': self._rng_country_code()}
-            payment = {'method': self._rng.choice(['card', 'paypal', 'bank']), 'provider': self._rng.choice(['stripe', 'paypal', 'flowlance'])}
+            shipping = {'method': self._rng.choice(self.SHIPPING_METHODS), 'country': self._rng_country_code()}
+            payment = {'method': self._rng.choice(self.PAYMENT_METHODS), 'provider': self._rng.choice(['stripe', 'paypal', 'flowlance'])}
 
             # Write order
             wo.writerow([

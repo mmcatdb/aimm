@@ -7,7 +7,8 @@ from statistics import median
 from core.config import Config
 from core.drivers import DriverType
 from core.query import parse_query_instance_id
-from core.utils import JsonEncoder, exit_with_exception
+from core.utils import exit_with_exception
+from core.files import JsonEncoder, open_output
 from latency_estimation.dataset import create_dataset_id, parse_dataset_id
 from latency_estimation.mongo.flat_dataset import load_mongo_flat_dataset
 from latency_estimation.mongo.flat_model import compute_metrics, load_flat_model, print_metrics, transform_dataset_features
@@ -71,8 +72,7 @@ def run(config: Config, args: argparse.Namespace):
         print_verbose_results(rows, args.top_k)
 
     output = args.output or os.path.join(config.results_directory, 'mongo_flat_evaluation_results.json')
-    os.makedirs(os.path.dirname(output), exist_ok=True)
-    with open(output, 'w') as file:
+    with open_output(output) as file:
         json.dump({'metrics': metrics, 'results': rows}, file, indent=4, cls=JsonEncoder)
     print(f'\nSaved results to {output}')
 

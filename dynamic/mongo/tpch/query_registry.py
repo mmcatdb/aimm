@@ -1,61 +1,14 @@
 from datetime import datetime, timedelta
 from core.drivers import DriverType
-from core.query import QueryInstance, query, MongoQuery, MongoFindQuery, MongoAggregateQuery
+from core.query import query, MongoQuery, MongoFindQuery, MongoAggregateQuery
 from ...common.tpch.query_registry import TpchQueryRegistry
 
 def export():
     return MongoTpchQueryRegistry()
 
 class MongoTpchQueryRegistry(TpchQueryRegistry[MongoQuery]):
-    EXCLUDED_TRAINING_TEMPLATES = {
-        'full-scan-0',
-        'full-scan-1',
-        'full-scan-2',
-        'full-scan-3',
-        'full-scan-4',
-        'skip-0',
-        'skip-1',
-        'skip-2',
-        'skip-3',
-        'permissive-0',
-        'permissive-1',
-        'unlimited-0',
-        'unlimited-1',
-        'group-0',
-        'group-2',
-        'group-4',
-        'group-5',
-        'group-6',
-        'agg-complex-0',
-        'agg-complex-1',
-        'agg-complex-2',
-        'count-0',
-        'date-bucket-0',
-        'limit-0',
-        'limit-1',
-        'limit-3',
-        'predicate-11',
-        'predicate-12',
-    }
-
     def __init__(self):
         super().__init__(DriverType.MONGO)
-
-    def generate_queries(self, scale: float, num_queries: int, allow_write: bool) -> list[QueryInstance[MongoQuery]]:
-        templates = [
-            template
-            for name, template in self._get_templates().items()
-            if name not in self.EXCLUDED_TRAINING_TEMPLATES
-        ]
-        if not allow_write:
-            templates = [template for template in templates if not template.is_write]
-        templates = [template for template in templates if not template.max_scale or template.max_scale >= scale]
-
-        num_queries = max(num_queries, len(templates))
-        return [
-            templates[i % len(templates)].generate(scale, i // len(templates))
-            for i in range(num_queries)
-        ]
 
     def _param_suppkeys(self, min_count: int, max_count: int | None = None):
         return self._param_int_array('suppkeys', 2000, min_count, max_count)

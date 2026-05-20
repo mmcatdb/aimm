@@ -128,10 +128,11 @@ class DataGenerator(ABC):
         seconds = years * 365 * 24 * 60 * 60
         return datetime(start_year, 1, 1) + timedelta(seconds = self._rng.randint(0, seconds))
 
+    COUNTRY_CODES = ['US', 'GB', 'DE', 'FR', 'CZ', 'PL', 'ES', 'IT', 'NL', 'SE', 'IN', 'BR', 'CA', 'AU']
+
     def _rng_country_code(self) -> str:
         """Generates a random country code."""
-        countries = ['US', 'GB', 'DE', 'FR', 'CZ', 'PL', 'ES', 'IT', 'NL', 'SE', 'IN', 'BR', 'CA', 'AU']
-        return countries[self._rng.randrange(len(countries))]
+        return self._rng.choice(self.COUNTRY_CODES)
 
     def _rng_time_zone(self) -> str:
         """Generates a random time zone."""
@@ -143,10 +144,11 @@ class DataGenerator(ABC):
         locales = ['en_US', 'en_GB', 'de_DE', 'fr_FR', 'es_ES', 'it_IT', 'nl_NL', 'sv_SE', 'pl_PL', 'pt_BR']
         return locales[self._rng.randrange(len(locales))]
 
+    CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'BRL', 'CAD', 'AUD']
+
     def _rng_currency(self) -> str:
         """Generates a random currency code."""
-        currencies = ['USD', 'EUR', 'GBP', 'INR', 'BRL', 'CAD', 'AUD']
-        return currencies[self._rng.randrange(len(currencies))]
+        return self.CURRENCIES[self._rng.randrange(len(self.CURRENCIES))]
 
     def _weighted_choice_int(self, weights: list[float]) -> int:
         """Simple helper for small lists."""
