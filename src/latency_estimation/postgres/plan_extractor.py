@@ -31,7 +31,8 @@ class PlanExtractor(BasePlanExtractor[str]):
             explain = result[0][0]
             plan: dict = explain['Plan']
             # FIXME This is not used anywhere right now.
-            plan[self.EXECUTION_TIME_KEY] = explain['Execution Time']
+            if do_profile:
+                plan[self.EXECUTION_TIME_KEY] = explain['Execution Time']
 
             return plan
         finally:
