@@ -73,41 +73,67 @@ class Neo4jLoader(BaseLoader):
             except Exception as e:
                 print_warning(f'Constraint not found or could not be dropped: {constraint}', e)
 
-        total_nodes: int | None = None
+        total_records: int | None = None
         try:
-            # Count all nodes and relationships before deletion for progress tracking
             total_nodes = self.__execute_to_scalar('MATCH (n) RETURN count(n) AS count', key='count') or 0
+            total_rels = self.__execute_to_scalar('MATCH ()-[r]->() RETURN count(r) AS count', key='count') or 0
+            total_records = total_nodes + total_rels
         except Exception as e:
-            print_warning('Could not count nodes before deletion.', e)
+            print_warning('Could not count records before deletion.', e)
 
-        progress = ProgressTracker.limited(total_nodes) if total_nodes is not None else ProgressTracker.unlimited()
+        progress = ProgressTracker.limited(total_records) if total_records is not None else ProgressTracker.unlimited()
         progress.start('Deleting existing data... ')
 
-        batch_size = 10_000
+        delete_relationships_query = '''
+            MATCH ()-[r]->()
+            WITH r LIMIT $limit
+            DELETE r
+            RETURN count(*) AS deleted
+        '''
+        self.__delete_in_batches(delete_relationships_query, batch_size=10_000, progress=progress)
 
-        delete_batch_query = '''
+        delete_nodes_query = '''
             MATCH (n)
             WITH n LIMIT $limit
-            WITH collect(n) AS nodes
-            WITH nodes, size(nodes) AS deleted
-            FOREACH (x IN nodes | DETACH DELETE x)
-            RETURN deleted
+            DELETE n
+            RETURN count(*) AS deleted
         '''
-
-        while True:
-            deleted = self.__execute_to_scalar(delete_batch_query, parameters={'limit': batch_size}, key='deleted') or 0
-            progress.track(deleted)
-            if deleted == 0:
-                break
+        self.__delete_in_batches(delete_nodes_query, batch_size=50_000, progress=progress)
 
         progress.finish()
 
         # Verify emptiness and print out counts
         remaining_nodes = self.__execute_to_scalar('MATCH (n) RETURN count(n) AS nodes', key='nodes') or 0
-        remaining_rels = self.__execute_to_scalar('MATCH ()-[r]-() RETURN count(r) AS rels', key='rels') or 0
+        remaining_rels = self.__execute_to_scalar('MATCH ()-[r]->() RETURN count(r) AS rels', key='rels') or 0
 
         if remaining_nodes + remaining_rels > 0:
             print(f'Warning: Database not empty after reset. Nodes: {remaining_nodes}, Relationships: {remaining_rels}')
+
+    def __delete_in_batches(self, query: str, batch_size: int, progress: ProgressTracker):
+        while True:
+            try:
+                deleted = self.__execute_to_scalar(query, parameters={'limit': batch_size}, key='deleted') or 0
+            except Exception as e:
+                if batch_size <= 1 or not self.__is_memory_pool_error(e):
+                    raise
+
+                new_batch_size = max(1, batch_size // 2)
+                print_warning(
+                    f'Neo4j ran out of transaction memory while deleting a batch of {batch_size:,}; '
+                    f'retrying with {new_batch_size:,}.',
+                    e,
+                    suppress_stacktrace=True,
+                )
+                batch_size = new_batch_size
+                continue
+
+            progress.track(deleted)
+            if deleted == 0:
+                break
+
+    def __is_memory_pool_error(self, exception: Exception):
+        message = str(exception)
+        return 'MemoryPoolOutOfMemoryError' in message or 'dbms.memory.transaction.total.max' in message
 
     def __get_constraint_names(self):
         query = 'SHOW CONSTRAINTS YIELD name'
