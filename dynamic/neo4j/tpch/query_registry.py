@@ -1273,7 +1273,7 @@ class Neo4jTpchQueryRegistry(TpchQueryRegistry[str]):
     @query('triadic-0', 'Cross-nation recommendations')
     def _cross_nation_recommendations(self):
         return f'''
-            MATCH (c1:Customer)-[:KNOWS]->(:Customer)-[:KNOWS]->(c2:Customer)
+            MATCH (c1:Customer {{c_custkey: {self._param_custkey()}}})-[:KNOWS]->(:Customer)-[:KNOWS]->(c2:Customer)
             MATCH (c1)-[:IN_NATION]->(n1:Nation)
             MATCH (c2)-[:IN_NATION]->(n2:Nation)
             WHERE NOT (c1)-[:KNOWS]->(c2)
@@ -1289,14 +1289,16 @@ class Neo4jTpchQueryRegistry(TpchQueryRegistry[str]):
         min_orders = self._param_int('min_orders', 20, 50)
 
         return f'''
-            MATCH (c1:Customer)-[:KNOWS]->(:Customer)-[:KNOWS]->(c2:Customer)
-            MATCH (c1)-[:PLACED]->(o1:Orders)
-            MATCH (c2)-[:PLACED]->(o2:Orders)
+            MATCH (c1:Customer {{c_custkey: {self._param_custkey()}}})-[:KNOWS]->(:Customer)-[:KNOWS]->(c2:Customer)
             WHERE NOT (c1)-[:KNOWS]->(c2)
                 AND c1 <> c2
-            WITH c1, c2, COUNT(DISTINCT o1) AS o1c, COUNT(DISTINCT o2) AS o2c
+            WITH DISTINCT c1, c2
+            MATCH (c1)-[:PLACED]->(o1:Orders)
+            WITH c1, c2, COUNT(DISTINCT o1) AS o1c
             WHERE o1c > {min_orders}
-                AND o2c > {min_orders}
+            MATCH (c2)-[:PLACED]->(o2:Orders)
+            WITH c1, c2, o1c, COUNT(DISTINCT o2) AS o2c
+            WHERE o2c > {min_orders}
             RETURN c1.c_custkey, c2.c_custkey, o1c, o2c
             ORDER BY (o1c + o2c) DESC
             LIMIT 200
@@ -1304,8 +1306,8 @@ class Neo4jTpchQueryRegistry(TpchQueryRegistry[str]):
 
     @query('triadic-2', 'Friend-of-friend recommendations')
     def _friend_recommendations(self):
-        return '''
-            MATCH (c1:Customer)-[:KNOWS]->(:Customer)-[:KNOWS]->(c2:Customer)
+        return f'''
+            MATCH (c1:Customer {{c_custkey: {self._param_custkey()}}})-[:KNOWS]->(:Customer)-[:KNOWS]->(c2:Customer)
             WHERE NOT (c1)-[:KNOWS]->(c2)
                 AND c1 <> c2
             RETURN c1.c_custkey, c2.c_custkey, COUNT(*) AS score
