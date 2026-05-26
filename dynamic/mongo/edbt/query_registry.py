@@ -307,7 +307,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 20},
         ])
 
-    @query('edbt-11', 'Recent order search by status and shipping country')
+    @query('other-0', 'Recent order search by status and shipping country')
     def _recent_orders_by_status_country(self):
         return MongoFindQuery('order',
             filter={
@@ -327,7 +327,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(25, 4),
         )
 
-    @query('edbt-12', 'Customer snapshot search by country and active flag')
+    @query('other-1', 'Customer snapshot search by country and active flag')
     def _customer_snapshot_search(self):
         return MongoFindQuery('customer',
             filter={
@@ -340,7 +340,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(25, 4),
         )
 
-    @query('edbt-13', 'Seller catalog browse from embedded product seller snapshot')
+    @query('other-2', 'Seller catalog browse from embedded product seller snapshot')
     def _seller_catalog_browse(self):
         return MongoFindQuery('product',
             filter={
@@ -352,7 +352,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(20, 4),
         )
 
-    @query('edbt-14', 'Category product browse with price and stock filters')
+    @query('other-3', 'Category product browse with price and stock filters')
     def _category_product_browse(self):
         return MongoFindQuery('product',
             filter={
@@ -366,7 +366,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(25, 4),
         )
 
-    @query('edbt-15', 'Review distribution inside product categories')
+    @query('other-4', 'Review distribution inside product categories')
     def _category_review_distribution(self):
         return MongoAggregateQuery('product', [
             {'$match': {
@@ -382,7 +382,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'_id': -1}},
         ])
 
-    @query('edbt-16', 'Product review timeline from review collection')
+    @query('other-5', 'Product review timeline from review collection')
     def _product_review_timeline(self):
         return MongoAggregateQuery('review', [
             {'$match': {
@@ -400,7 +400,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'_id.day': 1, '_id.rating': -1}},
         ])
 
-    @query('edbt-17', 'Recent helpful reviews stream')
+    @query('other-6', 'Recent helpful reviews stream')
     def _recent_helpful_reviews(self):
         return MongoFindQuery('review',
             filter={
@@ -413,7 +413,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-18', 'Seller activity by country')
+    @query('other-7', 'Seller activity by country')
     def _seller_activity_by_country(self):
         return MongoAggregateQuery('seller', [
             {'$match': {'country_code': {'$in': self._param_country_codes(2, 6)}}},
@@ -424,7 +424,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'sellers': -1}},
         ])
 
-    @query('edbt-19', 'Active person directory by country')
+    @query('other-8', 'Active person directory by country')
     def _active_person_directory(self):
         return MongoFindQuery('person',
             filter={
@@ -435,7 +435,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 5),
         )
 
-    @query('edbt-20', 'People with strong interest in selected categories')
+    @query('other-9', 'People with strong interest in selected categories')
     def _people_with_strong_interest(self):
         return MongoFindQuery('person',
             filter={
@@ -451,7 +451,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-21', 'Follow graph summary by followed country')
+    @query('other-10', 'Follow graph summary by followed country')
     def _follow_graph_country_summary(self):
         return MongoAggregateQuery('person', [
             {'$match': {'country_code': self._param_country_code()}},
@@ -465,7 +465,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 20},
         ])
 
-    @query('edbt-22', 'Shipping and payment mix for recent orders')
+    @query('other-11', 'Shipping and payment mix for recent orders')
     def _shipping_payment_mix(self):
         return MongoAggregateQuery('order', [
             {'$match': {
@@ -485,7 +485,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 100},
         ])
 
-    @query('edbt-23', 'Product unit sales by day from embedded order items')
+    @query('other-12', 'Product unit sales by day from embedded order items')
     def _product_unit_sales_by_day(self):
         product_ids = self._param_product_ids(10, 100)
 
@@ -509,7 +509,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 200},
         ])
 
-    @query('edbt-24', 'Recent orders containing products from selected sellers')
+    @query('other-13', 'Recent orders containing products from selected sellers')
     def _orders_by_embedded_product_seller(self):
         seller_ids = self._param_seller_ids(5, 50)
 
@@ -536,7 +536,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 200},
         ])
 
-    @query('edbt-25', 'Inventory by seller country and currency')
+    @query('other-14', 'Inventory by seller country and currency')
     def _inventory_by_seller_country_currency(self):
         return MongoAggregateQuery('product', [
             {'$match': {
@@ -556,7 +556,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'stock_qty': -1}},
         ])
 
-    @query('edbt-26', 'Category tree prefix browse')
+    @query('other-15', 'Category tree prefix browse')
     def _category_tree_prefix_browse(self):
         return MongoFindQuery('category',
             filter={'path': {'$regex': self._param_choice('path_prefix', ['^/cat1', '^/cat2', '^/cat3', '^/cat4', '^/cat5'])}},
@@ -565,7 +565,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(20, 4),
         )
 
-    @query('edbt-27', 'Customer snapshots for selected people')
+    @query('other-16', 'Customer snapshots for selected people')
     def _customer_snapshots_for_people(self):
         return MongoFindQuery('customer',
             filter={'person_id': {'$in': self._param_person_ids(10, 80)}},
@@ -574,7 +574,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-28', 'Customer review history')
+    @query('other-17', 'Customer review history')
     def _customer_review_history(self):
         return MongoFindQuery('review',
             filter={'customer_id': {'$in': self._param_customer_ids(10, 80)}},
@@ -583,7 +583,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-29', 'Hot products by recent review volume')
+    @query('other-18', 'Hot products by recent review volume')
     def _hot_products_by_recent_reviews(self):
         product_ids = self._param_product_ids(100, 1000)
 
@@ -602,7 +602,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 200},
         ])
 
-    @query('edbt-30', 'Basket size distribution for recent orders')
+    @query('other-19', 'Basket size distribution for recent orders')
     def _basket_size_distribution(self):
         product_ids = self._param_product_ids(10, 80)
 
@@ -628,7 +628,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             }},
         ])
 
-    @query('edbt-31', 'High-value orders by payment and shipping method')
+    @query('other-20', 'High-value orders by payment and shipping method')
     def _high_value_orders_by_payment_shipping(self):
         return MongoFindQuery('order',
             filter={
