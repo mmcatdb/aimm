@@ -136,6 +136,29 @@ python -m scripts.test_mongo_flat mongo/tpch-2-flat-rf edbt-3-flat
 python -m scripts.predict_mongo_flat mongo/tpch-2-flat-rf mongo/tpch-2 '{"find":"orders","filter":{"o_orderkey":1}}'
 ```
 
+### Neo4j flat-feature tree models
+
+Neo4j flat models use only plain `EXPLAIN` plan fields for prediction:
+estimated rows, operator structure, planner/runtime metadata, identifiers, and
+operator `Details` patterns. `PROFILE` and timed query execution are allowed only
+while collecting training labels; runtime counters such as rows, db hits,
+page-cache hits, and operator time are not used as flat-model features.
+
+```bash
+# Create train/validation flat datasets from measured Neo4j queries.
+python -m scripts.create_neo4j_flat_dataset neo4j/tpch-2-flat-train tpch-2/measured-1000-5.jsonl --val-dataset neo4j/tpch-2-flat-val --val-ratio 0.2 --split-seed 69
+
+# Create an EDBT test set with the training feature vocabulary.
+python -m scripts.create_neo4j_flat_dataset neo4j/edbt-3-flat edbt-3/measured-1000-10.jsonl --feature-extractor-dataset tpch-2-flat-train
+
+# Train and evaluate tree models.
+python -m scripts.train_neo4j_flat neo4j/tpch-2-flat-rf tpch-2-flat-train tpch-2-flat-val --model-type random_forest
+python -m scripts.test_neo4j_flat neo4j/tpch-2-flat-rf edbt-3-flat
+
+# Predict a single query without executing it.
+python -m scripts.predict_neo4j_flat neo4j/tpch-2-flat-rf neo4j/tpch-2 "MATCH (n) RETURN n LIMIT 10"
+```
+
 ## Experiments
 
 - Explain query plan:
