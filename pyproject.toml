@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib",
     "python-dotenv",
     "rich",
+    "tpchgen-cli",
 ]
 
 [tool.setuptools]

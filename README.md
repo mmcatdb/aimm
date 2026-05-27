@@ -50,8 +50,6 @@ python -m scripts.generate_data edbt-0
 python -m scripts.populate_db postgres/art-0
 python -m scripts.populate_db postgres/edbt-0
 ```
-- Some schemas (e.g., TPC-H) are not generated but downloaded (at least partially). In that case, create manually the corresponding directories in `data/inputs` (see the `art-0` example) and put the downloaded data there. Then, run the generate script (if needed to generate the missing data) and populate the databases as usual.
-- [Link](https://github.com/wsawa-q/evaluation-of-db-performance/blob/main/evaluation/database/tpch-data-small.zip) to some `tpch` data.
 
 ### Query measurement and plan extraction
 

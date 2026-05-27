@@ -1,5 +1,5 @@
 import os
-import shutil
+import subprocess
 from typing_extensions import override
 from core.data_generator import DataGenerator, clamp_int
 
@@ -16,56 +16,40 @@ class TpchDataGenerator(DataGenerator):
     Kinds: knows.
     """
 
-    BASE_KINDS = [
-        'customer',
-        'lineitem',
-        'nation',
-        'orders',
-        'part',
-        'partsupp',
-        'region',
-        'supplier',
-    ]
-
     def __init__(self):
         super().__init__('tpch')
 
     @override
     def _generate_data(self):
-        self.__materialize_base_tables()
+        self.__generate_tables()
         customer_ids = self.__load_customer_ids()
         self.__generate_knows(customer_ids)
 
-    def __materialize_base_tables(self) -> None:
-        source_directory = self.__source_directory()
-        target_directory = self._import_directory
+    def __generate_tables(self):
+        cmd: list[str] = [
+            'tpchgen-cli',
+            '--scale-factor', str(self.__get_tpch_scale()),
+            '--format', 'tbl',
+            '--output-dir', self._import_directory,
+        ]
 
-        if os.path.abspath(source_directory) == os.path.abspath(target_directory):
-            return
+        # Use at most half the available cores to avoid overloading the system.
+        cpu_count = os.cpu_count()
+        if cpu_count is not None:
+            cmd.append('--num-threads')
+            cmd.append(str(cpu_count // 2))
 
-        missing_sources = list[str]()
-        os.makedirs(target_directory, exist_ok=True)
+        print(f'Running "{" ".join(cmd)}"')
+        subprocess.run(cmd, check=True)
 
-        for kind in self.BASE_KINDS:
-            source_path = os.path.join(source_directory, kind + '.tbl')
-            target_path = os.path.join(target_directory, kind + '.tbl')
-
-            if os.path.exists(target_path):
-                continue
-
-            if not os.path.exists(source_path):
-                missing_sources.append(source_path)
-                continue
-
-            print('Copying', kind)
-            shutil.copyfile(source_path, target_path)
-
-        if missing_sources:
-            paths = '\n'.join(f'- {path}' for path in missing_sources)
-            raise FileNotFoundError(f'Missing base TPC-H input files:\n{paths}')
-
-    def __source_directory(self) -> str:
-        return os.path.join(os.path.dirname(self._import_directory), self._schema)
+    def __get_tpch_scale(self) -> float:
+        # The tpchgen-cli uses linear scale (10 times the scale is 10 times the data size). Approximate data sizes:
+        # 0.1 -> 0.1 GB
+        # 1 -> 1.1 GB
+        # 10 -> 11 GB
+        # So, we need to transform it from our logarithmic scale. Let's set 0 [our] as 0.1 [tpch]. Then, each increase of 1 in our scale should multiply the data size by 2.
+        # Let's also round it to 2 significant digits for cleaner output.
+        return round(0.1 * (2 ** self._scale), 2)
 
     def __load_customer_ids(self) -> list[int]:
         f, r = self._open_csv_input('customer', ['c_custkey', 'c_name', 'c_address', 'c_nationkey', 'c_phone', 'c_acctbal', 'c_mktsegment', 'c_comment'])
