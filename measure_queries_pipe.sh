@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
   echo "Usage: $0 <database> <dataset_name>"
-  echo "Database must be one of: postgres, mongo, (neo4j coming soon hopefully)"
+  echo "Database must be one of: postgres, mongo, neo4j"
   exit 1
 fi
 
