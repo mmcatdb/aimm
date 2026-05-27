@@ -1,4 +1,4 @@
-from core.query import query
+from typing_extensions import override
 from core.drivers import DriverType
 from ...common.edbt.query_registry import EdbtQueryRegistry
 
@@ -12,10 +12,10 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
 
     # OLTP focused (mostly Postgres)
 
-    @query('edbt-0', 'Order history for a person (order, customer)')
-    def _order_history_for_person(self):
+    @override
+    def _order_history_for_person(self, person_id):
         return f'''
-            MATCH (p:Person {{person_id: {self._param_person_id()}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
+            MATCH (p:Person {{person_id: {person_id}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             RETURN
                 o.order_id AS order_id,
                 o.ordered_at AS ordered_at,
@@ -25,10 +25,10 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             ORDER BY o.ordered_at DESC
         '''
 
-    @query('edbt-1', 'Order details view (order, customer, order_item, product)')
-    def _order_details(self):
+    @override
+    def _order_details(self, person_id):
         return f'''
-            MATCH (p:Person {{person_id: {self._param_person_id()}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
+            MATCH (p:Person {{person_id: {person_id}}})<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             MATCH (o)-[it:HAS_ITEM]->(pr:Product)
             RETURN
                 o.order_id AS order_id,
@@ -43,11 +43,8 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             ORDER BY order_item_id
         '''
 
-    @query('edbt-2', 'How many times did this person bought these products? (order, customer, order_item)')
-    def _product_purchases_for_person(self):
-        person_ids = self._param_person_ids(100, 1000)
-        product_ids = self._param_product_ids(100, 1000)
-
+    @override
+    def _product_purchases_for_person(self, person_ids, product_ids):
         return f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid', 'shipped']
@@ -59,11 +56,8 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
 
     # OLAP focused (Postgres)
 
-    @query('edbt-3', 'Seller daily revenue for last 30 days (order, order_item, product)')
-    def _seller_daily_revenue(self):
-        date = self._param_date_minus_days(30, 120)
-        seller_ids = self._param_seller_ids(100, 1000)
-
+    @override
+    def _seller_daily_revenue(self, date, seller_ids):
         return f'''
             MATCH (s:Seller)-[:OFFERS]->(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
@@ -81,11 +75,8 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             ORDER BY day
         '''
 
-    @query('edbt-4', 'Top products by revenue inside one category, last 7-30 days (order, order_item, product, has_category)')
-    def _top_products_by_revenue(self):
-        date = self._param_date_minus_days(7, 30)
-        category_ids = self._param_category_ids(10, 50)
-
+    @override
+    def _top_products_by_revenue(self, date, category_ids):
         return f'''
             MATCH (c:Category)<-[:HAS_CATEGORY]-(pr:Product)
             MATCH (o:Order)-[it:HAS_ITEM]->(pr)
@@ -105,12 +96,12 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             LIMIT 200
         '''
 
-    @query('edbt-5', 'Customer spend buckets (order, customer)')
-    def _customer_spend_buckets(self):
+    @override
+    def _customer_spend_buckets(self, date):
         return f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid', 'shipped']
-                AND o.ordered_at >= datetime('{self._param_date_minus_days(30, 180)}')
+                AND o.ordered_at >= datetime('{date}')
             WITH p.person_id AS person_id, sum(o.total_cents) AS spend_cents
             WITH
                 CASE
@@ -122,11 +113,8 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             ORDER BY bucket
         '''
 
-    @query('edbt-6', 'Fraud-ish pattern (order, customer, order_item, product)')
-    def _fraud_pattern(self):
-        date = self._param_date_minus_days(1, 7)
-        distinct_sellers_threshold = self._param_int('distinct_sellers_threshold', 10, 1000)
-
+    @override
+    def _fraud_pattern(self, date, distinct_sellers_threshold):
         return f'''
             MATCH (p:Person)<-[:SNAPSHOT_OF]-(c:Customer)-[:PLACED]->(o:Order)
             WHERE o.status IN ['paid', 'shipped']
@@ -145,10 +133,8 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             LIMIT 200
         '''
 
-    @query('edbt-7', 'Who should I follow? (follows)')
-    def _who_to_follow(self):
-        person_id = self._param_person_id()
-
+    @override
+    def _who_to_follow(self, person_id):
         return f'''
             MATCH (p:Person {{person_id: {person_id}}})<-[:FOLLOWS]-(:Person)<-[:FOLLOWS]-(cand:Person)
             WHERE NOT (p)-[:FOLLOWS]->(cand) AND cand.person_id <> {person_id}
@@ -157,12 +143,12 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             LIMIT 200
         '''
 
-    @query('edbt-8', 'Personalized feed candidates (product, has_category, has_interest)')
-    def _personalized_feed_candidates(self):
+    @override
+    def _personalized_feed_candidates(self, person_ids):
         return f'''
             MATCH (p:Person)-[hi:HAS_INTEREST]->(c:Category)<-[:HAS_CATEGORY]-(pr:Product)
             WHERE
-                p.person_id IN [{self._param_person_ids(2, 20)}]
+                p.person_id IN [{person_ids}]
                 AND pr.is_active = true
             RETURN pr.product_id AS product_id, SUM(hi.strength) AS interest_score
             ORDER BY interest_score DESC
@@ -173,10 +159,10 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
     # Document focused (MongoDB)
     # These are built to avoid joins at read time. Put "product page bundle" in one document.
 
-    @query('edbt-9', 'Product page read (product, seller, review)')
-    def _product_page_read(self):
+    @override
+    def _product_page_read(self, product_id):
         return f'''
-            MATCH (pr:Product {{product_id: {self._param_product_id()}, is_active: true}})
+            MATCH (pr:Product {{product_id: {product_id}, is_active: true}})
             MATCH (s:Seller)-[:OFFERS]->(pr)
             OPTIONAL MATCH (c:Customer)-[r:REVIEWED]->(pr)
             WITH pr, s, r, c
@@ -230,12 +216,8 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
 
     # Graph focused (Neo4j)
 
-
-
-    @query('edbt-10', 'People also bought using shared orders (order, order_item)')
-    def _people_also_bought(self):
-        product_ids = self._param_product_ids(10, 50)
-
+    @override
+    def _people_also_bought(self, product_ids):
         return f'''
             MATCH (target:Product)<-[:HAS_ITEM]-(o:Order)-[:HAS_ITEM]->(other:Product)
             WHERE target.product_id IN [{product_ids}]

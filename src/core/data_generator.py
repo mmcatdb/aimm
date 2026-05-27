@@ -4,7 +4,6 @@ import os
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from core.config import GLOBAL_RNG_SEED
 from core.query import SchemaName, create_schema_seed
 from core.files import JsonLinesWriter, open_input, open_output
 from core.utils import number_quantity

@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from typing_extensions import override
 from core.drivers import DriverType
 from core.query import SchemaName, QueryRegistry, TQuery, ValueType
@@ -75,3 +76,96 @@ class EdbtQueryRegistry(QueryRegistry[TQuery]):
 
     def _param_shipping_method(self):
         return self._param_choice('shipping_method', EdbtDataGenerator.SHIPPING_METHODS)
+
+    # Common MCTS queries
+
+    def _register_queries(self):
+        # OLTP focused (mostly Postgres)
+
+        self._query('mcts-0', 'Order history for a person (order, customer)', lambda s: s._order_history_for_person(
+            person_id=s._param_person_id(),
+        ))
+
+        self._query('mcts-1', 'Order details view (order, customer, order_item, product)', lambda s: s._order_details(
+            person_id=self._param_person_id(),
+        ))
+
+        self._query('mcts-2', 'How many times did this person bought these products? (order, customer, order_item)', lambda s: s._product_purchases_for_person(
+            person_ids=self._param_person_ids(100, 1000),
+            product_ids=self._param_product_ids(100, 1000),
+        ))
+
+        # OLAP focused (Postgres)
+
+        self._query('mcts-3', 'Seller daily revenue for last 30 days (order, order_item, product)', lambda s: s._seller_daily_revenue(
+            date=self._param_date_minus_days(30, 120),
+            seller_ids=self._param_seller_ids(100, 1000),
+        ))
+
+        self._query('mcts-4', 'Top products by revenue inside one category, last 7-30 days (order, order_item, product, has_category)', lambda s: s._top_products_by_revenue(
+            date=self._param_date_minus_days(7, 30),
+            category_ids=self._param_category_ids(10, 50),
+        ))
+
+        self._query('mcts-5', 'Customer spend buckets (order, customer)', lambda s: s._customer_spend_buckets(
+            date=self._param_date_minus_days(30, 180),
+        ))
+
+        self._query('mcts-6', 'Fraud-ish pattern (order, customer, order_item, product)', lambda s: s._fraud_pattern(
+            date=self._param_date_minus_days(1, 7),
+            distinct_sellers_threshold=self._param_int('distinct_sellers_threshold', 10, 1000),
+        ))
+
+        self._query('mcts-7', 'Who should I follow? (follows)', lambda s: s._who_to_follow(
+            person_id=self._param_person_id(),
+        ))
+
+        self._query('mcts-8', 'Personalized feed candidates (product, has_category, has_interest)', lambda s: s._personalized_feed_candidates(
+            person_ids=self._param_person_ids(2, 20),
+        ))
+
+        # Document focused (MongoDB)
+        # These are built to avoid joins at read time. Put "product page bundle" in one document.
+
+        self._query('mcts-9', 'Product page read (product, seller, review)', lambda s: s._product_page_read(
+            product_id=self._param_product_id(),
+        ))
+
+        self._query('mcts-10', 'People also bought using shared orders (order, order_item)', lambda s: s._people_also_bought(
+            product_ids=self._param_product_ids(10, 50),
+        ))
+
+    # Abstract methods for common MCTS queries
+
+    @abstractmethod
+    def _order_history_for_person(self, person_id) -> TQuery: ...
+
+    @abstractmethod
+    def _order_details(self, person_id) -> TQuery: ...
+
+    @abstractmethod
+    def _product_purchases_for_person(self, person_ids, product_ids) -> TQuery: ...
+
+    @abstractmethod
+    def _seller_daily_revenue(self, date, seller_ids) -> TQuery: ...
+
+    @abstractmethod
+    def _top_products_by_revenue(self, date, category_ids) -> TQuery: ...
+
+    @abstractmethod
+    def _customer_spend_buckets(self, date) -> TQuery: ...
+
+    @abstractmethod
+    def _fraud_pattern(self, date, distinct_sellers_threshold) -> TQuery: ...
+
+    @abstractmethod
+    def _who_to_follow(self, person_id) -> TQuery: ...
+
+    @abstractmethod
+    def _personalized_feed_candidates(self, person_ids) -> TQuery: ...
+
+    @abstractmethod
+    def _product_page_read(self, product_id) -> TQuery: ...
+
+    @abstractmethod
+    def _people_also_bought(self, product_ids) -> TQuery: ...

@@ -1,4 +1,4 @@
-from core.query import query
+from typing_extensions import override
 from core.drivers import DriverType
 from ...common.edbt.query_registry import EdbtQueryRegistry
 
@@ -12,8 +12,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
 
     # OLTP focused (mostly Postgres)
 
-    @query('edbt-0', 'Order history for a person (order, customer)')
-    def _order_history_for_person(self):
+    @override
+    def _order_history_for_person(self, person_id):
         return f'''
             SELECT
                 o.order_id,
@@ -23,12 +23,12 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
                 o.currency
             FROM "order" o
             JOIN customer c ON c.customer_id = o.customer_id
-            WHERE c.person_id = '{self._param_person_id()}'
+            WHERE c.person_id = '{person_id}'
             ORDER BY o.ordered_at DESC
         '''
 
-    @query('edbt-1', 'Order details view (order, customer, order_item, product)')
-    def _order_details(self):
+    @override
+    def _order_details(self, person_id):
         return f'''
             SELECT
                 o.order_id,
@@ -44,15 +44,12 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             JOIN customer c ON c.customer_id = o.customer_id
             JOIN order_item oi ON oi.order_id = o.order_id
             JOIN product p ON p.product_id = oi.product_id
-            WHERE c.person_id = '{self._param_person_id()}'
+            WHERE c.person_id = '{person_id}'
             ORDER BY oi.order_item_id
         '''
 
-    @query('edbt-2', 'How many times did this person bought these products? (order, customer, order_item)')
-    def _product_purchases_for_person(self):
-        person_ids = self._param_person_ids(100, 1000)
-        product_ids = self._param_product_ids(100, 1000)
-
+    @override
+    def _product_purchases_for_person(self, person_ids, product_ids):
         return f'''
             SELECT COUNT(*)
             FROM customer c
@@ -65,11 +62,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
 
     # OLAP focused (Postgres)
 
-    @query('edbt-3', 'Seller daily revenue for last 30 days (order, order_item, product)')
-    def _seller_daily_revenue(self):
-        date = self._param_date_minus_days(30, 120)
-        seller_ids = self._param_seller_ids(100, 1000)
-
+    @override
+    def _seller_daily_revenue(self, date, seller_ids):
         return f'''
             SELECT
                 date_trunc('day', o.ordered_at) AS day,
@@ -85,11 +79,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             ORDER BY 1
         '''
 
-    @query('edbt-4', 'Top products by revenue inside one category, last 7-30 days (order, order_item, product, has_category)')
-    def _top_products_by_revenue(self):
-        date = self._param_date_minus_days(7, 30)
-        category_ids = self._param_category_ids(10, 50)
-
+    @override
+    def _top_products_by_revenue(self, date, category_ids):
         return f'''
             SELECT
                 oi.product_id,
@@ -108,14 +99,14 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             LIMIT 200
         '''
 
-    @query('edbt-5', 'Customer spend buckets (order, customer)')
-    def _customer_spend_buckets(self):
+    @override
+    def _customer_spend_buckets(self, date):
         return f'''
             WITH spend AS (
                 SELECT c.person_id, SUM(o.total_cents) AS spend_cents
                 FROM customer c
                 JOIN "order" o ON o.customer_id = c.customer_id
-                WHERE o.ordered_at >= '{self._param_date_minus_days(30, 180)}'
+                WHERE o.ordered_at >= '{date}'
                     AND o.status IN ('paid', 'shipped')
                 GROUP BY c.person_id
             )
@@ -131,11 +122,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             ORDER BY 1
         '''
 
-    @query('edbt-6', 'Fraud-ish pattern (order, customer, order_item, product)')
-    def _fraud_pattern(self):
-        date = self._param_date_minus_days(1, 7)
-        distinct_sellers_threshold = self._param_int('distinct_sellers_threshold', 10, 1000)
-
+    @override
+    def _fraud_pattern(self, date, distinct_sellers_threshold):
         return f'''
             SELECT
                 c.person_id,
@@ -153,10 +141,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             LIMIT 200
         '''
 
-    @query('edbt-7', 'Who should I follow? (follows)')
-    def _who_to_follow(self):
-        person_id = self._param_person_id()
-
+    @override
+    def _who_to_follow(self, person_id):
         return f'''
             SELECT
                 f2.from_id AS person_id,
@@ -177,8 +163,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
         '''
 
 
-    @query('edbt-8', 'Personalized feed candidates (product, has_category, has_interest)')
-    def _personalized_feed_candidates(self):
+    @override
+    def _personalized_feed_candidates(self, person_ids):
         return f'''
             SELECT
                 hc.product_id,
@@ -186,7 +172,7 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             FROM has_interest hi
             JOIN has_category hc ON hc.category_id = hi.category_id
             JOIN product p ON p.product_id = hc.product_id
-            WHERE hi.person_id IN ({self._param_person_ids(2, 20)})
+            WHERE hi.person_id IN ({person_ids})
                 AND p.is_active = TRUE
             GROUP BY hc.product_id
             ORDER BY interest_score DESC
@@ -230,10 +216,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
     # Document focused (MongoDB)
     # These are built to avoid joins at read time. Put "product page bundle" in one document.
 
-    @query('edbt-9', 'Product page read (product, seller, review)')
-    def _product_page_read(self):
-        product_id = self._param_product_id()
-
+    @override
+    def _product_page_read(self, product_id):
         return f'''
             SELECT
                 p.product_id,
@@ -322,13 +306,8 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
     #         LIMIT 200
     #     '''
 
-
-
-
-    @query('edbt-10', 'People also bought using shared orders (order, order_item)')
-    def _people_also_bought(self):
-        product_ids = self._param_product_ids(10, 50)
-
+    @override
+    def _people_also_bought(self, product_ids):
         return f'''
             SELECT
                 oi2.product_id,

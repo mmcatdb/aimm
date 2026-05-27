@@ -1,5 +1,6 @@
+from typing_extensions import override
 from core.drivers import DriverType
-from core.query import query, MongoQuery, MongoFindQuery, MongoAggregateQuery, ValueType
+from core.query import query, MongoQuery, MongoFindQuery, MongoAggregateQuery
 from ...common.edbt.query_registry import EdbtQueryRegistry
 
 def export():
@@ -10,10 +11,10 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
     def __init__(self):
         super().__init__(DriverType.MONGO)
 
-    @query('edbt-0', 'Order history for a person (order, customer)')
-    def _order_history_for_person(self):
+    @override
+    def _order_history_for_person(self, person_id):
         return MongoFindQuery('order',
-            filter={'customer.person_id': self._param_person_id()},
+            filter={'customer.person_id': person_id},
             projection={
                 'order_id': 1,
                 'ordered_at': 1,
@@ -25,10 +26,10 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             sort={'ordered_at': -1},
         )
 
-    @query('edbt-1', 'Order details view (order, customer, order_item, product)')
-    def _order_details(self):
+    @override
+    def _order_details(self, person_id):
         return MongoAggregateQuery('order', [
-            {'$match': {'customer.person_id': self._param_person_id()}},
+            {'$match': {'customer.person_id': person_id}},
             {'$unwind': '$items'},
             {'$project': {
                 '_id': 0,
@@ -45,11 +46,8 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'order_item_id': 1}},
         ])
 
-    @query('edbt-2', 'How many times did this person bought these products? (order, customer, order_item)')
-    def _product_purchases_for_person(self):
-        person_ids = self._param_person_ids(100, 1000)
-        product_ids = self._param_product_ids(100, 1000)
-
+    @override
+    def _product_purchases_for_person(self, person_ids, product_ids):
         return MongoAggregateQuery('order', [
             {'$match': {
                 'customer.person_id': {'$in': person_ids},
@@ -60,11 +58,8 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$count': 'count'},
         ])
 
-    @query('edbt-3', 'Seller daily revenue for last 30 days (order, order_item, product)')
-    def _seller_daily_revenue(self):
-        date = self._param_date_minus_days(30, 120)
-        seller_ids = self._param_seller_ids(5, 50)
-
+    @override
+    def _seller_daily_revenue(self, date, seller_ids):
         return MongoAggregateQuery('order', [
             {'$match': {
                 'ordered_at': {'$gte': date},
@@ -92,54 +87,45 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'day': 1}},
         ])
 
-    @query('edbt-4', 'Top catalog products inside categories by embedded product signals')
-    def _top_catalog_products_by_category(self):
-        category_ids = self._param_category_ids(10, 50)
-
-        return MongoAggregateQuery('product', [
+    @override
+    def _top_products_by_revenue(self, date, category_ids):
+        return MongoAggregateQuery('order', [
             {'$match': {
-                'is_active': True,
-                'categories.category.category_id': {'$in': category_ids},
+                'ordered_at': {'$gte': date},
+                'status': {'$in': ['paid', 'shipped']},
             }},
-            {'$addFields': {
-                'review_count': {'$size': {'$ifNull': ['$reviews', []]}},
-                'average_rating': {'$ifNull': [{'$avg': '$reviews.rating'}, 0]},
-                'category_matches': {
-                    '$size': {
-                        '$filter': {
-                            'input': {'$ifNull': ['$categories', []]},
-                            'as': 'category',
-                            'cond': {'$in': ['$$category.category.category_id', category_ids]},
-                        },
-                    },
-                },
+            {'$unwind': '$items'},
+            {'$lookup': {
+                'from': 'product',
+                'let': {'pid': '$items.product.product_id'},
+                'pipeline': [
+                    {'$match': {'$expr': {'$eq': ['$product_id', '$$pid']}}},
+                    {'$match': {'categories.category.category_id': {'$in': category_ids}}},
+                ],
+                'as': 'product'
+            }},
+            {'$unwind': '$product'},
+            {'$group': {
+                '_id': '$items.product.product_id',
+                'revenue_cents': {'$sum': '$items.line_total_cents'},
+                'units': {'$sum': '$items.quantity'},
             }},
             {'$project': {
                 '_id': 0,
-                'product_id': 1,
+                'product_id': '$_id',
                 'title': 1,
-                'price_cents': 1,
-                'stock_qty': 1,
-                'seller': {
-                    'seller_id': '$seller.seller_id',
-                    'country_code': '$seller.country_code',
-                },
-                'category_matches': 1,
-                'review_count': 1,
-                'average_rating': 1,
+                'revenue_cents': 1,
+                'units': 1,
             }},
-            {'$sort': {'average_rating': -1, 'review_count': -1, 'stock_qty': -1}},
+            {'$sort': {'revenue_cents': -1}},
             {'$limit': 200},
         ])
 
-    @query('edbt-5', 'Customer spend buckets (order, customer)')
-    def _customer_spend_buckets(self):
-        person_ids = self._param_person_ids(100, 1000)
-
+    @override
+    def _customer_spend_buckets(self, date):
         return MongoAggregateQuery('order', [
             {'$match': {
-                'customer.person_id': {'$in': person_ids},
-                'ordered_at': {'$gte': self._param_date_minus_days(30, 180)},
+                'ordered_at': {'$gte': date},
                 'status': {'$in': ['paid', 'shipped']},
             }},
             {'$group': {
@@ -165,11 +151,8 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'bucket': 1}},
         ])
 
-    @query('edbt-6', 'Fraud-ish pattern (order, customer, order_item, product)')
-    def _fraud_pattern(self):
-        date = self._param_date_minus_days(1, 7)
-        distinct_sellers_threshold = self._param_int('distinct_sellers_threshold', 2, 5)
-
+    @override
+    def _fraud_pattern(self, date, distinct_sellers_threshold):
         return MongoAggregateQuery('order', [
             {'$match': {
                 'ordered_at': {'$gte': date},
@@ -192,79 +175,83 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 200},
         ])
 
-    @query('edbt-7', 'Followers of a person from embedded follow edges')
-    def _followers_for_person(self):
-        person_id = self._param_person_id()
-
+    @override
+    def _who_to_follow(self, person_id):
         return MongoAggregateQuery('person', [
             {'$match': {'follows.to_person.person_id': person_id}},
-            {'$project': {
-                '_id': 0,
-                'person_id': 1,
-                'name': 1,
-                'country_code': 1,
-                'is_active': 1,
-                'matched_follows': {
-                    '$filter': {
-                        'input': '$follows',
-                        'as': 'follow',
-                        'cond': {'$eq': ['$$follow.to_person.person_id', person_id]},
-                    },
-                },
-                'follows_count': {'$size': {'$ifNull': ['$follows', []]}},
+            {'$project': {'from_id': '$person_id'}},
+            {'$lookup': {
+                'from': 'person',
+                'let': {'f1_id': '$from_id'},
+                'pipeline': [
+                    {'$match': {'$expr': {
+                        '$in': ['$$f1_id', '$follows.to_person.person_id'],
+                    }}},
+                    {'$project': {
+                        'person_id': 1,
+                        'follows': 1,
+                    }},
+                ],
+                'as': 'f2',
             }},
-            {'$unwind': '$matched_follows'},
-            {'$sort': {'matched_follows.created_at': -1}},
-            {'$limit': 200},
-            {'$project': {
-                'person_id': 1,
-                'name': 1,
-                'country_code': 1,
-                'is_active': 1,
-                'followed_at': '$matched_follows.created_at',
-                'follows_count': 1,
-            }},
-        ])
-
-    @query('edbt-8', 'Interest segment summary from embedded person interests')
-    def _interest_segment_summary(self):
-        category_ids = self._param_category_ids(10, 80)
-
-        return MongoAggregateQuery('person', [
-            {'$match': {
-                'is_active': True,
-                'interests.category.category_id': {'$in': category_ids},
-            }},
-            {'$unwind': '$interests'},
-            {'$match': {
-                'interests.category.category_id': {'$in': category_ids},
-            }},
+            {'$unwind': '$f2'},
+            {'$match': {'f2.person_id': {'$ne': person_id}}},
+            {'$match': {'f2.follows': {
+                '$not': {'$elemMatch': {'to_person.person_id': person_id}},
+            }}},
             {'$group': {
-                '_id': {
-                    'category_id': '$interests.category.category_id',
-                    'country_code': '$country_code',
-                },
-                'people': {'$sum': 1},
-                'avg_strength': {'$avg': '$interests.strength'},
-                'recent_interest_at': {'$max': '$interests.created_at'},
+                '_id': '$f2.person_id',
+                'paths': {'$sum': 1},
             }},
+            {'$sort': {'paths': -1}},
+            {'$limit': 200},
             {'$project': {
                 '_id': 0,
-                'category_id': '$_id.category_id',
-                'country_code': '$_id.country_code',
-                'people': 1,
-                'avg_strength': 1,
-                'recent_interest_at': 1,
+                'person_id': '$_id',
+                'paths': 1,
             }},
-            {'$sort': {'people': -1, 'avg_strength': -1}},
-            {'$limit': 200},
         ])
 
-    @query('edbt-9', 'Product page read (product, seller, review)')
-    def _product_page_read(self):
+    @override
+    def _personalized_feed_candidates(self, person_ids):
+        return MongoAggregateQuery('person', [
+            {'$match': {'person_id': {'$in': person_ids}}},
+            {'$unwind': '$interests'},
+            {'$lookup': {
+                'from': 'product',
+                'let': {'cat_id': '$interests.category.category_id'},
+                'pipeline': [
+                    {'$match': {
+                        '$expr': {'$and': [
+                            {'$eq': ['$is_active', True]},
+                            {'$in': ['$$cat_id', '$categories.category.category_id']},
+                        ]},
+                    }},
+                    {'$project': {
+                        'product_id': 1,
+                    }},
+                ],
+                'as': 'products',
+            }},
+            {'$unwind': '$products'},
+            {'$group': {
+                '_id': '$products.product_id',
+                'interest_score': {'$sum': '$interests.strength'},
+            }},
+            {'$sort': {'interest_score': -1 }},
+            {'$limit': 200},
+            {'$project': {
+                '_id': 0,
+                'product_id': '$_id',
+                'interest_score': 1,
+            }},
+        ])
+
+    @override
+    def _product_page_read(self, product_id):
         return MongoAggregateQuery('product', [
             {'$match': {
-                'product_id': self._param_product_id(),
+                'product_id': product_id,
                 'is_active': True,
             }},
             {'$addFields': {
@@ -301,10 +288,8 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             }},
         ])
 
-    @query('edbt-10', 'People also bought using shared orders (order, order_item)')
-    def _people_also_bought(self):
-        product_ids = self._param_product_ids(10, 50)
-
+    @override
+    def _people_also_bought(self, product_ids):
         return MongoAggregateQuery('order', [
             {'$match': {
                 'status': {'$in': ['paid', 'shipped']},
@@ -322,7 +307,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 20},
         ])
 
-    @query('edbt-11', 'Recent order search by status and shipping country')
+    @query('other-0', 'Recent order search by status and shipping country')
     def _recent_orders_by_status_country(self):
         return MongoFindQuery('order',
             filter={
@@ -342,7 +327,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(25, 4),
         )
 
-    @query('edbt-12', 'Customer snapshot search by country and active flag')
+    @query('other-1', 'Customer snapshot search by country and active flag')
     def _customer_snapshot_search(self):
         return MongoFindQuery('customer',
             filter={
@@ -355,7 +340,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(25, 4),
         )
 
-    @query('edbt-13', 'Seller catalog browse from embedded product seller snapshot')
+    @query('other-2', 'Seller catalog browse from embedded product seller snapshot')
     def _seller_catalog_browse(self):
         return MongoFindQuery('product',
             filter={
@@ -367,7 +352,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(20, 4),
         )
 
-    @query('edbt-14', 'Category product browse with price and stock filters')
+    @query('other-3', 'Category product browse with price and stock filters')
     def _category_product_browse(self):
         return MongoFindQuery('product',
             filter={
@@ -381,7 +366,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(25, 4),
         )
 
-    @query('edbt-15', 'Review distribution inside product categories')
+    @query('other-4', 'Review distribution inside product categories')
     def _category_review_distribution(self):
         return MongoAggregateQuery('product', [
             {'$match': {
@@ -397,7 +382,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'_id': -1}},
         ])
 
-    @query('edbt-16', 'Product review timeline from review collection')
+    @query('other-5', 'Product review timeline from review collection')
     def _product_review_timeline(self):
         return MongoAggregateQuery('review', [
             {'$match': {
@@ -415,7 +400,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'_id.day': 1, '_id.rating': -1}},
         ])
 
-    @query('edbt-17', 'Recent helpful reviews stream')
+    @query('other-6', 'Recent helpful reviews stream')
     def _recent_helpful_reviews(self):
         return MongoFindQuery('review',
             filter={
@@ -428,7 +413,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-18', 'Seller activity by country')
+    @query('other-7', 'Seller activity by country')
     def _seller_activity_by_country(self):
         return MongoAggregateQuery('seller', [
             {'$match': {'country_code': {'$in': self._param_country_codes(2, 6)}}},
@@ -439,7 +424,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'sellers': -1}},
         ])
 
-    @query('edbt-19', 'Active person directory by country')
+    @query('other-8', 'Active person directory by country')
     def _active_person_directory(self):
         return MongoFindQuery('person',
             filter={
@@ -450,7 +435,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 5),
         )
 
-    @query('edbt-20', 'People with strong interest in selected categories')
+    @query('other-9', 'People with strong interest in selected categories')
     def _people_with_strong_interest(self):
         return MongoFindQuery('person',
             filter={
@@ -466,7 +451,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-21', 'Follow graph summary by followed country')
+    @query('other-10', 'Follow graph summary by followed country')
     def _follow_graph_country_summary(self):
         return MongoAggregateQuery('person', [
             {'$match': {'country_code': self._param_country_code()}},
@@ -480,7 +465,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 20},
         ])
 
-    @query('edbt-22', 'Shipping and payment mix for recent orders')
+    @query('other-11', 'Shipping and payment mix for recent orders')
     def _shipping_payment_mix(self):
         return MongoAggregateQuery('order', [
             {'$match': {
@@ -500,7 +485,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 100},
         ])
 
-    @query('edbt-23', 'Product unit sales by day from embedded order items')
+    @query('other-12', 'Product unit sales by day from embedded order items')
     def _product_unit_sales_by_day(self):
         product_ids = self._param_product_ids(10, 100)
 
@@ -524,7 +509,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 200},
         ])
 
-    @query('edbt-24', 'Recent orders containing products from selected sellers')
+    @query('other-13', 'Recent orders containing products from selected sellers')
     def _orders_by_embedded_product_seller(self):
         seller_ids = self._param_seller_ids(5, 50)
 
@@ -551,7 +536,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 200},
         ])
 
-    @query('edbt-25', 'Inventory by seller country and currency')
+    @query('other-14', 'Inventory by seller country and currency')
     def _inventory_by_seller_country_currency(self):
         return MongoAggregateQuery('product', [
             {'$match': {
@@ -571,7 +556,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'stock_qty': -1}},
         ])
 
-    @query('edbt-26', 'Category tree prefix browse')
+    @query('other-15', 'Category tree prefix browse')
     def _category_tree_prefix_browse(self):
         return MongoFindQuery('category',
             filter={'path': {'$regex': self._param_choice('path_prefix', ['^/cat1', '^/cat2', '^/cat3', '^/cat4', '^/cat5'])}},
@@ -580,7 +565,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(20, 4),
         )
 
-    @query('edbt-27', 'Customer snapshots for selected people')
+    @query('other-16', 'Customer snapshots for selected people')
     def _customer_snapshots_for_people(self):
         return MongoFindQuery('customer',
             filter={'person_id': {'$in': self._param_person_ids(10, 80)}},
@@ -589,7 +574,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-28', 'Customer review history')
+    @query('other-17', 'Customer review history')
     def _customer_review_history(self):
         return MongoFindQuery('review',
             filter={'customer_id': {'$in': self._param_customer_ids(10, 80)}},
@@ -598,7 +583,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             limit=self._param_limit(50, 4),
         )
 
-    @query('edbt-29', 'Hot products by recent review volume')
+    @query('other-18', 'Hot products by recent review volume')
     def _hot_products_by_recent_reviews(self):
         product_ids = self._param_product_ids(100, 1000)
 
@@ -617,7 +602,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 200},
         ])
 
-    @query('edbt-30', 'Basket size distribution for recent orders')
+    @query('other-19', 'Basket size distribution for recent orders')
     def _basket_size_distribution(self):
         product_ids = self._param_product_ids(10, 80)
 
@@ -643,7 +628,7 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             }},
         ])
 
-    @query('edbt-31', 'High-value orders by payment and shipping method')
+    @query('other-20', 'High-value orders by payment and shipping method')
     def _high_value_orders_by_payment_shipping(self):
         return MongoFindQuery('order',
             filter={
