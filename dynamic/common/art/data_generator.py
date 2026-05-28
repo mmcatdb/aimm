@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import math
 from typing_extensions import override
@@ -22,6 +24,7 @@ class ArtDataGenerator(DataGenerator):
     # - node.status    skewed [0.70, 0.15, 0.08, 0.04, 0.03]
     # - link.src_id    power-law (top 2 % are hubs with 10x higher weight)
     # - measure.node_id top 10 % of nodes have 5x weight
+    LARGE_KIND_MAX_SCALE = 9.0
 
     def __init__(self):
         super().__init__('art')
@@ -60,7 +63,7 @@ class ArtDataGenerator(DataGenerator):
     @staticmethod
     def allow_large_kinds(scale) -> bool:
         """For larger scales, we can't reliably generate the larger JSON-based collections within memory and time constraints, so we skip them. All queries and loaders should skip them as well."""
-        return scale <= 9.0
+        return scale <= ArtDataGenerator.LARGE_KIND_MAX_SCALE
 
     def generate_counts(self, scale: float) -> ArtCounts:
         """Returns row counts for the given scale without generating any data."""
