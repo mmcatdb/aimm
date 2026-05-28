@@ -10,6 +10,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
     def __init__(self):
         super().__init__(DriverType.MONGO)
+        self.__max_scale_override: float | None = None
 
     def _register_queries(self):
         self._register_find_node_queries()
@@ -26,18 +27,40 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
         self._register_window_queries()
         self._register_facet_queries()
         self._register_advanced_pattern_queries()
+        self.__register_large_kind_queries()
+        self._register_write_queries()
+        self.__register_large_kind_write_queries()
 
-        if self.allow_large_kinds():
+    def _query(self, name, title, function, weight: float = 1.0, max_scale: float | None = None):
+        super()._query(name, title, function, weight, self.__apply_max_scale_override(max_scale))
+
+    def _write_query(self, name, title, function, weight: float = 1.0, max_scale: float | None = None):
+        super()._write_query(name, title, function, weight, self.__apply_max_scale_override(max_scale))
+
+    def __apply_max_scale_override(self, max_scale: float | None) -> float | None:
+        if self.__max_scale_override is None:
+            return max_scale
+        if max_scale is None:
+            return self.__max_scale_override
+        return min(max_scale, self.__max_scale_override)
+
+    def __register_large_kind_queries(self):
+        self.__max_scale_override = ArtDataGenerator.LARGE_KIND_MAX_SCALE
+        try:
             self._register_event_log_queries()
             self._register_node_rich_queries()
             self._register_bucket_queries()
             self._register_grp_tree_queries()
             self._register_advanced_pattern_queries_large()
+        finally:
+            self.__max_scale_override = None
 
-        self._register_write_queries()
-
-        if self.allow_large_kinds():
+    def __register_large_kind_write_queries(self):
+        self.__max_scale_override = ArtDataGenerator.LARGE_KIND_MAX_SCALE
+        try:
             self._register_write_queries_large()
+        finally:
+            self.__max_scale_override = None
 
     def allow_large_kinds(self) -> bool:
         return ArtDataGenerator.allow_large_kinds(self._scale)
