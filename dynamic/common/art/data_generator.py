@@ -1,9 +1,10 @@
 from __future__ import annotations
-
+from datetime import datetime, timezone
 import json
 import math
 from typing_extensions import override
 from core.data_generator import DataGenerator, clamp_int, iso, print_counts
+from core.query import SchemaName
 
 def export():
     return ArtDataGenerator()
@@ -24,10 +25,12 @@ class ArtDataGenerator(DataGenerator):
     # - node.status    skewed [0.70, 0.15, 0.08, 0.04, 0.03]
     # - link.src_id    power-law (top 2 % are hubs with 10x higher weight)
     # - measure.node_id top 10 % of nodes have 5x weight
-    LARGE_KIND_MAX_SCALE = 9.0
 
     def __init__(self):
-        super().__init__('art')
+        super().__init__(self.SCHEMA, self.NOW)
+
+    SCHEMA: SchemaName = 'art'
+    NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     @override
     def _generate_data(self):
@@ -60,10 +63,12 @@ class ArtDataGenerator(DataGenerator):
             self.event_log = gen._scaled( 60_000, 1.05)
             self.bucket    = gen._scaled(  5_000, 0.90)
 
+    LARGE_KINDS_MAX_SCALE = 9.0
+
     @staticmethod
     def allow_large_kinds(scale) -> bool:
         """For larger scales, we can't reliably generate the larger JSON-based collections within memory and time constraints, so we skip them. All queries and loaders should skip them as well."""
-        return scale <= ArtDataGenerator.LARGE_KIND_MAX_SCALE
+        return scale <= ArtDataGenerator.LARGE_KINDS_MAX_SCALE
 
     def generate_counts(self, scale: float) -> ArtCounts:
         """Returns row counts for the given scale without generating any data."""

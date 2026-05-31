@@ -3,7 +3,7 @@ import csv
 import os
 import random
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from core.query import SchemaName, create_schema_seed
 from core.files import JsonLinesWriter, open_input, open_output
 from core.utils import number_quantity
@@ -14,14 +14,15 @@ class DataGenerator(ABC):
     # TODO Add back the config and use it for stuff like rng seed
     # def __init__(self, config: Config):
     #     self._config = config
-    def __init__(self, schema: SchemaName):
+    def __init__(self, schema: SchemaName, now: datetime):
         self._schema = schema
+        self._now = now
+        """Each dataset should have it's own "current datetime" to ensure consistency of generated timestamps and queries."""
 
     def _reset(self, scale: float):
         self._scale = scale
         self._seed = create_schema_seed(self._schema, scale)
         self._rng = random.Random(self._seed)
-        self._now = datetime.now(timezone.utc)
 
     @abstractmethod
     def _generate_data(self) -> None:
@@ -53,21 +54,30 @@ class DataGenerator(ABC):
 
     def _open_csv_output(self, kind: str, header: list[str]):
         print('Creating', kind)
-        path = os.path.join(self._import_directory, kind + '.tbl')
+        path = os.path.join(self._import_directory, kind + '.csv')
         file = open_output(path)
-        writer = csv.writer(file, lineterminator='\n', delimiter = '|')
-        # The header is skipped because loaders do not expect it.
-        # writer.writerow(header)
+        writer = csv.writer(file, lineterminator='\n', delimiter = ',')
+        writer.writerow(header)
         return file, writer
+
+    @staticmethod
+    def open_csv_input(path: str, header: list[str]):
+        file = open_input(path)
+        reader = csv.reader(file, lineterminator='\n', delimiter = ',')
+
+        # Check the header row to ensure the expected format.
+        # Like we can use the file header to determine the column order, but it's easier to just enforce the specified order.
+        # If needed, we can always add a more flexible reader later ...
+        header_row = next(reader, [])
+        if header_row != header:
+            raise Exception(f'Unexpected header in {path}. Expected: "{"," .join(header)}", got: "{"," .join(header_row)}"')
+
+        return file, reader
 
     def _open_csv_input(self, kind: str, header: list[str]):
         print('Loading', kind)
-        path = os.path.join(self._import_directory, kind + '.tbl')
-        file = open_input(path)
-        reader = csv.reader(file, lineterminator='\n', delimiter = '|')
-        # The header is skipped because loaders do not expect it.
-        # next(reader, None)
-        return file, reader
+        path = os.path.join(self._import_directory, kind + '.csv')
+        return self.open_csv_input(path, header)
 
     def _open_json_output(self, kind: str):
         print('Creating', kind)

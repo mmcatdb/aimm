@@ -3,7 +3,7 @@ import os
 from core.config import Config
 from core.driver_provider import DriverProvider
 from core.query import DatabaseId, MeasuredQueriesPersistor, MeasurementConfig, MeasuredQueries, QueryInstance, QueryMeasurement, QueryRegistry, TQuery, load_measured, parse_database_id, print_warning, save_measured
-from core.utils import ProgressTracker, exit_with_error, exit_with_exception, plural
+from core.utils import ProgressTracker, exit_with_error, exit_with_exception, plural, print_info
 from core.dynamic_provider import get_dynamic_class_instance
 from latency_estimation.class_provider import get_plan_extractor
 from latency_estimation.plan_extractor import BasePlanExtractor
@@ -43,7 +43,7 @@ def run(config: Config, database_id: DatabaseId, mc: MeasurementConfig, use_cach
     queries = registry.generate_queries(scale, mc.num_queries, mc.allow_write)
 
     if len(queries) > mc.num_queries:
-        print_warning(f'Number of generated queries ({len(queries)}) is greater than the requested --num-queries ({mc.num_queries}). Adjusting --num-queries to {len(queries)} to include all generated queries.')
+        print_info(f'Number of generated queries ({len(queries)}) is greater than the requested --num-queries ({mc.num_queries}). Adjusting --num-queries to {len(queries)} to include all generated queries.')
         mc.num_queries = len(queries)
 
     driver = dp.get(*parse_database_id(database_id))

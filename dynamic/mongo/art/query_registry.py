@@ -10,7 +10,6 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
     def __init__(self):
         super().__init__(DriverType.MONGO)
-        self.__max_scale_override: float | None = None
 
     def _register_queries(self):
         self._register_find_node_queries()
@@ -27,43 +26,20 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
         self._register_window_queries()
         self._register_facet_queries()
         self._register_advanced_pattern_queries()
-        self.__register_large_kind_queries()
+
+        self._set_max_scale(ArtDataGenerator.LARGE_KINDS_MAX_SCALE)
+        self._register_event_log_queries()
+        self._register_node_rich_queries()
+        self._register_bucket_queries()
+        self._register_grp_tree_queries()
+        self._register_advanced_pattern_queries_large()
+        self._set_max_scale(None)
+
         self._register_write_queries()
-        self.__register_large_kind_write_queries()
 
-    def _query(self, name, title, function, weight: float = 1.0, max_scale: float | None = None):
-        super()._query(name, title, function, weight, self.__apply_max_scale_override(max_scale))
-
-    def _write_query(self, name, title, function, weight: float = 1.0, max_scale: float | None = None):
-        super()._write_query(name, title, function, weight, self.__apply_max_scale_override(max_scale))
-
-    def __apply_max_scale_override(self, max_scale: float | None) -> float | None:
-        if self.__max_scale_override is None:
-            return max_scale
-        if max_scale is None:
-            return self.__max_scale_override
-        return min(max_scale, self.__max_scale_override)
-
-    def __register_large_kind_queries(self):
-        self.__max_scale_override = ArtDataGenerator.LARGE_KIND_MAX_SCALE
-        try:
-            self._register_event_log_queries()
-            self._register_node_rich_queries()
-            self._register_bucket_queries()
-            self._register_grp_tree_queries()
-            self._register_advanced_pattern_queries_large()
-        finally:
-            self.__max_scale_override = None
-
-    def __register_large_kind_write_queries(self):
-        self.__max_scale_override = ArtDataGenerator.LARGE_KIND_MAX_SCALE
-        try:
-            self._register_write_queries_large()
-        finally:
-            self.__max_scale_override = None
-
-    def allow_large_kinds(self) -> bool:
-        return ArtDataGenerator.allow_large_kinds(self._scale)
+        self._set_max_scale(ArtDataGenerator.LARGE_KINDS_MAX_SCALE)
+        self._register_write_queries_large()
+        self._set_max_scale(None)
 
     #region Find node
 
@@ -1170,7 +1146,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         self._query('agg-computed-1', 'log age in days', lambda s: MongoAggregateQuery('log', [
             {'$match': {'node_id': s._param_node_id()}},
-            {'$addFields': {'age_ms': {'$subtract': ['$$NOW', '$occurred_at']}}},
+            {'$addFields': {'age_ms': {'$subtract': [s._param_now(), '$occurred_at']}}},
             {'$addFields': {'age_days': {'$divide': ['$age_ms', 86400000]}}},
             {'$sort': {'age_days': 1}},
         ]))
@@ -2630,7 +2606,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
                 'log_id': -1,
                 'kind': s._param_log_kind(),
                 'val': s._param_val(),
-                'occurred_at': '$$NOW',
+                'occurred_at': s._param_now(),
             }}},
             multi=False
         ))
@@ -2693,7 +2669,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
                 'node_id': s._param_node_id(),
                 'kind': s._param_log_kind(),
                 'val': s._param_val(),
-                'occurred_at': '$$NOW',
+                'occurred_at': s._param_now(),
             }]
         ))
 
@@ -2703,7 +2679,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
                 'node_id': s._param_node_id(),
                 'kind': s._param_log_kind(),
                 'val': s._param_val(),
-                'occurred_at': '$$NOW',
+                'occurred_at': s._param_now(),
             } for i in range(20)]
         ))
 
@@ -2725,7 +2701,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
             update={
                 '$set': {'identity.status': s._param_status()},
                 '$push': {'audit.history': {
-                    'ts': '$$NOW',
+                    'ts': s._param_now(),
                     'field': 'identity.status',
                     'from_val': s._param_status(),
                     'to_val': s._param_status(),
@@ -2822,7 +2798,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
 
         self._write_query('update-19', 'mark event_log entries as enriched and stamp processed_at', lambda s: MongoUpdateQuery('event_log',
             filter={'node_id': s._param_node_id(), 'event_type': s._param_choice('event_type', ['measure_recorded', 'doc_updated', 'tag_changed'])},
-            update={'$set': {'context.enriched': True, 'context.processed_at': '$$NOW'}},
+            update={'$set': {'context.enriched': True, 'context.processed_at': s._param_now()}},
             multi=True,
         ))
 
@@ -2886,7 +2862,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
                 'event_id': s._param_seed('event_log'),
                 'node_id': s._param_node_id(),
                 'event_type': 'status_changed',
-                'occurred_at': '$$NOW',
+                'occurred_at': s._param_now(),
                 'actor': {
                     'user_id': f'u{s._param_int("uid", 1, 999):03d}',
                     'role': s._param_choice('role', ['admin', 'operator', 'viewer']),
@@ -2963,7 +2939,7 @@ class MongoArtQueryRegistry(ArtQueryRegistry[MongoQuery]):
                         'priority': s._param_priority(),
                         'parent_id': 1,
                     },
-                    'created_at': '$$NOW',
+                    'created_at': s._param_now(),
                     'note': None,
                 },
                 'dimensions': {f'd{d}': None for d in range(5)},

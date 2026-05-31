@@ -26,7 +26,7 @@ class Neo4jArtLoader(Neo4jLoader):
 
     @override
     def _get_kinds(self):
-        # Order determines which .tbl files must exist; must match data_generator output.
+        # Order determines which .csv files must exist; must match data_generator output.
         return ['grp', 'node', 'link', 'log', 'measure', 'doc']
 
     @override
@@ -56,55 +56,55 @@ class Neo4jArtLoader(Neo4jLoader):
     def _load_data(self):
         self._load_csv('Grp', 'grp', '''
             CREATE (:Grp {
-                grp_id:   toInteger(row[0]),
-                name:     row[1],
-                depth:    toInteger(row[3]),
-                priority: toFloat(row[4])
+                grp_id:   toInteger(row.grp_id),
+                name:     row.name,
+                depth:    toInteger(row.depth),
+                priority: toFloat(row.priority)
             })
         ''')
 
         # parent_id may be empty for root groups
         self._load_csv('CHILD_OF', 'grp', '''
             WITH row
-            WHERE row[2] <> ''
-            MATCH (child:Grp  {grp_id: toInteger(row[0])}),
-                  (parent:Grp {grp_id: toInteger(row[2])})
+            WHERE row.parent_id <> ''
+            MATCH (child:Grp  {grp_id: toInteger(row.grp_id)}),
+                  (parent:Grp {grp_id: toInteger(row.parent_id)})
             CREATE (child)-[:CHILD_OF]->(parent)
         ''', 'creating Grp CHILD_OF relationships')
 
         self._load_csv('Node', 'node', '''
             CREATE (:Node {
-                node_id:    toInteger(row[0]),
-                tag:        row[1],
-                val_int:    toInteger(row[2]),
-                val_float:  toFloat(row[3]),
-                note:       row[4],
-                status:     toInteger(row[5]),
-                grp_id:     toInteger(row[6]),
-                created_at: datetime(row[7]),
-                is_active:  (row[8] = 'true')
+                node_id:    toInteger(row.node_id),
+                tag:        row.tag,
+                val_int:    toInteger(row.val_int),
+                val_float:  toFloat(row.val_float),
+                note:       row.note,
+                status:     toInteger(row.status),
+                grp_id:     toInteger(row.grp_id),
+                created_at: datetime(row.created_at),
+                is_active:  (row.is_active = 'true')
             })
         ''')
 
         self._create_relationship('BELONGS_TO', 'Node', 'grp_id', 'Grp', 'grp_id')
 
         self._load_csv('LINKED', 'link', '''
-            MATCH (src:Node {node_id: toInteger(row[0])}),
-                  (dst:Node {node_id: toInteger(row[1])})
+            MATCH (src:Node {node_id: toInteger(row.src_id)}),
+                  (dst:Node {node_id: toInteger(row.dst_id)})
             CREATE (src)-[:LINKED {
-                kind:       toInteger(row[2]),
-                weight:     toFloat(row[3]),
-                created_at: datetime(row[4])
+                kind:       toInteger(row.kind),
+                weight:     toFloat(row.weight),
+                created_at: datetime(row.created_at)
             }]->(dst)
         ''')
 
         self._load_csv('Log', 'log', '''
             CREATE (:Log {
-                log_id:      toInteger(row[0]),
-                node_id:     toInteger(row[1]),
-                kind:        toInteger(row[2]),
-                val:         CASE row[3] WHEN '' THEN null ELSE toFloat(row[3]) END,
-                occurred_at: datetime(row[4])
+                log_id:      toInteger(row.log_id),
+                node_id:     toInteger(row.node_id),
+                kind:        toInteger(row.kind),
+                val:         CASE row.val WHEN '' THEN null ELSE toFloat(row.val) END,
+                occurred_at: datetime(row.occurred_at)
             })
         ''')
 
@@ -112,11 +112,11 @@ class Neo4jArtLoader(Neo4jLoader):
 
         self._load_csv('Measure', 'measure', '''
             CREATE (:Measure {
-                measure_id:  toInteger(row[0]),
-                node_id:     toInteger(row[1]),
-                dim:         toInteger(row[2]),
-                val:         toFloat(row[3]),
-                recorded_at: date(row[4])
+                measure_id:  toInteger(row.measure_id),
+                node_id:     toInteger(row.node_id),
+                dim:         toInteger(row.dim),
+                val:         toFloat(row.val),
+                recorded_at: date(row.recorded_at)
             })
         ''')
 
@@ -124,11 +124,11 @@ class Neo4jArtLoader(Neo4jLoader):
 
         self._load_csv('Doc', 'doc', '''
             CREATE (:Doc {
-                doc_id:     toInteger(row[0]),
-                node_id:    toInteger(row[1]),
-                body:       row[2],
-                meta:       row[3],
-                created_at: datetime(row[4])
+                doc_id:     toInteger(row.doc_id),
+                node_id:    toInteger(row.node_id),
+                body:       row.body,
+                meta:       row.meta,
+                created_at: datetime(row.created_at)
             })
         ''')
 

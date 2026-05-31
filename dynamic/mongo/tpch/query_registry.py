@@ -7,6 +7,7 @@ def export():
     return MongoTpchQueryRegistry()
 
 class MongoTpchQueryRegistry(TpchQueryRegistry[MongoQuery]):
+
     def __init__(self):
         super().__init__(DriverType.MONGO)
 
@@ -1072,7 +1073,15 @@ class MongoTpchQueryRegistry(TpchQueryRegistry[MongoQuery]):
         return MongoAggregateQuery('lineitem', [
             {'$match': {
                 'l_shipmode': 'AIR',
-                'l_shipdate': {'$gte': self._param_date(1997, 1997)},
+                'l_shipdate': {
+                    '$gte': self._param_date(1997, 1997),
+                    # This is just a workaround for some very stupid bug.
+                    # MongoDB internally adds bounds when not defined. In this case, it would be something like the largest possible.
+                    # However, such date can't be represented by python's datetime, so it would throw an error like "year must be in 1..9999, not 292278994".
+                    # The query itself actually works fine, the problem is just with the explain.
+                    # The suggested workaround (using `datetime_conversion`) doesn't work so fuck it, let's just deal it here.
+                    '$lt': self._param_now(),
+                },
             }},
             {'$count': 'total'},
         ])

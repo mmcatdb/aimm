@@ -1,12 +1,11 @@
 from core.drivers import DriverType
-from core.query import SchemaName, QueryRegistry, TQuery, ValueType
-
-TPCH_SCHEMA: SchemaName = 'tpch'
+from core.query import QueryRegistry, TQuery, ValueType
+from .data_generator import TpchDataGenerator
 
 class TpchQueryRegistry(QueryRegistry[TQuery]):
 
     def __init__(self, driver: DriverType):
-        super().__init__(driver, TPCH_SCHEMA)
+        super().__init__(driver, TpchDataGenerator.SCHEMA, TpchDataGenerator.NOW)
 
     def _param_date(self, start_year=1992, end_year=1998):
         return self._param('date', lambda: self._convert_date(self._rng_date(start_year=start_year, end_year=end_year)))

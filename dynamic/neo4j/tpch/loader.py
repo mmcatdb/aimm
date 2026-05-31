@@ -32,109 +32,109 @@ class Neo4jTpchLoader(Neo4jLoader):
 
         self._load_csv('Region', 'region', '''
             CREATE (:Region {
-                r_regionkey: toInteger(row[0]),
-                r_name: row[1],
-                r_comment: row[2]
+                r_regionkey: toInteger(row.r_regionkey),
+                r_name: row.r_name,
+                r_comment: row.r_comment
             })
         ''')
 
         self._load_csv('Nation', 'nation', '''
             CREATE (:Nation {
-                n_nationkey: toInteger(row[0]),
-                n_name: row[1],
-                n_regionkey: toInteger(row[2]),
-                n_comment: row[3]
+                n_nationkey: toInteger(row.n_nationkey),
+                n_name: row.n_name,
+                n_regionkey: toInteger(row.n_regionkey),
+                n_comment: row.n_comment
             })
         ''')
 
         self._load_csv('Part', 'part', '''
             CREATE (:Part {
-                p_partkey: toInteger(row[0]),
-                p_name: row[1],
-                p_mfgr: row[2],
-                p_brand: row[3],
-                p_type: row[4],
-                p_size: toInteger(row[5]),
-                p_container: row[6],
-                p_retailprice: toFloat(row[7]),
-                p_comment: row[8]
+                p_partkey: toInteger(row.p_partkey),
+                p_name: row.p_name,
+                p_mfgr: row.p_mfgr,
+                p_brand: row.p_brand,
+                p_type: row.p_type,
+                p_size: toInteger(row.p_size),
+                p_container: row.p_container,
+                p_retailprice: toFloat(row.p_retailprice),
+                p_comment: row.p_comment
             })
         ''')
 
         self._load_csv('Supplier', 'supplier', '''
             CREATE (:Supplier {
-                s_suppkey: toInteger(row[0]),
-                s_name: row[1],
-                s_address: row[2],
-                s_nationkey: toInteger(row[3]),
-                s_phone: row[4],
-                s_acctbal: toFloat(row[5]),
-                s_comment: row[6]
+                s_suppkey: toInteger(row.s_suppkey),
+                s_name: row.s_name,
+                s_address: row.s_address,
+                s_nationkey: toInteger(row.s_nationkey),
+                s_phone: row.s_phone,
+                s_acctbal: toFloat(row.s_acctbal),
+                s_comment: row.s_comment
             })
         ''')
 
         self._load_csv('Customer', 'customer', '''
             CREATE (:Customer {
-                c_custkey: toInteger(row[0]),
-                c_name: row[1],
-                c_address: row[2],
-                c_nationkey: toInteger(row[3]),
-                c_phone: row[4],
-                c_acctbal: toFloat(row[5]),
-                c_mktsegment: row[6],
-                c_comment: row[7]
+                c_custkey: toInteger(row.c_custkey),
+                c_name: row.c_name,
+                c_address: row.c_address,
+                c_nationkey: toInteger(row.c_nationkey),
+                c_phone: row.c_phone,
+                c_acctbal: toFloat(row.c_acctbal),
+                c_mktsegment: row.c_mktsegment,
+                c_comment: row.c_comment
             })
         ''')
 
         self._load_csv('Orders', 'orders', '''
             CREATE (:Orders {
-                o_orderkey: toInteger(row[0]),
-                o_custkey: toInteger(row[1]),
-                o_orderstatus: row[2],
-                o_totalprice: toFloat(row[3]),
-                o_orderdate: date(row[4]),
-                o_orderpriority: row[5],
-                o_clerk: row[6],
-                o_shippriority: toInteger(row[7]),
-                o_comment: row[8]
+                o_orderkey: toInteger(row.o_orderkey),
+                o_custkey: toInteger(row.o_custkey),
+                o_orderstatus: row.o_orderstatus,
+                o_totalprice: toFloat(row.o_totalprice),
+                o_orderdate: date(row.o_orderdate),
+                o_orderpriority: row.o_orderpriority,
+                o_clerk: row.o_clerk,
+                o_shippriority: toInteger(row.o_shippriority),
+                o_comment: row.o_comment
             })
         ''')
 
         # Load nodes and relationships for many-to-many tables
 
         self._load_csv('FOR_PART', 'partsupp', '''
-            MATCH (p:Part {p_partkey: toInteger(row[0])})
-            MATCH (s:Supplier {s_suppkey: toInteger(row[1])})
+            MATCH (p:Part {p_partkey: toInteger(row.ps_partkey)})
+            MATCH (s:Supplier {s_suppkey: toInteger(row.ps_suppkey)})
             CREATE (p)<-[:FOR_PART]-(ps:PartSupp {
-                ps_partkey: toInteger(row[0]),
-                ps_suppkey: toInteger(row[1]),
-                ps_availqty: toInteger(row[2]),
-                ps_supplycost: toFloat(row[3]),
-                ps_comment: row[4]
+                ps_partkey: toInteger(row.ps_partkey),
+                ps_suppkey: toInteger(row.ps_suppkey),
+                ps_availqty: toInteger(row.ps_availqty),
+                ps_supplycost: toFloat(row.ps_supplycost),
+                ps_comment: row.ps_comment
             })-[:SUPPLIED_BY]->(s)
         ''', 'creating relationships to Part and Supplier')
 
         self._load_csv('HAS_ITEM', 'lineitem', '''
-            MATCH (o:Orders {o_orderkey: toInteger(row[0])})
-            MATCH (p:Part {p_partkey: toInteger(row[1])})
-            MATCH (s:Supplier {s_suppkey: toInteger(row[2])})
+            MATCH (o:Orders {o_orderkey: toInteger(row.l_orderkey)})
+            MATCH (p:Part {p_partkey: toInteger(row.l_partkey)})
+            MATCH (s:Supplier {s_suppkey: toInteger(row.l_suppkey)})
             CREATE (o)-[:HAS_ITEM]->(li:LineItem {
-                l_orderkey: toInteger(row[0]),
-                l_partkey: toInteger(row[1]),
-                l_suppkey: toInteger(row[2]),
-                l_linenumber: toInteger(row[3]),
-                l_quantity: toFloat(row[4]),
-                l_extendedprice: toFloat(row[5]),
-                l_discount: toFloat(row[6]),
-                l_tax: toFloat(row[7]),
-                l_returnflag: row[8],
-                l_linestatus: row[9],
-                l_shipdate: date(row[10]),
-                l_commitdate: date(row[11]),
-                l_receiptdate: date(row[12]),
-                l_shipinstruct: row[13],
-                l_shipmode: row[14],
-                l_comment: row[15]
+                l_orderkey: toInteger(row.l_orderkey),
+                l_partkey: toInteger(row.l_partkey),
+                l_suppkey: toInteger(row.l_suppkey),
+                l_linenumber: toInteger(row.l_linenumber),
+                l_quantity: toFloat(row.l_quantity),
+                l_extendedprice: toFloat(row.l_extendedprice),
+                l_discount: toFloat(row.l_discount),
+                l_tax: toFloat(row.l_tax),
+                l_returnflag: row.l_returnflag,
+                l_linestatus: row.l_linestatus,
+                l_shipdate: date(row.l_shipdate),
+                l_commitdate: date(row.l_commitdate),
+                l_receiptdate: date(row.l_receiptdate),
+                l_shipinstruct: row.l_shipinstruct,
+                l_shipmode: row.l_shipmode,
+                l_comment: row.l_comment
             })-[:OF_PART]->(p)
             CREATE (li)-[:SUPPLIED_BY]->(s)
         ''', 'creating relationships to Orders, Part and Supplier')
@@ -149,12 +149,12 @@ class Neo4jTpchLoader(Neo4jLoader):
         # Custom tables (not part of the original TPC-H schema)
 
         self._load_csv('KNOWS', 'knows', '''
-            MATCH (c1:Customer {c_custkey: toInteger(row[0])})
-            MATCH (c2:Customer {c_custkey: toInteger(row[1])})
+            MATCH (c1:Customer {c_custkey: toInteger(row.k_custkey1)})
+            MATCH (c2:Customer {c_custkey: toInteger(row.k_custkey2)})
             CREATE (c1)-[:KNOWS {
-                k_startdate: date(row[2]),
-                k_source: row[3],
-                k_comment: row[4],
-                k_strength: toFloat(row[5])
+                k_startdate: date(row.k_startdate),
+                k_source: row.k_source,
+                k_comment: row.k_comment,
+                k_strength: toFloat(row.k_strength)
             }]->(c2)
         ''')

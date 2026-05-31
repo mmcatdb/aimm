@@ -1653,7 +1653,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                    AVG(l.val)      AS avg_val
             FROM generate_series(
                 '{s._param_date_minus_days(90, 90)}'::TIMESTAMPTZ,
-                now(),
+                '{s._param_now()}',
                 INTERVAL '7 days'
             ) AS gs(bucket)
             LEFT JOIN log l ON l.occurred_at >= gs.bucket
@@ -2378,9 +2378,9 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._query('datetime-2', 'age() comparison: functional expression disables index on occurred_at', lambda s: f"""
             SELECT log_id, node_id, occurred_at,
-                   age(NOW(), occurred_at) AS event_age
+                   age('{s._param_now()}', occurred_at) AS event_age
             FROM log
-            WHERE age(NOW(), occurred_at) < INTERVAL '{s._param_int("days", 7, 60)} days'
+            WHERE age('{s._param_now()}', occurred_at) < INTERVAL '{s._param_int("days", 7, 60)} days'
               AND val IS NOT NULL
             ORDER BY event_age ASC
             LIMIT 200
@@ -2771,7 +2771,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                 {s._param_node_id()},
                 {s._param_log_kind()},
                 {s._param_float('val', 0.0, 100.0)},
-                NOW()
+                '{s._param_now()}'
             )
         """)
 
@@ -2782,7 +2782,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                    {s._param_node_id()},
                    {s._param_log_kind()},
                    gs * {s._param_float('multiplier', 0.5, 9.99)},
-                   NOW() - (gs || ' minutes')::INTERVAL
+                   '{s._param_now()}'::TIMESTAMPTZ - (gs || ' minutes')::INTERVAL
             FROM generate_series(1, {s._param_int('n_rows', 5, 50)}) AS gs
         """)
 
@@ -2794,7 +2794,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                     node_id,
                     {s._param_int('kind_dest', 0, 7)},
                     COALESCE(val, 0.0) * {s._param_float('scale', 0.8, 1.2)},
-                    NOW()
+                    '{s._param_now()}'
             FROM log
             WHERE kind = {s._param_int('kind_src', 0, 7)}
                 AND val  IS NOT NULL
@@ -2809,7 +2809,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                     node_id,
                     {s._param_log_kind()},
                     COALESCE(val, 0.0) * 0.9,
-                    NOW()
+                    '{s._param_now()}'
             FROM log
             WHERE node_id = {s._param_node_id()}
                 AND val     IS NOT NULL
@@ -2823,7 +2823,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                     n.node_id,
                     {s._param_log_kind()},
                     m.val * 0.5,
-                    NOW()
+                    '{s._param_now()}'
             FROM node n
             JOIN measure m ON m.node_id = n.node_id
             WHERE n.grp_id    = {s._param_grp_id()}
@@ -2858,7 +2858,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                 {s._param_node_id()},
                 'benchmark placeholder body',
                 '{{"lang":"en","version":1,"tags":[],"score":3.0}}'::JSONB,
-                NOW()
+                '{s._param_now()}'
             )
             ON CONFLICT (doc_id) DO NOTHING
         """)
@@ -2871,12 +2871,12 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                 {s._param_node_id()},
                 'upserted body text for benchmark run',
                 '{{"lang":"en","version":99,"score":5.0,"tags":["bench"]}}'::JSONB,
-                NOW()
+                '{s._param_now()}'
             )
             ON CONFLICT (doc_id) DO UPDATE
                 SET meta = EXCLUDED.meta,
                     body = EXCLUDED.body
-            WHERE doc.created_at < NOW() - INTERVAL '30 days'
+            WHERE doc.created_at < '{s._param_now()}'::TIMESTAMPTZ - INTERVAL '30 days'
         """)
 
         # INSERT ... RETURNING
@@ -2900,7 +2900,7 @@ class PostgresArtQueryRegistry(ArtQueryRegistry[str]):
                 {s._param_node_id('dst_id')},
                 {s._param_link_kind()},
                 {s._param_weight()},
-                NOW()
+                '{s._param_now()}'
             )
             ON CONFLICT (src_id, dst_id) DO NOTHING
         """)

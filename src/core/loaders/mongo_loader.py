@@ -7,6 +7,7 @@ import os
 import re
 import time
 from pymongo import ASCENDING
+from core.data_generator import DataGenerator
 from core.files import open_input
 from core.query import JsonLinesReader, SchemaId, create_database_id_1
 from core.utils import ProgressTracker, print_warning, time_quantity
@@ -66,7 +67,7 @@ class MongoLoader(BaseLoader):
         for kind in self._get_csv_kinds():
             kinds.update(self.__find_required_kinds(kind))
 
-        filenames = [f'{kind}.tbl' for kind in kinds] + [f'{kind}.jsonl' for kind in self._get_json_kinds()]
+        filenames = [f'{kind}.csv' for kind in kinds] + [f'{kind}.jsonl' for kind in self._get_json_kinds()]
 
         # Verify that all CSV files exist.
         for filename in filenames:
@@ -90,7 +91,7 @@ class MongoLoader(BaseLoader):
         for entity in reversed(collection_names):
             try:
                 database.drop_collection(entity)
-                print(f'Collection "{entity}" has been dropped in MongoDB.')
+                print(f'Dropped collection "{entity}".')
             except Exception as e:
                 print_warning(f'Skipping delete for "{entity}"', e)
 
@@ -105,7 +106,8 @@ class MongoLoader(BaseLoader):
 
         try:
             collection.create_index(keys, unique=index.is_unique)
-            print(f'Created {message}')
+            # Don't print this one, there would be too many messages.
+            # print(f'Created {message}')
         except Exception as e:
             print_warning(f'Could not create {message}', e)
 
@@ -210,10 +212,11 @@ class CsvType(Enum):
     STRING_LIST = 'string_list'
 
 class CsvTable:
-    def __init__(self, name: str, properties: list[CsvType]):
+    def __init__(self, name: str, column_names: list[str], column_types: list[CsvType]):
         self.name = name
-        self.properties = properties
-        """The order of properties should match the order of columns in the csv file."""
+        self.column_names = column_names
+        self.column_types = column_types
+        """The order of column names and types should match the order of columns in the csv file."""
 
 class MongoDocument:
     """Used for converting flat csv tables into nested mongodb documents."""
@@ -256,13 +259,13 @@ class CachedCsvTable:
         progress = ProgressTracker.unlimited()
         progress.start(f'Loading data for kind "{self.__csv_table.name}"... ')
 
-        path = os.path.join(import_directory, self.__csv_table.name + '.tbl')
+        path = os.path.join(import_directory, self.__csv_table.name + '.csv')
+        file, reader = DataGenerator.open_csv_input(path, self.__csv_table.column_names)
 
-        with open_input(path) as file:
-            reader = csv.reader(file, lineterminator='\n', delimiter='|')
+        with file:
             for row in reader:
                 data = []
-                for index, type in enumerate(self.__csv_table.properties):
+                for index, type in enumerate(self.__csv_table.column_types):
                     data.append(csv_value_to_mongo(row[index], type))
 
                 self.__rows.append(data)
@@ -418,7 +421,8 @@ class MongoPostgresBuilder:
 type_pattern = re.compile(r'([a-zA-Z0-9_]+)')
 
 def _postgres_to_csv_table(kind: str, columns: list[PostgresColumn]) -> CsvTable:
-    properties = []
+    column_names = list[str]()
+    column_types = list[CsvType]()
 
     for column in columns:
         match = type_pattern.match(column.type)
@@ -430,9 +434,10 @@ def _postgres_to_csv_table(kind: str, columns: list[PostgresColumn]) -> CsvTable
         if not type:
             raise ValueError(f'Unsupported Postgres type: {column.type}')
 
-        properties.append(type)
+        column_types.append(type)
+        column_names.append(column.name)
 
-    return CsvTable(kind, properties)
+    return CsvTable(kind, column_names, column_types)
 
 class KeyToIndexMap:
     """Enables using string keys (e.g., from postgres) instead of indexes."""

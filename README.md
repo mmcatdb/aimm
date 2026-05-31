@@ -44,11 +44,13 @@ Choose a *schema* (e.g., `art` and `edbt`) and a *scale* (a number >= 0). Use a 
 ```bash
 python -m scripts.generate_data art-0
 python -m scripts.generate_data edbt-0
+python -m scripts.generate_data tpch-0
 ```
 - Populate databases:
 ```bash
 python -m scripts.populate_db postgres/art-0
 python -m scripts.populate_db postgres/edbt-0
+python -m scripts.populate_db postgres/tpch-0
 ```
 
 ### Query measurement and plan extraction

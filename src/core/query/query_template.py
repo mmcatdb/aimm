@@ -31,7 +31,7 @@ class QueryTemplate(Generic[TQuery]):
         self._generator = generator
 
     def label(self) -> str:
-        """Returns a human-readable label for this query, combining ID and title."""
+        """Returns a human-readable label for this template, combining ID and title."""
         return f'{self.id} - {self._title}'
 
     def generate(self, scale: float, index: int) -> QueryInstance[TQuery]:
@@ -39,7 +39,8 @@ class QueryTemplate(Generic[TQuery]):
         content = self._generator(scale, is_raw=False)
         database_id = create_database_id_2(self.driver, self.schema, scale)
         query_id = create_query_instance_id(database_id, self.name, index)
-        return QueryInstance(query_id, self.label(), self.is_write, content)
+        label = f'{query_id} - {self._title}'
+        return QueryInstance(query_id, label, self.is_write, content)
 
     def raw(self) -> TQuery:
         """Returns a representation of the query template with placeholders for parameters. Useful for debugging."""

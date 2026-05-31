@@ -6,8 +6,6 @@ from dotenv import load_dotenv
 from core.drivers import PostgresConfig, MongoConfig, Neo4jConfig
 from core.utils import exit_with_error
 
-# from datetime import datetime
-# GLOBAL_RNG_SEED = datetime.now().timestamp()
 GLOBAL_RNG_SEED = 69
 PROJECT_ROOT_DIRECTORY = Path(__file__).resolve().parents[2]
 

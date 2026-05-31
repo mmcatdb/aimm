@@ -1,15 +1,13 @@
 from abc import abstractmethod
 from typing_extensions import override
 from core.drivers import DriverType
-from core.query import SchemaName, QueryRegistry, TQuery, ValueType
+from core.query import QueryRegistry, TQuery, ValueType
 from .data_generator import EdbtDataGenerator
-
-EDBT_SCHEMA: SchemaName = 'edbt'
 
 class EdbtQueryRegistry(QueryRegistry[TQuery]):
 
     def __init__(self, driver: DriverType):
-        super().__init__(driver, EDBT_SCHEMA)
+        super().__init__(driver, EdbtDataGenerator.SCHEMA, EdbtDataGenerator.NOW)
 
     @override
     def _setup_cache(self):

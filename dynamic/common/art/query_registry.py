@@ -1,10 +1,7 @@
-from collections.abc import Callable
 from typing_extensions import override
 from core.drivers import DriverType
-from core.query import SchemaName, QueryRegistry, TQuery
+from core.query import QueryRegistry, TQuery
 from .data_generator import ArtDataGenerator
-
-ART_SCHEMA: SchemaName = 'art'
 
 class ArtQueryRegistry(QueryRegistry[TQuery]):
     """
@@ -13,7 +10,7 @@ class ArtQueryRegistry(QueryRegistry[TQuery]):
     """
 
     def __init__(self, driver: DriverType):
-        super().__init__(driver, ART_SCHEMA)
+        super().__init__(driver, ArtDataGenerator.SCHEMA, ArtDataGenerator.NOW)
 
     @override
     def _setup_cache(self):

@@ -188,7 +188,7 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
     #         SELECT oi.order_id, oi.product_id
     #         FROM order_item oi
     #         JOIN "order" o ON o.order_id = oi.order_id
-    #         WHERE o.ordered_at >= now() - INTERVAL '7 days'
+    #         WHERE o.ordered_at >= '{self._param_now()}'::TIMESTAMPTZ - INTERVAL '7 days'
     #           AND o.status IN ('paid', 'shipped')
     #     ),
     #     pairs AS (

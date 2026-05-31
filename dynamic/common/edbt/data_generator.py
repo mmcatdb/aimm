@@ -1,10 +1,12 @@
 from __future__ import annotations
+from datetime import datetime, timezone
 from dataclasses import dataclass
 import json
 import math
 from typing_extensions import override
 from datetime import timedelta, datetime
 from core.data_generator import AliasSampler, DataGenerator, clamp_int, iso, print_counts
+from core.query import SchemaName
 
 def export():
     return EdbtDataGenerator()
@@ -19,7 +21,10 @@ class EdbtDataGenerator(DataGenerator):
     """
 
     def __init__(self):
-        super().__init__('edbt')
+        super().__init__(self.SCHEMA, self.NOW)
+
+    SCHEMA: SchemaName = 'edbt'
+    NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     @override
     def _generate_data(self):

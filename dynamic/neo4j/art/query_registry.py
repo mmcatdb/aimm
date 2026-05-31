@@ -1733,6 +1733,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
 
         self._query('recursive-4', 'LINKED*1..6 reachability from a node with depth count', lambda s: f"""
             MATCH (src:Node {{node_id: {s._param_node_id()}}})-[:LINKED*1..6]->(dst:Node)
+            WHERE dst <> src
             WITH dst, min(length(shortestPath((src)-[:LINKED*1..6]->(dst)))) AS min_hops
             RETURN min_hops, count(dst) AS reach_cnt
             ORDER BY min_hops
@@ -2254,7 +2255,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
             MATCH (l:Log)-[:EVENT_OF]->(n:Node)
             WHERE n.grp_id = {s._param_grp_id()} AND l.val IS NOT NULL
             WITH n, l,
-                 duration.between(datetime(l.occurred_at), datetime()).days AS age_days
+                 duration.between(datetime(l.occurred_at), datetime('{s._param_now()}')).days AS age_days
             WITH n,
                  sum(l.val * exp(-0.05 * toFloat(age_days))) AS decay_score,
                  count(l) AS log_cnt
@@ -2308,7 +2309,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                 node_id:     n.node_id,
                 kind:        i % 8,
                 val:         toFloat(i) * 2.5,
-                occurred_at: datetime() - duration({{seconds: i * 60}})
+                occurred_at: datetime('{s._param_now()}') - duration({{seconds: i * 60}})
             }})
             CREATE (l)-[:EVENT_OF]->(n)
             RETURN count(l) AS created
@@ -2350,7 +2351,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
             CREATE (src)-[:LINKED {{
                 kind: {s._param_link_kind()},
                 weight: {s._param_float('w', 0.1, 0.9, 3)},
-                created_at: datetime()
+                created_at: '{s._param_now()}'
             }}]->(dst)
             RETURN count(*) AS created
         """)
@@ -2379,7 +2380,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                 node_id:     n.node_id,
                 kind:        {s._param_log_kind()},
                 val:         {s._param_val()},
-                occurred_at: datetime()
+                occurred_at: '{s._param_now()}'
             }})
             CREATE (l)-[:EVENT_OF]->(n)
             RETURN l.log_id
@@ -2398,7 +2399,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                 node_id:     n.node_id,
                 kind:        (i % 8),
                 val:         toFloat(i) * 1.5,
-                occurred_at: datetime() - duration({{days: i}})
+                occurred_at: datetime('{s._param_now()}') - duration({{days: i}})
             }})
             CREATE (l)-[:EVENT_OF]->(n)
             RETURN count(l) AS created
@@ -2419,7 +2420,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                 node_id:     n.node_id,
                 kind:        l.kind,
                 val:         l.val * 0.9,
-                occurred_at: datetime()
+                occurred_at: '{s._param_now()}'
             }})
             CREATE (new_l)-[:EVENT_OF]->(n)
             RETURN count(new_l) AS created
@@ -2446,7 +2447,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
             CREATE (src)-[:LINKED {{
                 kind:       {s._param_link_kind()},
                 weight:     {s._param_float('weight', 0.01, 0.99, 4)},
-                created_at: datetime()
+                created_at: '{s._param_now()}'
             }}]->(dst)
             RETURN count(*) AS created
         """)
@@ -2463,7 +2464,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                 node_id:    n.node_id,
                 body:       'generated body text',
                 meta:       '{{\"lang\":\"en_US\",\"version\":1,\"tags\":[],\"score\":5.0}}',
-                created_at: datetime()
+                created_at: '{s._param_now()}'
             }})
             CREATE (d)-[:DOC_OF]->(n)
             RETURN d.doc_id
@@ -2481,7 +2482,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                   (dst:Node {{node_id: {s._param_node_id('dst_id')}}})
             WHERE src <> dst
             MERGE (src)-[r:LINKED {{kind: {s._param_link_kind()}}}]->(dst)
-            ON CREATE SET r.weight = {s._param_float('weight', 0.1, 0.9, 4)}, r.created_at = datetime()
+            ON CREATE SET r.weight = {s._param_float('weight', 0.1, 0.9, 4)}, r.created_at = '{s._param_now()}'
             ON MATCH  SET r.weight = r.weight * 1.05
             RETURN r.weight
         """)
@@ -2493,7 +2494,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                 node_id:     n.node_id,
                 kind:        {s._param_log_kind()},
                 val:         null,
-                occurred_at: datetime()
+                occurred_at: '{s._param_now()}'
             }})
             CREATE (l)-[:EVENT_OF]->(n)
             RETURN l.log_id, l.kind, l.occurred_at
@@ -2511,7 +2512,7 @@ class Neo4jArtQueryRegistry(ArtQueryRegistry[str]):
                 node_id:     n.node_id,
                 kind:        {s._param_log_kind()},
                 val:         {s._param_val()},
-                occurred_at: datetime()
+                occurred_at: '{s._param_now()}'
             }})
             CREATE (l)-[:EVENT_OF]->(n)
             RETURN l.log_id

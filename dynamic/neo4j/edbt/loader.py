@@ -35,128 +35,128 @@ class Neo4jEdbtLoader(Neo4jLoader):
 
         self._load_csv('Person', 'person', '''
             CREATE (:Person {
-                person_id: toInteger(row[0]),
-                name: row[1],
-                email: row[2],
-                created_at: datetime(row[3]),
-                country_code: row[4],
-                is_active: (row[5] = 'true'),
-                profile: row[6]
+                person_id: toInteger(row.person_id),
+                name: row.name,
+                email: row.email,
+                created_at: datetime(row.created_at),
+                country_code: row.country_code,
+                is_active: (row.is_active = 'true'),
+                profile: row.profile
             })
         ''')
 
         self._load_csv('Customer', 'customer', '''
             CREATE (:Customer {
-                customer_id: toInteger(row[0]),
-                person_id: toInteger(row[1]),
-                snapshot_at: datetime(row[2]),
-                name: row[3],
-                email: row[4],
-                country_code: row[5],
-                is_active: (row[6] = 'true'),
-                profile: row[7]
+                customer_id: toInteger(row.customer_id),
+                person_id: toInteger(row.person_id),
+                snapshot_at: datetime(row.snapshot_at),
+                name: row.name,
+                email: row.email,
+                country_code: row.country_code,
+                is_active: (row.is_active = 'true'),
+                profile: row.profile
             })
         ''')
 
         self._load_csv('Seller', 'seller', '''
             CREATE (:Seller {
-                seller_id: toInteger(row[0]),
-                display_name: row[1],
-                created_at: datetime(row[2]),
-                country_code: row[3],
-                is_active: (row[4] = 'true')
+                seller_id: toInteger(row.seller_id),
+                display_name: row.display_name,
+                created_at: datetime(row.created_at),
+                country_code: row.country_code,
+                is_active: (row.is_active = 'true')
             })
         ''')
 
         self._load_csv('Category', 'category', '''
             CREATE (:Category {
-                category_id: toInteger(row[0]),
-                name: row[1],
-                path: row[2]
+                category_id: toInteger(row.category_id),
+                name: row.name,
+                path: row.path
             })
         ''')
 
         self._load_csv('Product', 'product', '''
             CREATE (:Product {
-                product_id: toInteger(row[0]),
-                seller_id: toInteger(row[1]),
-                sku: row[2],
-                title: row[3],
-                description: row[4],
-                price_cents: toInteger(row[5]),
-                currency: row[6],
-                stock_qty: toInteger(row[7]),
-                is_active: (row[8] = 'true'),
-                created_at: datetime(row[9]),
-                updated_at: datetime(row[10]),
-                attributes: row[11]
+                product_id: toInteger(row.product_id),
+                seller_id: toInteger(row.seller_id),
+                sku: row.sku,
+                title: row.title,
+                description: row.description,
+                price_cents: toInteger(row.price_cents),
+                currency: row.currency,
+                stock_qty: toInteger(row.stock_qty),
+                is_active: (row.is_active = 'true'),
+                created_at: datetime(row.created_at),
+                updated_at: datetime(row.updated_at),
+                attributes: row.attributes
             })
         ''')
 
         self._load_csv('Order', 'order', '''
             CREATE (:Order {
-                order_id: toInteger(row[0]),
-                customer_id: toInteger(row[1]),
-                ordered_at: datetime(row[2]),
-                status: row[3],
-                total_cents: toInteger(row[4]),
-                currency: row[5],
-                shipping: row[6],
-                payment: row[7]
+                order_id: toInteger(row.order_id),
+                customer_id: toInteger(row.customer_id),
+                ordered_at: datetime(row.ordered_at),
+                status: row.status,
+                total_cents: toInteger(row.total_cents),
+                currency: row.currency,
+                shipping: row.shipping,
+                payment: row.payment
             })
         ''')
 
         # Load nodes and relationships for many-to-many tables
 
         self._load_csv('HAS_ITEM', 'order_item', '''
-            MATCH (o:Order {order_id: toInteger(row[1])}),
-                (p:Product {product_id: toInteger(row[2])})
+            MATCH (o:Order {order_id: toInteger(row.order_id)}),
+                (p:Product {product_id: toInteger(row.product_id)})
             CREATE (o)-[:HAS_ITEM {
-                order_item_id: toInteger(row[0]),
-                unit_price_cents: toInteger(row[3]),
-                quantity: toInteger(row[4]),
-                line_total_cents: toInteger(row[5]),
-                created_at: datetime(row[6])
+                order_item_id: toInteger(row.order_item_id),
+                unit_price_cents: toInteger(row.unit_price_cents),
+                quantity: toInteger(row.quantity),
+                line_total_cents: toInteger(row.line_total_cents),
+                created_at: datetime(row.created_at)
             }]->(p)
         ''')
 
         self._load_csv('REVIEWED', 'review', '''
-            MATCH (p:Product {product_id: toInteger(row[1])}),
-                (u:Customer {customer_id: toInteger(row[2])})
+            MATCH (p:Product {product_id: toInteger(row.product_id)}),
+                (u:Customer {customer_id: toInteger(row.customer_id)})
             CREATE (u)-[:REVIEWED {
-                review_id: toInteger(row[0]),
-                product_id: toInteger(row[1]),
-                customer_id: toInteger(row[2]),
-                rating: toInteger(row[3]),
-                title: row[4],
-                body: row[5],
-                created_at: datetime(row[6]),
-                helpful_votes: toInteger(row[7])
+                review_id: toInteger(row.review_id),
+                product_id: toInteger(row.product_id),
+                customer_id: toInteger(row.customer_id),
+                rating: toInteger(row.rating),
+                title: row.title,
+                body: row.body,
+                created_at: datetime(row.created_at),
+                helpful_votes: toInteger(row.helpful_votes)
             }]->(p)
         ''')
 
         self._load_csv('HAS_CATEGORY', 'has_category', '''
-            MATCH (p:Product {product_id: toInteger(row[0])}),
-                (c:Category {category_id: toInteger(row[1])})
+            MATCH (p:Product {product_id: toInteger(row.product_id)}),
+                (c:Category {category_id: toInteger(row.category_id)})
             CREATE (p)-[:HAS_CATEGORY {
-                assigned_at: datetime(row[2])
+                assigned_at: datetime(row.assigned_at)
             }]->(c)
         ''')
 
         self._load_csv('HAS_INTEREST', 'has_interest', '''
-            MATCH (u:Person {person_id: toInteger(row[0])}),
-                (c:Category {category_id: toInteger(row[1])})
+            MATCH (u:Person {person_id: toInteger(row.person_id)}),
+                (c:Category {category_id: toInteger(row.category_id)})
             CREATE (u)-[:HAS_INTEREST {
-                strength: toInteger(row[2]),
-                created_at: datetime(row[3])
+                strength: toInteger(row.strength),
+                created_at: datetime(row.created_at)
             }]->(c)
         ''')
 
         self._load_csv('FOLLOWS', 'follows', '''
-            MATCH (a:Person {person_id: toInteger(row[0])}),
-                (b:Person {person_id: toInteger(row[1])})
+            MATCH (a:Person {person_id: toInteger(row.from_id)}),
+                (b:Person {person_id: toInteger(row.to_id)})
             CREATE (a)-[:FOLLOWS {
-                created_at: datetime(row[2])
+                created_at: datetime(row.created_at)
             }]->(b)
         ''')
 

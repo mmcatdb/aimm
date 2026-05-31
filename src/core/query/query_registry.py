@@ -5,7 +5,6 @@ from enum import Enum
 import random
 from typing import Any, Generic, TypeVar, cast
 from typing_extensions import Self
-from core.config import GLOBAL_RNG_SEED
 from core.drivers import DriverType
 from .query_id import SchemaName, TemplateName, create_schema_seed
 from .query_instance import TQuery, QueryInstance
@@ -47,9 +46,10 @@ TListItem = TypeVar('TListItem')
 
 class QueryRegistry(Generic[TQuery]):
 
-    def __init__(self, driver: DriverType, schema: SchemaName):
+    def __init__(self, driver: DriverType, schema: SchemaName, now: datetime):
         self.driver = driver
         self.schema = schema
+        self._now = now
         self._rng: random.Random
         self._scale: float
         """The current scale factor for which the parameters are being generated. Set when generating queries."""
@@ -57,6 +57,7 @@ class QueryRegistry(Generic[TQuery]):
         # It's better to map the templates by name instead of their full ID because part of the ID is already contained in the registry (driver and schema).
         # We would probably need to parse the template name from the ID anyway for the generated queries.
         self.__templates: dict[TemplateName, QueryTemplate[TQuery]] | None = None
+        self.__default_max_scale: float | None = None
 
     def __set_scale(self, scale: float):
         """If needed, sets the current scale factor for which the parameters are being generated. Is used lazily by the parameter generators."""
@@ -141,6 +142,10 @@ class QueryRegistry(Generic[TQuery]):
         """Override this to register write queries programmatically using the `_query` method."""
         pass
 
+    def _set_max_scale(self, max_scale: float | None):
+        """Override the max_scale settings for all following queries."""
+        self.__default_max_scale = max_scale
+
     def _query(self, name: str, title: str, function: Callable[[Self], TQuery], weight: float = 1.0, max_scale: float | None = None):
         """Register query programatically.
 
@@ -162,6 +167,7 @@ class QueryRegistry(Generic[TQuery]):
             raise Exception('Query can only be registered within _register_queries method.')
 
         generator = self.__create_query_generator(function)
+        max_scale = max_scale if max_scale is not None else self.__default_max_scale
 
         self.__collected_templates.append(QueryTemplate(
             driver=self.driver,
@@ -227,6 +233,7 @@ class QueryRegistry(Generic[TQuery]):
         return array
 
     def _rng_date(self, start_year=1992, end_year=1998) -> datetime:
+        """Both years are inclusive."""
         years = end_year - start_year + 1
         # Not the most accurate way to handle leap years, but good enough for random generation.
         seconds = years * 365 * 24 * 60 * 60
@@ -234,12 +241,15 @@ class QueryRegistry(Generic[TQuery]):
 
     # Common utility methods for generating random parameters. Could be overridden by specific databases if needed.
 
+    def _param_now(self):
+        return self._param('now', lambda: self._convert_date(self._now))
+
     def _param_month(self):
         return self._param_int('month', 1, 12)
 
     def _param_date_minus_days(self, min_days: int, max_days: int):
         days = self._rng_int(min_days, max_days)
-        return self._param('date', lambda: self._convert_date(datetime.now() - timedelta(days=days)))
+        return self._param('date', lambda: self._convert_date(self._now - timedelta(days=days)))
 
     def _rng_int(self, min_value: int, max_value: int):
         return self._rng.randint(min_value, max_value)

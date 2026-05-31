@@ -23,7 +23,7 @@ class Neo4jLoader(BaseLoader):
 
     @abstractmethod
     def _load_data(self) -> None:
-        """Loads data from all .tbl files into Neo4j. The order of loading is important to ensure relationships can be formed."""
+        """Loads data from all .csv files into Neo4j. The order of loading is important to ensure relationships can be formed."""
         pass
 
     def run(self, driver: Neo4jDriver, schema_id: SchemaId, import_directory: str, do_reset: bool):
@@ -58,9 +58,9 @@ class Neo4jLoader(BaseLoader):
 
     def __check_files(self):
         """Verify that all files exist in the import directory."""
-        print(f'Using .tbl files directly from the import directory: "{self._import_directory}"')
+        print(f'Using .csv files directly from the import directory: "{self._import_directory}"')
         for kind in self._get_kinds():
-            path = os.path.join(self._import_directory, kind + '.tbl')
+            path = os.path.join(self._import_directory, kind + '.csv')
             if not os.path.isfile(path):
                 raise Exception(f'Required file not found in import directory: {path}')
 
@@ -149,7 +149,7 @@ class Neo4jLoader(BaseLoader):
 
         start = time.perf_counter()
         self._driver.execute(f'''
-            LOAD CSV FROM 'file:///{self._schema_id}/{csv_name}.tbl' AS row FIELDTERMINATOR '|'
+            LOAD CSV WITH HEADERS FROM 'file:///{self._schema_id}/{csv_name}.csv' AS row FIELDTERMINATOR ','
             CALL (row) {{ {content} }} IN TRANSACTIONS OF 500 ROWS
         ''')
         self._times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')

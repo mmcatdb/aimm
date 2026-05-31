@@ -67,7 +67,7 @@ class PostgresLoader(BaseLoader):
     def __check_files(self):
         """Verify that all files exist in the import directory."""
         for kind in self._get_kinds().keys():
-            path = os.path.join(self._import_directory, kind + '.tbl')
+            path = os.path.join(self._import_directory, kind + '.csv')
             if not os.path.isfile(path):
                 raise Exception(f'Required file not found in import directory: {path}')
 
@@ -115,7 +115,8 @@ class PostgresLoader(BaseLoader):
 
         with self._driver.cursor() as cursor:
             cursor.execute(query)
-            print(f'Created table "{name}".')
+            # Don't need to print this, it's a trivial operation.
+            # print(f'Created table "{name}".')
 
     def __create_index(self, index: PostgresIndex):
         """
@@ -142,18 +143,19 @@ class PostgresLoader(BaseLoader):
             FROM STDIN
             WITH (
                 FORMAT CSV,
-                DELIMITER '|',
+                DELIMITER ',',
                 NULL '',
-                HEADER FALSE
+                HEADER TRUE
             )
         '''
 
-        path = os.path.join(self._import_directory, entity + '.tbl')
+        path = os.path.join(self._import_directory, entity + '.csv')
 
         start = time.perf_counter()
         with open_input(path) as file:
             with self._driver.cursor() as cursor:
                 cursor.copy_expert(query, file)
+
         self._times[entity] = time_quantity.to_base(time.perf_counter() - start, 's')
 
 def create_database_if_not_exists(driver: PostgresDriver, database_name: str) -> bool:

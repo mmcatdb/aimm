@@ -1,7 +1,9 @@
+from datetime import datetime, timezone
 import os
 import subprocess
 from typing_extensions import override
 from core.data_generator import DataGenerator, clamp_int
+from core.query import SchemaName
 
 def export():
     return TpchDataGenerator()
@@ -17,7 +19,11 @@ class TpchDataGenerator(DataGenerator):
     """
 
     def __init__(self):
-        super().__init__('tpch')
+        super().__init__(self.SCHEMA, self.NOW)
+
+    SCHEMA: SchemaName = 'tpch'
+    # All generated timestamps are between 1992-01-01 and 1998-12-31. Specific fields have more strict boundaries but they all fall within this range.
+    NOW = datetime(1999, 1, 1, tzinfo=timezone.utc)
 
     @override
     def _generate_data(self):
@@ -29,7 +35,7 @@ class TpchDataGenerator(DataGenerator):
         cmd: list[str] = [
             'tpchgen-cli',
             '--scale-factor', str(self.__get_tpch_scale()),
-            '--format', 'tbl',
+            '--format', 'csv',
             '--output-dir', self._import_directory,
         ]
 
@@ -63,34 +69,38 @@ class TpchDataGenerator(DataGenerator):
 
         n_customers = len(customer_ids)
         # On average, each customer knows 10 others. Scale with a bit more than linear to increase density.
-        n_knows = self._scaled(n_customers * 10, 1.10)
+        # There are 15k customers at scale factor 0 (we can't just use the number of loaded customers here because then it would be scaled twice).
+        n_knows = self._scaled(15_000 * 10, 1.10)
+        # Times 2 to compensate for the randomness. It will work out in average.
+        k_coefficient = 2 * n_knows / n_customers
 
-        knows_written = 0
+        used_pairs = set[tuple[int, int]]()
+
         from_index = 0
-        while knows_written < n_knows:
-            # Each person knows a small number
-            k = clamp_int(int((self._rng.random() ** 1.2) * 25), 0, 25)
-            if knows_written + k > n_knows:
-                k = n_knows - knows_written
+        while len(used_pairs) < n_knows:
+            k = clamp_int(int(k_coefficient * self._rng.random()), 0, 25)
+            remaining = n_knows - len(used_pairs)
+            if k > remaining:
+                k = remaining
 
-            chosen = set()
-            while len(chosen) < k:
+            k_used = 0
+            while k_used < k:
                 to_index = self._rng.randint(0, n_customers - 1)
-                if to_index != from_index:
-                    chosen.add(to_index)
+                sorted_pair = (from_index, to_index) if from_index < to_index else (to_index, from_index)
+                if to_index == from_index or sorted_pair in used_pairs:
+                    continue
 
-            for to_index in chosen:
+                used_pairs.add(sorted_pair)
+                k_used += 1
+
                 w.writerow([
                     customer_ids[from_index],
                     customer_ids[to_index],
                     self._rng_date(1992, 1998).strftime('%Y-%m-%d'),
                     self._rng.choice(sources),
                     self._rng_text(5, 20),
-                    self._rng.random() * 1.00
+                    f'{self._rng.random():.3f}',
                 ])
-                knows_written += 1
-                if knows_written >= n_knows:
-                    break
 
             from_index = (from_index + 1) % n_customers
 
