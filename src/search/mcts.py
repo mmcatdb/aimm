@@ -9,16 +9,20 @@ from typing import Any
 
 QueryId = str
 DatabaseId = str
+TableId = str
 State = tuple[DatabaseId, ...]
 StateKey = State
 StateMapping = list[DatabaseId]
 Assignment = dict[QueryId, DatabaseId]
 FeasibilityKey = tuple[QueryId, DatabaseId]
 LatencyKey = tuple[QueryId, DatabaseId]
+StorageCostKey = tuple[TableId, DatabaseId]
 EdgeKey = tuple[StateKey, StateKey]
 
 LatencyEstimator = Callable[['WorkloadQuery', 'DatabaseInstance'], float]
 CanExecute = Callable[['WorkloadQuery', 'DatabaseInstance'], bool]
+StorageCostEstimator = Callable[[TableId, 'DatabaseInstance'], float]
+QueryStorageTableResolver = Callable[['WorkloadQuery'], Iterable[TableId]]
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,7 @@ class WorkloadQuery:
     weight: float
     payload: Any = None
     feasible_database_ids: Iterable[DatabaseId] | None = None
+    storage_table_ids: Iterable[TableId] | None = None
 
     def __post_init__(self):
         if self.feasible_database_ids is not None:
@@ -34,6 +39,12 @@ class WorkloadQuery:
                 self,
                 'feasible_database_ids',
                 frozenset(self.feasible_database_ids),
+            )
+        if self.storage_table_ids is not None:
+            object.__setattr__(
+                self,
+                'storage_table_ids',
+                frozenset(self.storage_table_ids),
             )
 
 
@@ -60,6 +71,17 @@ class OptimizationResult:
     iterations_completed: int
     number_of_unique_states: int
     best_cost_over_time: list[float] = field(default_factory=list)
+    best_latency_cost: float = 0.0
+    best_storage_cost: float = 0.0
+    initial_latency_cost: float = 0.0
+    initial_storage_cost: float = 0.0
+
+
+@dataclass(frozen=True)
+class CostBreakdown:
+    total_cost: float
+    latency_cost: float
+    storage_cost: float
 
 
 @dataclass
@@ -92,28 +114,47 @@ class MCTSOptimizer:
         epsilon: float = 1e-12,
         random_seed: int | None = None,
         cache_latencies: bool = True,
+        estimate_storage_cost: StorageCostEstimator | None = None,
+        get_query_storage_table_ids: QueryStorageTableResolver | None = None,
+        latency_cost_weight: float = 1.0,
+        storage_cost_weight: float = 0.0,
+        cache_storage_costs: bool = True,
     ):
         self.queries = tuple(queries)
         self.databases = tuple(databases)
         self.estimate_latency_fn = estimate_latency
         self.can_execute_fn = can_execute
+        self.estimate_storage_cost_fn = estimate_storage_cost
+        self.get_query_storage_table_ids_fn = get_query_storage_table_ids
         self.exploration_constant = self._validate_non_negative_finite(
             exploration_constant,
             'exploration_constant',
         )
         self.epsilon = self._validate_positive_finite(epsilon, 'epsilon')
+        self.latency_cost_weight = self._validate_non_negative_finite(
+            latency_cost_weight,
+            'latency_cost_weight',
+        )
+        self.storage_cost_weight = self._validate_non_negative_finite(
+            storage_cost_weight,
+            'storage_cost_weight',
+        )
         self.random = random.Random(random_seed)
         self.cache_latencies = cache_latencies
+        self.cache_storage_costs = cache_storage_costs
 
         self.query_ids = tuple(query.id for query in self.queries)
         self.database_ids = tuple(database.id for database in self.databases)
         self.query_by_id = {query.id: query for query in self.queries}
         self.database_by_id = {database.id: database for database in self.databases}
         self.query_index_by_id = {query.id: index for index, query in enumerate(self.queries)}
+        self.query_storage_table_ids_by_id: dict[QueryId, frozenset[TableId]] = {}
 
         self.feasibility_cache: dict[FeasibilityKey, bool] = {}
         self.latency_cache: dict[LatencyKey, float] = {}
+        self.storage_cost_cache: dict[StorageCostKey, float] = {}
         self.state_cost_cache: dict[State, float] = {}
+        self.state_cost_breakdown_cache: dict[State, CostBreakdown] = {}
         self.state_reward_cache: dict[State, float] = {}
         self.nodes_by_state: dict[State, Node] = {}
         self.edge_visits: dict[EdgeKey, int] = {}
@@ -122,9 +163,12 @@ class MCTSOptimizer:
         self._best_state: State | None = None
         self._best_cost = math.inf
         self._best_reward = 0.0
+        self._best_latency_cost = 0.0
+        self._best_storage_cost = 0.0
 
         self._validate_inputs()
         self._validate_feasible_databases_exist()
+        self._initialize_query_storage_table_ids()
 
     def optimize(
         self,
@@ -157,11 +201,12 @@ class MCTSOptimizer:
         root_state = self._initial_state(initial_assignment)
         root = self._get_or_create_node(root_state)
 
-        initial_cost = self._compute_state_cost(root_state)
+        initial_breakdown = self._compute_state_cost_breakdown(root_state)
+        initial_cost = initial_breakdown.total_cost
         self._baseline_cost = initial_cost
         initial_reward = self._reward_for_cost(initial_cost)
-        self._cache_state_evaluation(root, initial_cost, initial_reward)
-        self._consider_best_state(root_state, initial_cost, initial_reward)
+        self._cache_state_evaluation(root, initial_breakdown, initial_reward)
+        self._consider_best_state(root_state, initial_breakdown, initial_reward)
 
         best_cost_over_time = [self._best_cost] if collect_trace else []
         iterations_completed = 0
@@ -217,10 +262,15 @@ class MCTSOptimizer:
             iterations_completed=iterations_completed,
             number_of_unique_states=len(self.nodes_by_state),
             best_cost_over_time=best_cost_over_time,
+            best_latency_cost=self._best_latency_cost,
+            best_storage_cost=self._best_storage_cost,
+            initial_latency_cost=initial_breakdown.latency_cost,
+            initial_storage_cost=initial_breakdown.storage_cost,
         )
 
     def _reset_search_state(self):
         self.state_cost_cache.clear()
+        self.state_cost_breakdown_cache.clear()
         self.state_reward_cache.clear()
         self.nodes_by_state.clear()
         self.edge_visits.clear()
@@ -228,6 +278,8 @@ class MCTSOptimizer:
         self._best_state = None
         self._best_cost = math.inf
         self._best_reward = 0.0
+        self._best_latency_cost = 0.0
+        self._best_storage_cost = 0.0
 
     def _validate_inputs(self):
         self._validate_unique_ids(self.query_ids, 'query')
@@ -238,6 +290,60 @@ class MCTSOptimizer:
 
         if self.queries and not self.databases:
             raise ValueError('At least one database is required when queries are provided')
+
+        if self.latency_cost_weight == 0 and self.storage_cost_weight == 0:
+            raise ValueError(
+                'At least one of latency_cost_weight or storage_cost_weight must be positive'
+            )
+
+        if self.storage_cost_weight > 0 and self.estimate_storage_cost_fn is None:
+            raise ValueError('estimate_storage_cost is required when storage_cost_weight is positive')
+
+    def _initialize_query_storage_table_ids(self):
+        if self.estimate_storage_cost_fn is None:
+            self.query_storage_table_ids_by_id = {
+                query.id: frozenset()
+                for query in self.queries
+            }
+            return
+
+        self.query_storage_table_ids_by_id = {
+            query.id: self._resolve_query_storage_table_ids(query)
+            for query in self.queries
+        }
+
+    def _resolve_query_storage_table_ids(self, query: WorkloadQuery) -> frozenset[TableId]:
+        if self.get_query_storage_table_ids_fn is not None:
+            table_ids = self.get_query_storage_table_ids_fn(query)
+        else:
+            table_ids = query.storage_table_ids
+
+        return self._normalize_storage_table_ids(table_ids, query.id)
+
+    @staticmethod
+    def _normalize_storage_table_ids(
+        table_ids: Iterable[TableId] | None,
+        query_id: QueryId,
+    ) -> frozenset[TableId]:
+        if table_ids is None:
+            return frozenset()
+
+        try:
+            normalized = frozenset(table_ids)
+        except TypeError as exc:
+            raise ValueError(
+                f'Storage table ids for query {query_id!r} must be an iterable of hashable ids'
+            ) from exc
+
+        for table_id in normalized:
+            try:
+                hash(table_id)
+            except TypeError as exc:
+                raise ValueError(
+                    f'Storage table id for query {query_id!r} must be hashable: {table_id!r}'
+                ) from exc
+
+        return normalized
 
     def _validate_feasible_databases_exist(self):
         for query in self.queries:
@@ -366,6 +472,32 @@ class MCTSOptimizer:
             self.latency_cache[key] = latency
         return latency
 
+    def _estimate_storage_cost(self, table_id: TableId, database: DatabaseInstance) -> float:
+        key = (table_id, database.id)
+        if self.cache_storage_costs and key in self.storage_cost_cache:
+            return self.storage_cost_cache[key]
+
+        if self.estimate_storage_cost_fn is None:
+            return 0.0
+
+        try:
+            storage_cost = float(self.estimate_storage_cost_fn(table_id, database))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f'Storage cost estimate for table {table_id!r} on database {database.id!r} '
+                'must be a finite non-negative number'
+            ) from exc
+
+        if not math.isfinite(storage_cost) or storage_cost < 0:
+            raise ValueError(
+                f'Storage cost estimate for table {table_id!r} on database {database.id!r} '
+                'must be a finite non-negative number'
+            )
+
+        if self.cache_storage_costs:
+            self.storage_cost_cache[key] = storage_cost
+        return storage_cost
+
     def _get_or_create_node(self, state: State) -> Node:
         node = self.nodes_by_state.get(state)
         if node is None:
@@ -454,29 +586,73 @@ class MCTSOptimizer:
             node.reward = cached_reward
             return cached_reward
 
-        cost = self._compute_state_cost(node.state)
-        reward = self._reward_for_cost(cost)
-        self._cache_state_evaluation(node, cost, reward)
-        self._consider_best_state(node.state, cost, reward)
+        breakdown = self._compute_state_cost_breakdown(node.state)
+        reward = self._reward_for_cost(breakdown.total_cost)
+        self._cache_state_evaluation(node, breakdown, reward)
+        self._consider_best_state(node.state, breakdown, reward)
         return reward
 
     def _compute_state_cost(self, state: State) -> float:
-        cached_cost = self.state_cost_cache.get(state)
-        if cached_cost is not None:
-            return cached_cost
+        return self._compute_state_cost_breakdown(state).total_cost
+
+    def _compute_state_cost_breakdown(self, state: State) -> CostBreakdown:
+        cached_breakdown = self.state_cost_breakdown_cache.get(state)
+        if cached_breakdown is not None:
+            return cached_breakdown
 
         if not self._is_valid_state(state):
+            breakdown = CostBreakdown(
+                total_cost=math.inf,
+                latency_cost=math.inf,
+                storage_cost=math.inf,
+            )
             self.state_cost_cache[state] = math.inf
+            self.state_cost_breakdown_cache[state] = breakdown
             self.state_reward_cache[state] = 0.0
-            return math.inf
+            return breakdown
 
+        latency_cost = self._compute_state_latency_cost(state)
+        storage_cost = self._compute_state_storage_cost(state)
+        total_cost = (
+            self.latency_cost_weight * latency_cost
+            + self.storage_cost_weight * storage_cost
+        )
+
+        breakdown = CostBreakdown(
+            total_cost=total_cost,
+            latency_cost=latency_cost,
+            storage_cost=storage_cost,
+        )
+        self.state_cost_cache[state] = total_cost
+        self.state_cost_breakdown_cache[state] = breakdown
+        return breakdown
+
+    def _compute_state_latency_cost(self, state: State) -> float:
         total_cost = 0.0
         for query, database_id in zip(self.queries, state):
             database = self.database_by_id[database_id]
             latency = self._estimate_latency(query, database)
             total_cost += float(query.weight) * latency
 
-        self.state_cost_cache[state] = total_cost
+        return total_cost
+
+    def _compute_state_storage_cost(self, state: State) -> float:
+        if self.estimate_storage_cost_fn is None:
+            return 0.0
+
+        table_ids_by_database_id: dict[DatabaseId, set[TableId]] = {}
+        for query, database_id in zip(self.queries, state):
+            table_ids = self.query_storage_table_ids_by_id.get(query.id, frozenset())
+            if not table_ids:
+                continue
+            table_ids_by_database_id.setdefault(database_id, set()).update(table_ids)
+
+        total_cost = 0.0
+        for database_id, table_ids in table_ids_by_database_id.items():
+            database = self.database_by_id[database_id]
+            for table_id in table_ids:
+                total_cost += self._estimate_storage_cost(table_id, database)
+
         return total_cost
 
     def _is_valid_state(self, state: State) -> bool:
@@ -499,17 +675,20 @@ class MCTSOptimizer:
             return 1.0 if cost == 0 else 0.0
         return self._baseline_cost / max(cost, self.epsilon)
 
-    def _cache_state_evaluation(self, node: Node, cost: float, reward: float):
-        node.cost = cost
+    def _cache_state_evaluation(self, node: Node, breakdown: CostBreakdown, reward: float):
+        node.cost = breakdown.total_cost
         node.reward = reward
-        self.state_cost_cache[node.state] = cost
+        self.state_cost_cache[node.state] = breakdown.total_cost
+        self.state_cost_breakdown_cache[node.state] = breakdown
         self.state_reward_cache[node.state] = reward
 
-    def _consider_best_state(self, state: State, cost: float, reward: float):
-        if cost < self._best_cost:
+    def _consider_best_state(self, state: State, breakdown: CostBreakdown, reward: float):
+        if breakdown.total_cost < self._best_cost:
             self._best_state = state
-            self._best_cost = cost
+            self._best_cost = breakdown.total_cost
             self._best_reward = reward
+            self._best_latency_cost = breakdown.latency_cost
+            self._best_storage_cost = breakdown.storage_cost
 
     def _state_to_assignment(self, state: State) -> Assignment:
         return {
