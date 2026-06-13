@@ -35,10 +35,10 @@ class PathProvider:
         """Suffix pattern: {schema_id}/measured-{num_queries}-{num_runs}.jsonl"""
         return self._cache_dir(driver_type.value, suffix)
 
-    def dataset(self, dataset_id: str) -> str:
+    def dataset(self, dataset_id: DatasetId) -> str:
         return self._cache_dir(dataset_id, 'dataset.pkl')
 
-    def flat_dataset(self, dataset_id: str) -> str:
+    def flat_dataset(self, dataset_id: DatasetId) -> str:
         return self._cache_dir(dataset_id, 'flat_dataset.pkl')
 
     def feature_extractor(self, dataset_id: DatasetId) -> str:

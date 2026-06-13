@@ -1,3 +1,4 @@
+import os
 import argparse
 from core.config import Config
 from core.driver_provider import DriverProvider
@@ -17,15 +18,16 @@ def main(rawArgs: list[str] | None = None):
     database_id = args.database_id[0]
 
     try:
-        run(config, database_id, not args.no_reset)
+        run(config, database_id, not args.no_reset, not args.no_override_stats)
     except Exception as e:
         exit_with_exception(e)
 
 def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('database_id', nargs=1, help='Id of the database. Pattern: {driver_type}/{schema_name}-{scale}')
     parser.add_argument('--no-reset', action='store_true', help='Skip clearing the database beforehand.')
+    parser.add_argument('--no-override-stats', action='store_true', help='Do not save the time taken to populate the database.')
 
-def run(config: Config, database_id: DatabaseId, do_reset: bool):
+def run(config: Config, database_id: DatabaseId, do_reset: bool, do_override_stats: bool):
     pp = PathProvider(config)
 
     driver_type, schema, scale = parse_database_id(database_id)
@@ -49,7 +51,7 @@ def run(config: Config, database_id: DatabaseId, do_reset: bool):
     with auto_close(driver):
         times = loader.run(driver, schema_id, pp.imports(schema_id), do_reset)
 
-    save_populate_times(pp.populate_times(database_id), times)
+    save_populate_times(pp.populate_times(database_id), times, do_override_stats)
 
 if __name__ == '__main__':
     main()
