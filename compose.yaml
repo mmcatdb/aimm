@@ -3,6 +3,8 @@ name: "aimm"
 services:
     postgres:
         image: postgres:latest
+        # This is 64MB by default. Some queries fail on that.
+        shm_size: 1gb
         # restart: always
         environment:
             POSTGRES_DB: ${POSTGRES_ROOT_DATABASE}

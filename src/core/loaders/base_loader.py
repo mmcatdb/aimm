@@ -22,7 +22,10 @@ class BaseLoader(ABC):
         """
     # The driver is Any because it's overriden by the specific loaders. There is surely a better way to do this (probably with generics), but it works for now.
 
-def save_populate_times(path: str, times: dict[str, float]):
+def save_populate_times(path: str, times: dict[str, float], do_override: bool):
+    if not do_override and os.path.isfile(path):
+        return
+
     with open_output(path) as file:
         json.dump(times, file, cls=JsonEncoder, indent=4)
 
