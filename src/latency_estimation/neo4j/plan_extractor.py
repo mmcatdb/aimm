@@ -28,6 +28,8 @@ class PlanExtractor(BasePlanExtractor[str]):
                     tx = session.begin_transaction()
                     try:
                         result = tx.run(cypher(f'PROFILE {query}'))
+                        for _ in result:
+                            pass
                         summary = result.consume()
                         profile = summary.profile
                         assert profile is not None, 'Failed to retrieve query profile.'
@@ -36,6 +38,8 @@ class PlanExtractor(BasePlanExtractor[str]):
                         tx.rollback()
 
                 result = session.run(cypher(f'PROFILE {query}'))
+                for _ in result:
+                    pass
                 summary = result.consume()
                 profile = summary.profile
                 assert profile is not None, 'Failed to retrieve query profile.'
