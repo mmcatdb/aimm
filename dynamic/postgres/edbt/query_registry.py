@@ -323,6 +323,106 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             LIMIT 20
         '''
 
+    @override
+    def _order_revenue_by_status_currency(self, statuses):
+        return f'''
+            SELECT
+                o.status,
+                o.currency,
+                COUNT(*)::int AS orders,
+                SUM(o.total_cents)::bigint AS revenue_cents,
+                AVG(o.total_cents)::float8 AS avg_order_cents
+            FROM "order" o
+            WHERE o.status IN ({statuses})
+            GROUP BY o.status, o.currency
+            ORDER BY o.status, o.currency
+        '''
+
+    @override
+    def _product_inventory_by_price_band(self, max_price_cents, min_stock_qty):
+        return f'''
+            WITH filtered AS (
+                SELECT
+                    CASE
+                        WHEN p.price_cents < 1000 THEN 0
+                        WHEN p.price_cents < 5000 THEN 1
+                        WHEN p.price_cents < 20000 THEN 2
+                        ELSE 3
+                    END AS price_band,
+                    p.currency,
+                    p.stock_qty,
+                    p.price_cents
+                FROM product p
+                WHERE p.is_active = TRUE
+                    AND p.price_cents <= {max_price_cents}
+                    AND p.stock_qty >= {min_stock_qty}
+            )
+            SELECT
+                price_band,
+                currency,
+                COUNT(*)::int AS products,
+                SUM(stock_qty)::bigint AS stock_qty,
+                AVG(price_cents)::float8 AS avg_price_cents
+            FROM filtered
+            GROUP BY price_band, currency
+            ORDER BY currency, price_band
+        '''
+
+    @override
+    def _review_rating_distribution(self, min_helpful_votes):
+        return f'''
+            SELECT
+                r.rating,
+                COUNT(*)::int AS reviews,
+                AVG(r.helpful_votes)::float8 AS avg_helpful_votes
+            FROM review r
+            WHERE r.helpful_votes >= {min_helpful_votes}
+            GROUP BY r.rating
+            ORDER BY r.rating
+        '''
+
+    @override
+    def _customer_snapshot_activity(self, country_codes):
+        return f'''
+            SELECT
+                c.country_code,
+                c.is_active,
+                COUNT(*)::int AS customers,
+                COUNT(DISTINCT c.person_id)::int AS persons
+            FROM customer c
+            WHERE c.country_code IN ({country_codes})
+            GROUP BY c.country_code, c.is_active
+            ORDER BY c.country_code, c.is_active
+        '''
+
+    @override
+    def _seller_activity_rollup_by_country(self, country_codes):
+        return f'''
+            SELECT
+                s.country_code,
+                s.is_active,
+                COUNT(*)::int AS sellers
+            FROM seller s
+            WHERE s.country_code IN ({country_codes})
+            GROUP BY s.country_code, s.is_active
+            ORDER BY s.country_code, s.is_active
+        '''
+
+    @override
+    def _line_item_quantity_distribution(self, min_unit_price_cents):
+        return f'''
+            SELECT
+                oi.quantity,
+                COUNT(*)::int AS items,
+                SUM(oi.quantity)::bigint AS units,
+                SUM(oi.line_total_cents)::bigint AS revenue_cents,
+                AVG(oi.unit_price_cents)::float8 AS avg_unit_price_cents
+            FROM order_item oi
+            WHERE oi.unit_price_cents >= {min_unit_price_cents}
+            GROUP BY oi.quantity
+            ORDER BY oi.quantity
+        '''
+
     # One "multi-db" query (on purpose)
 
     # Q18) Feed ranking in Neo4j, then page fetch in Mongo (Cross DB, high weight in sale)

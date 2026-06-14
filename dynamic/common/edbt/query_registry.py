@@ -133,6 +133,31 @@ class EdbtQueryRegistry(QueryRegistry[TQuery]):
             product_ids=self._param_product_ids(10, 50),
         ))
 
+        self._query('mcts-11', 'Order revenue by status and currency (order)', lambda s: s._order_revenue_by_status_currency(
+            statuses=self._param_order_statuses(),
+        ))
+
+        self._query('mcts-12', 'Active product inventory by price band and currency (product)', lambda s: s._product_inventory_by_price_band(
+            max_price_cents=self._param_int('max_price_cents', 1_000, 50_000),
+            min_stock_qty=self._param_int('min_stock_qty', 0, 100),
+        ))
+
+        self._query('mcts-13', 'Review rating distribution by helpfulness (review)', lambda s: s._review_rating_distribution(
+            min_helpful_votes=self._param_int('min_helpful_votes', 0, 50),
+        ))
+
+        self._query('mcts-14', 'Customer snapshot activity by country (customer)', lambda s: s._customer_snapshot_activity(
+            country_codes=self._param_country_codes(2, 6),
+        ))
+
+        self._query('mcts-15', 'Seller activity by country (seller)', lambda s: s._seller_activity_rollup_by_country(
+            country_codes=self._param_country_codes(2, 6),
+        ))
+
+        self._query('mcts-16', 'Line item quantity distribution (order_item)', lambda s: s._line_item_quantity_distribution(
+            min_unit_price_cents=self._param_int('min_unit_price_cents', 100, 20_000),
+        ))
+
     # Abstract methods for common MCTS queries
 
     @abstractmethod
@@ -167,3 +192,21 @@ class EdbtQueryRegistry(QueryRegistry[TQuery]):
 
     @abstractmethod
     def _people_also_bought(self, product_ids) -> TQuery: ...
+
+    @abstractmethod
+    def _order_revenue_by_status_currency(self, statuses) -> TQuery: ...
+
+    @abstractmethod
+    def _product_inventory_by_price_band(self, max_price_cents, min_stock_qty) -> TQuery: ...
+
+    @abstractmethod
+    def _review_rating_distribution(self, min_helpful_votes) -> TQuery: ...
+
+    @abstractmethod
+    def _customer_snapshot_activity(self, country_codes) -> TQuery: ...
+
+    @abstractmethod
+    def _seller_activity_rollup_by_country(self, country_codes) -> TQuery: ...
+
+    @abstractmethod
+    def _line_item_quantity_distribution(self, min_unit_price_cents) -> TQuery: ...

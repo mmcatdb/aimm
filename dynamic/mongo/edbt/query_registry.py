@@ -307,6 +307,173 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$limit': 20},
         ])
 
+    @override
+    def _order_revenue_by_status_currency(self, statuses):
+        return MongoAggregateQuery('order', [
+            {'$match': {
+                'status': {'$in': statuses},
+            }},
+            {'$group': {
+                '_id': {
+                    'status': '$status',
+                    'currency': '$currency',
+                },
+                'orders': {'$sum': 1},
+                'revenue_cents': {'$sum': '$total_cents'},
+                'avg_order_cents': {'$avg': '$total_cents'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'status': '$_id.status',
+                'currency': '$_id.currency',
+                'orders': 1,
+                'revenue_cents': 1,
+                'avg_order_cents': 1,
+            }},
+            {'$sort': {'status': 1, 'currency': 1}},
+        ])
+
+    @override
+    def _product_inventory_by_price_band(self, max_price_cents, min_stock_qty):
+        return MongoAggregateQuery('product', [
+            {'$match': {
+                'is_active': True,
+                'price_cents': {'$lte': max_price_cents},
+                'stock_qty': {'$gte': min_stock_qty},
+            }},
+            {'$project': {
+                'currency': 1,
+                'stock_qty': 1,
+                'price_cents': 1,
+                'price_band': {
+                    '$switch': {
+                        'branches': [
+                            {'case': {'$lt': ['$price_cents', 1000]}, 'then': 0},
+                            {'case': {'$lt': ['$price_cents', 5000]}, 'then': 1},
+                            {'case': {'$lt': ['$price_cents', 20000]}, 'then': 2},
+                        ],
+                        'default': 3,
+                    },
+                },
+            }},
+            {'$group': {
+                '_id': {
+                    'price_band': '$price_band',
+                    'currency': '$currency',
+                },
+                'products': {'$sum': 1},
+                'stock_qty': {'$sum': '$stock_qty'},
+                'avg_price_cents': {'$avg': '$price_cents'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'price_band': '$_id.price_band',
+                'currency': '$_id.currency',
+                'products': 1,
+                'stock_qty': 1,
+                'avg_price_cents': 1,
+            }},
+            {'$sort': {'currency': 1, 'price_band': 1}},
+        ])
+
+    @override
+    def _review_rating_distribution(self, min_helpful_votes):
+        return MongoAggregateQuery('review', [
+            {'$match': {
+                'helpful_votes': {'$gte': min_helpful_votes},
+            }},
+            {'$group': {
+                '_id': '$rating',
+                'reviews': {'$sum': 1},
+                'avg_helpful_votes': {'$avg': '$helpful_votes'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'rating': '$_id',
+                'reviews': 1,
+                'avg_helpful_votes': 1,
+            }},
+            {'$sort': {'rating': 1}},
+        ])
+
+    @override
+    def _customer_snapshot_activity(self, country_codes):
+        return MongoAggregateQuery('customer', [
+            {'$match': {
+                'country_code': {'$in': country_codes},
+            }},
+            {'$group': {
+                '_id': {
+                    'country_code': '$country_code',
+                    'is_active': '$is_active',
+                },
+                'customers': {'$sum': 1},
+                'person_ids': {'$addToSet': '$person_id'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'country_code': '$_id.country_code',
+                'is_active': '$_id.is_active',
+                'customers': 1,
+                'persons': {'$size': '$person_ids'},
+            }},
+            {'$sort': {'country_code': 1, 'is_active': 1}},
+        ])
+
+    @override
+    def _seller_activity_rollup_by_country(self, country_codes):
+        return MongoAggregateQuery('seller', [
+            {'$match': {
+                'country_code': {'$in': country_codes},
+            }},
+            {'$group': {
+                '_id': {
+                    'country_code': '$country_code',
+                    'is_active': '$is_active',
+                },
+                'sellers': {'$sum': 1},
+            }},
+            {'$project': {
+                '_id': 0,
+                'country_code': '$_id.country_code',
+                'is_active': '$_id.is_active',
+                'sellers': 1,
+            }},
+            {'$sort': {'country_code': 1, 'is_active': 1}},
+        ])
+
+    @override
+    def _line_item_quantity_distribution(self, min_unit_price_cents):
+        return MongoAggregateQuery('order', [
+            {'$match': {
+                'items': {
+                    '$elemMatch': {
+                        'unit_price_cents': {'$gte': min_unit_price_cents},
+                    },
+                },
+            }},
+            {'$unwind': '$items'},
+            {'$match': {
+                'items.unit_price_cents': {'$gte': min_unit_price_cents},
+            }},
+            {'$group': {
+                '_id': '$items.quantity',
+                'items': {'$sum': 1},
+                'units': {'$sum': '$items.quantity'},
+                'revenue_cents': {'$sum': '$items.line_total_cents'},
+                'avg_unit_price_cents': {'$avg': '$items.unit_price_cents'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'quantity': '$_id',
+                'items': 1,
+                'units': 1,
+                'revenue_cents': 1,
+                'avg_unit_price_cents': 1,
+            }},
+            {'$sort': {'quantity': 1}},
+        ])
+
     @query('other-0', 'Recent order search by status and shipping country')
     def _recent_orders_by_status_country(self):
         return MongoFindQuery('order',

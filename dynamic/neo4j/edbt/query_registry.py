@@ -230,3 +230,93 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
             LIMIT 20
         '''
 
+    @override
+    def _order_revenue_by_status_currency(self, statuses):
+        return f'''
+            MATCH (o:Order)
+            WHERE o.status IN [{statuses}]
+            RETURN
+                o.status AS status,
+                o.currency AS currency,
+                count(*) AS orders,
+                sum(o.total_cents) AS revenue_cents,
+                avg(toFloat(o.total_cents)) AS avg_order_cents
+            ORDER BY status, currency
+        '''
+
+    @override
+    def _product_inventory_by_price_band(self, max_price_cents, min_stock_qty):
+        return f'''
+            MATCH (p:Product)
+            WHERE p.is_active = true
+                AND p.price_cents <= {max_price_cents}
+                AND p.stock_qty >= {min_stock_qty}
+            WITH
+                CASE
+                    WHEN p.price_cents < 1000 THEN 0
+                    WHEN p.price_cents < 5000 THEN 1
+                    WHEN p.price_cents < 20000 THEN 2
+                    ELSE 3
+                END AS price_band,
+                p.currency AS currency,
+                p.stock_qty AS stock_qty,
+                p.price_cents AS price_cents
+            RETURN
+                price_band,
+                currency,
+                count(*) AS products,
+                sum(stock_qty) AS stock_qty,
+                avg(toFloat(price_cents)) AS avg_price_cents
+            ORDER BY currency, price_band
+        '''
+
+    @override
+    def _review_rating_distribution(self, min_helpful_votes):
+        return f'''
+            MATCH ()-[r:REVIEWED]->()
+            WHERE r.helpful_votes >= {min_helpful_votes}
+            RETURN
+                r.rating AS rating,
+                count(*) AS reviews,
+                avg(toFloat(r.helpful_votes)) AS avg_helpful_votes
+            ORDER BY rating
+        '''
+
+    @override
+    def _customer_snapshot_activity(self, country_codes):
+        return f'''
+            MATCH (c:Customer)
+            WHERE c.country_code IN [{country_codes}]
+            RETURN
+                c.country_code AS country_code,
+                c.is_active AS is_active,
+                count(*) AS customers,
+                count(DISTINCT c.person_id) AS persons
+            ORDER BY country_code, is_active
+        '''
+
+    @override
+    def _seller_activity_rollup_by_country(self, country_codes):
+        return f'''
+            MATCH (s:Seller)
+            WHERE s.country_code IN [{country_codes}]
+            RETURN
+                s.country_code AS country_code,
+                s.is_active AS is_active,
+                count(*) AS sellers
+            ORDER BY country_code, is_active
+        '''
+
+    @override
+    def _line_item_quantity_distribution(self, min_unit_price_cents):
+        return f'''
+            MATCH ()-[it:HAS_ITEM]->()
+            WHERE it.unit_price_cents >= {min_unit_price_cents}
+            RETURN
+                it.quantity AS quantity,
+                count(*) AS items,
+                sum(it.quantity) AS units,
+                sum(it.line_total_cents) AS revenue_cents,
+                avg(toFloat(it.unit_price_cents)) AS avg_unit_price_cents
+            ORDER BY quantity
+        '''
