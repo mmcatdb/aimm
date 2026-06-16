@@ -61,7 +61,7 @@ def run(config: Config, args: argparse.Namespace):
         if os.path.exists(pp.feature_extractor(val_dataset_id)):
             print_warning(f'Feature extractor for dataset id "{val_dataset_id}" already exists. It will be overwritten.')
 
-    no_write: bool = args.no_write
+    no_write: bool = args.no_write or False
     all_measured = _load_all_measured(pp, driver_type, args.measurement_suffixes)
 
     if fe_dataset:
@@ -72,14 +72,14 @@ def run(config: Config, args: argparse.Namespace):
         # Create a new feature extractor from plans.
         feature_extractor = get_feature_extractor(driver_type)
         for measured in all_measured:
-            plans = [item.plan for item in filter_queries(measured, args)]
+            plans = [item.plan for item in filter_queries(measured, no_write)]
             feature_extractor.extend_vocabularies(plans, measured.global_stats)
 
     dataset_items = list[DatasetItem]()
 
     for measured in all_measured:
         feature_extractor.set_global_stats(measured.global_stats)
-        for measurement in filter_queries(measured, args):
+        for measurement in filter_queries(measured, no_write):
             dataset_items.append(create_dataset_item(feature_extractor, measurement, args.skip_first))
 
     if val_dataset_id is None:
@@ -160,10 +160,10 @@ def split_dataset_items(dataset_items: list[DatasetItem], val_ratio: float, seed
     rng.shuffle(val_items)
     return train_items, val_items
 
-def filter_queries(measured: MeasuredQueries[TQuery], args: argparse.Namespace) -> list[QueryMeasurement[TQuery]]:
+def filter_queries(measured: MeasuredQueries[TQuery], no_write: bool) -> list[QueryMeasurement[TQuery]]:
     items = measured.items
 
-    if args.no_write:
+    if no_write:
         items = [item for item in items if not item.is_write]
 
     return items

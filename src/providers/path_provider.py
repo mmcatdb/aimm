@@ -35,12 +35,7 @@ class PathProvider:
         """Suffix pattern: {schema_id}/measured-{num_queries}-{num_runs}.jsonl"""
         return self._cache_dir(driver_type.value, suffix)
 
-    def mcts_latency_estimates(
-        self,
-        schema_name: SchemaName,
-        scale: float,
-        instances_per_template: int,
-    ) -> str:
+    def mcts_latency_estimates(self, schema_name: SchemaName, scale: float, instances_per_template: int) -> str:
         schema_id = create_schema_id(schema_name, scale)
         filename = f'latency-estimates-{instances_per_template}.jsonl'
         return self._cache_dir('mcts', schema_id, filename)
