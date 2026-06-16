@@ -22,11 +22,11 @@ function execute_command() {
 
 for schema in "${schemas[@]}"; do
     echo -e "\033[1;36mTesting:\033[0m \033[0;32m$schema\033[0m"
-    execute_command "scripts.generate_data $schema-$scale"
+    execute_command "scripts.pipeline.generate_data $schema-$scale"
 
     for driver in "${drivers[@]}"; do
-        execute_command "scripts.populate_db $driver/$schema-$scale"
-        execute_command "scripts.measure_queries $driver/$schema-$scale --num-queries 0 --num-runs 1 --no-cache"
+        execute_command "scripts.pipeline.populate_db $driver/$schema-$scale"
+        execute_command "scripts.pipeline.measure_queries $driver/$schema-$scale --num-queries 0 --num-runs 1 --no-cache"
     done
 
     echo ""

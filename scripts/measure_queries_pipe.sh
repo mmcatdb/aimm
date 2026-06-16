@@ -12,6 +12,6 @@ dataset_name=$2
 num_queries=${3:-1000} # Optional argument for number of queries, default is 1000 if not provided
 num_runs=${4:-2}       # Optional argument for number of runs, default is 2 if not provided
 
-python -m scripts.generate_data "$dataset_name"
-python -m scripts.populate_db "$database/$dataset_name"
-python -m scripts.measure_queries "$database/$dataset_name" --num-queries $num_queries --num-runs $num_runs
+python -m scripts.pipeline.generate_data "$dataset_name"
+python -m scripts.pipeline.populate_db "$database/$dataset_name"
+python -m scripts.pipeline.measure_queries "$database/$dataset_name" --num-queries $num_queries --num-runs $num_runs

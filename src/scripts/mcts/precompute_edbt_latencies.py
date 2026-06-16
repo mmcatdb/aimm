@@ -5,8 +5,8 @@ import argparse
 from core.config import Config
 from core.query import parse_database_id
 from core.utils import exit_with_exception
-from scripts import run_mcts_edbt
-from scripts.run_mcts_edbt import (
+from scripts.mcts import run_edbt as run_mcts_edbt
+from scripts.mcts.run_edbt import (
     EdbtLatencyEstimateMatrix,
     EdbtLatencyEstimateRecord,
     EdbtQueryBundle,
@@ -87,7 +87,7 @@ def run(config: Config, args: argparse.Namespace):
         query_ids=tuple(query.id for query in queries),
         database_ids=tuple(database.id for database in databases),
         source_metadata={
-            'producer': 'scripts.precompute_mcts_edbt_latencies',
+            'producer': 'scripts.mcts.precompute_edbt_latencies',
             'model_ids': {
                 driver_type.value: model_id
                 for driver_type, model_id in model_ids_by_driver.items()

@@ -5,7 +5,7 @@ import numpy as np
 from core.config import Config
 from core.drivers import DriverType, DATABASE_COLORS
 from experiments.measure import load_database_measurement
-from scripts.analyze import get_subplots_dimensions
+from scripts.neural.analyze import get_subplots_dimensions
 
 SCALES = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0]
 # TODO FIX mongo
