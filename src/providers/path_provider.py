@@ -1,7 +1,7 @@
 import os
 from core.config import Config
 from core.drivers import DriverType
-from core.query import DatabaseId, MeasurementConfig, SchemaId
+from core.query import DatabaseId, MeasurementConfig, SchemaId, SchemaName, create_schema_id
 from latency_estimation.dataset import DatasetId
 from latency_estimation.model import CheckpointId, ModelId
 from latency_estimation.trainer import EPOCH_DIRECTORY
@@ -34,6 +34,16 @@ class PathProvider:
     def measured_by_suffix(self, driver_type: DriverType, suffix: str) -> str:
         """Suffix pattern: {schema_id}/measured-{num_queries}-{num_runs}.jsonl"""
         return self._cache_dir(driver_type.value, suffix)
+
+    def mcts_latency_estimates(
+        self,
+        schema_name: SchemaName,
+        scale: float,
+        instances_per_template: int,
+    ) -> str:
+        schema_id = create_schema_id(schema_name, scale)
+        filename = f'latency-estimates-{instances_per_template}.jsonl'
+        return self._cache_dir('mcts', schema_id, filename)
 
     def dataset(self, dataset_id: DatasetId) -> str:
         return self._cache_dir(dataset_id, 'dataset.pkl')

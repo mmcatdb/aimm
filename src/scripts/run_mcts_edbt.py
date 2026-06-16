@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping
 from dataclasses import dataclass
+import math
 import os
 from typing import Any
 
@@ -13,6 +14,7 @@ from core.driver_provider import DriverProvider
 from core.drivers import DriverType, MongoDriver, Neo4jDriver, PostgresDriver
 from core.dynamic_provider import get_dynamic_class_instance
 from core.explainers.postgres_explainer import PostgresExplainer
+from core.files import JsonLinesReader, JsonLinesWriter, open_input, open_output
 from core.query import (
     MongoDeleteQuery,
     MongoInsertQuery,
@@ -35,7 +37,12 @@ from latency_estimation.neo4j.plan_extractor import (
 )
 from latency_estimation.postgres.flat_model import load_flat_model as load_postgres_flat_model
 from providers.path_provider import PathProvider
-from search.mcts import DatabaseInstance, MCTSOptimizer, WorkloadQuery
+from search.mcts import (
+    DatabaseInstance,
+    MCTSOptimizer,
+    PrecomputedLatencyEstimator,
+    WorkloadQuery,
+)
 
 
 SCHEMA = 'edbt'
@@ -44,6 +51,9 @@ MCTS_TEMPLATE_NAMES = tuple(f'mcts-{index}' for index in range(17))
 DEFAULT_POSTGRES_MODEL_ID = 'postgres/edbt-2-3-flat-rf'
 DEFAULT_MONGO_MODEL_ID = 'mongo/tpch-2-flat-xgb-log'
 DEFAULT_NEO4J_MODEL_ID = 'neo4j/tpch-2-flat-rf'
+EDBT_LATENCY_ESTIMATES_FORMAT = 'aimm.mcts.edbt.latency_estimates'
+EDBT_LATENCY_ESTIMATES_FORMAT_VERSION = 1
+LATENCY_UNIT_MS = 'ms'
 
 DEFAULT_STORAGE_MULTIPLIERS = {
     DriverType.POSTGRES: 0.00035,
@@ -152,6 +162,31 @@ class EdbtQueryBundle:
     title: str
     weight: float
     query_by_driver: Mapping[DriverType, QueryInstance[Any]]
+
+
+@dataclass(frozen=True)
+class EdbtLatencyEstimateRecord:
+    query_id: str
+    database_id: str
+    latency_ms: float
+    source_query_id: str | None = None
+
+
+@dataclass(frozen=True)
+class EdbtLatencyEstimateMatrix:
+    schema: str
+    scale: float
+    instances_per_template: int
+    query_ids: tuple[str, ...]
+    database_ids: tuple[str, ...]
+    source_metadata: Mapping[str, Any]
+    rows: tuple[EdbtLatencyEstimateRecord, ...]
+
+    def latency_estimates(self) -> dict[tuple[str, str], float]:
+        return {
+            (row.query_id, row.database_id): row.latency_ms
+            for row in self.rows
+        }
 
 
 class EdbtStorageCostModel:
@@ -347,6 +382,10 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--mongo-model-id', default=DEFAULT_MONGO_MODEL_ID)
     parser.add_argument('--neo4j-model-id', default=DEFAULT_NEO4J_MODEL_ID)
     parser.add_argument(
+        '--latency-estimates',
+        help='Path to a precomputed EDBT MCTS latency matrix JSONL file.',
+    )
+    parser.add_argument(
         '--postgres-storage-multiplier',
         type=float,
         default=DEFAULT_STORAGE_MULTIPLIERS[DriverType.POSTGRES],
@@ -373,16 +412,8 @@ def run(args: argparse.Namespace):
     if args.instances_per_template <= 0:
         raise ValueError('--instances-per-template must be positive')
 
-    model_ids_by_driver = {
-        DriverType.POSTGRES: args.postgres_model_id,
-        DriverType.MONGO: args.mongo_model_id,
-        DriverType.NEO4J: args.neo4j_model_id,
-    }
-    multipliers_by_driver = {
-        DriverType.POSTGRES: args.postgres_storage_multiplier,
-        DriverType.MONGO: args.mongo_storage_multiplier,
-        DriverType.NEO4J: args.neo4j_storage_multiplier,
-    }
+    model_ids_by_driver = model_ids_by_driver_from_args(args)
+    multipliers_by_driver = storage_multipliers_by_driver_from_args(args)
 
     query_bundles = build_edbt_query_bundles(args.scale, args.instances_per_template)
     storage_model = build_storage_cost_model(args.scale, multipliers_by_driver)
@@ -398,6 +429,35 @@ def run(args: argparse.Namespace):
         databases=databases,
     )
     if args.describe_only:
+        return
+
+    if args.latency_estimates:
+        latency_matrix = load_edbt_latency_estimates(args.latency_estimates)
+        validate_edbt_latency_estimates(
+            latency_matrix,
+            scale=args.scale,
+            instances_per_template=args.instances_per_template,
+            queries=queries,
+            databases=databases,
+        )
+        latency_estimator = PrecomputedLatencyEstimator(latency_matrix.latency_estimates())
+        optimizer = MCTSOptimizer(
+            queries=queries,
+            databases=databases,
+            latency_estimates=latency_estimator,
+            estimate_storage_cost=storage_model.estimate_storage_cost,
+            latency_cost_weight=args.latency_cost_weight,
+            storage_cost_weight=args.storage_cost_weight,
+            random_seed=args.seed,
+        )
+        result = optimizer.optimize(iterations=args.iterations)
+        print_result(
+            result=result,
+            queries=queries,
+            databases=databases,
+            latency_estimator=latency_estimator,
+            storage_model=storage_model,
+        )
         return
 
     config = Config.load()
@@ -428,6 +488,22 @@ def run(args: argparse.Namespace):
         )
     finally:
         latency_estimator.close()
+
+
+def model_ids_by_driver_from_args(args: argparse.Namespace) -> dict[DriverType, str]:
+    return {
+        DriverType.POSTGRES: args.postgres_model_id,
+        DriverType.MONGO: args.mongo_model_id,
+        DriverType.NEO4J: args.neo4j_model_id,
+    }
+
+
+def storage_multipliers_by_driver_from_args(args: argparse.Namespace) -> dict[DriverType, float]:
+    return {
+        DriverType.POSTGRES: args.postgres_storage_multiplier,
+        DriverType.MONGO: args.mongo_storage_multiplier,
+        DriverType.NEO4J: args.neo4j_storage_multiplier,
+    }
 
 
 def build_edbt_query_bundles(scale: float, instances_per_template: int) -> list[EdbtQueryBundle]:
@@ -482,6 +558,231 @@ def build_databases(scale: float) -> list[DatabaseInstance]:
         DatabaseInstance(create_database_id_2(driver_type, SCHEMA, scale))
         for driver_type in DriverType
     ]
+
+
+def default_edbt_latency_estimates_path(
+    config: Config,
+    scale: float,
+    instances_per_template: int,
+) -> str:
+    return PathProvider(config).mcts_latency_estimates(
+        SCHEMA,
+        scale,
+        instances_per_template,
+    )
+
+
+def save_edbt_latency_estimates(path: str, matrix: EdbtLatencyEstimateMatrix):
+    _validate_edbt_latency_estimate_rows(matrix)
+    with open_output(path, skip_dir_check=not os.path.dirname(path)) as file:
+        writer = JsonLinesWriter(file, extended=False)
+        writer.writeobject(_edbt_latency_estimate_header_to_dict(matrix))
+        for row in matrix.rows:
+            writer.writeobject(_edbt_latency_estimate_row_to_dict(row))
+
+
+def load_edbt_latency_estimates(path: str) -> EdbtLatencyEstimateMatrix:
+    with open_input(path) as file:
+        reader = JsonLinesReader(file, extended=False)
+        try:
+            header = reader.readobject()
+        except EOFError as exc:
+            raise ValueError(f'Latency estimate file {path!r} is empty') from exc
+
+        matrix = _edbt_latency_estimate_header_from_dict(header)
+        rows = tuple(_edbt_latency_estimate_row_from_dict(row) for row in reader)
+        loaded = EdbtLatencyEstimateMatrix(
+            schema=matrix.schema,
+            scale=matrix.scale,
+            instances_per_template=matrix.instances_per_template,
+            query_ids=matrix.query_ids,
+            database_ids=matrix.database_ids,
+            source_metadata=matrix.source_metadata,
+            rows=rows,
+        )
+        _validate_edbt_latency_estimate_rows(loaded)
+        return loaded
+
+
+def validate_edbt_latency_estimates(
+    matrix: EdbtLatencyEstimateMatrix,
+    scale: float,
+    instances_per_template: int,
+    queries: list[WorkloadQuery],
+    databases: list[DatabaseInstance],
+):
+    if matrix.schema != SCHEMA:
+        raise ValueError(
+            f'Latency estimates schema {matrix.schema!r} does not match expected {SCHEMA!r}'
+        )
+    if not math.isclose(float(matrix.scale), float(scale)):
+        raise ValueError(
+            f'Latency estimates scale {matrix.scale:g} does not match expected {scale:g}'
+        )
+    if matrix.instances_per_template != instances_per_template:
+        raise ValueError(
+            'Latency estimates instances_per_template '
+            f'{matrix.instances_per_template} does not match expected {instances_per_template}'
+        )
+
+    expected_query_ids = tuple(query.id for query in queries)
+    if matrix.query_ids != expected_query_ids:
+        raise ValueError('Latency estimate query ids do not match the EDBT MCTS workload')
+
+    expected_database_ids = tuple(database.id for database in databases)
+    if matrix.database_ids != expected_database_ids:
+        raise ValueError('Latency estimate database ids do not match the EDBT MCTS databases')
+
+    _validate_edbt_latency_estimate_rows(matrix)
+
+
+def _edbt_latency_estimate_header_to_dict(matrix: EdbtLatencyEstimateMatrix) -> dict:
+    return {
+        'format': EDBT_LATENCY_ESTIMATES_FORMAT,
+        'format_version': EDBT_LATENCY_ESTIMATES_FORMAT_VERSION,
+        'schema': matrix.schema,
+        'scale': matrix.scale,
+        'instances_per_template': matrix.instances_per_template,
+        'query_ids': list(matrix.query_ids),
+        'database_ids': list(matrix.database_ids),
+        'latency_unit': LATENCY_UNIT_MS,
+        'source_metadata': dict(matrix.source_metadata),
+    }
+
+
+def _edbt_latency_estimate_header_from_dict(data: dict) -> EdbtLatencyEstimateMatrix:
+    if data.get('format') != EDBT_LATENCY_ESTIMATES_FORMAT:
+        raise ValueError(
+            'Latency estimate file has unsupported format '
+            f'{data.get("format")!r}'
+        )
+    if int(data.get('format_version', 0)) != EDBT_LATENCY_ESTIMATES_FORMAT_VERSION:
+        raise ValueError(
+            'Latency estimate file has unsupported format_version '
+            f'{data.get("format_version")!r}'
+        )
+    if data.get('latency_unit') != LATENCY_UNIT_MS:
+        raise ValueError(
+            'Latency estimate file has unsupported latency_unit '
+            f'{data.get("latency_unit")!r}'
+        )
+
+    source_metadata = data.get('source_metadata') or {}
+    if not isinstance(source_metadata, dict):
+        raise ValueError('Latency estimate source_metadata must be an object')
+
+    try:
+        query_ids = tuple(data['query_ids'])
+        database_ids = tuple(data['database_ids'])
+        return EdbtLatencyEstimateMatrix(
+            schema=str(data['schema']),
+            scale=float(data['scale']),
+            instances_per_template=int(data['instances_per_template']),
+            query_ids=query_ids,
+            database_ids=database_ids,
+            source_metadata=source_metadata,
+            rows=(),
+        )
+    except KeyError as exc:
+        raise ValueError(f'Latency estimate header missing field {exc.args[0]!r}') from exc
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Latency estimate header has invalid field values') from exc
+
+
+def _edbt_latency_estimate_row_to_dict(row: EdbtLatencyEstimateRecord) -> dict:
+    output = {
+        'query_id': row.query_id,
+        'database_id': row.database_id,
+        'latency_ms': row.latency_ms,
+    }
+    if row.source_query_id is not None:
+        output['source_query_id'] = row.source_query_id
+    return output
+
+
+def _edbt_latency_estimate_row_from_dict(data: dict) -> EdbtLatencyEstimateRecord:
+    try:
+        query_id = data['query_id']
+        database_id = data['database_id']
+        latency_ms = _validate_latency_ms(data['latency_ms'], query_id, database_id)
+    except KeyError as exc:
+        raise ValueError(f'Latency estimate row missing field {exc.args[0]!r}') from exc
+
+    source_query_id = data.get('source_query_id')
+    if source_query_id is not None:
+        source_query_id = str(source_query_id)
+
+    return EdbtLatencyEstimateRecord(
+        query_id=str(query_id),
+        database_id=str(database_id),
+        latency_ms=latency_ms,
+        source_query_id=source_query_id,
+    )
+
+
+def _validate_edbt_latency_estimate_rows(matrix: EdbtLatencyEstimateMatrix):
+    _validate_unique_values(matrix.query_ids, 'latency estimate query id')
+    _validate_unique_values(matrix.database_ids, 'latency estimate database id')
+
+    query_ids = set(matrix.query_ids)
+    database_ids = set(matrix.database_ids)
+    expected_keys = {
+        (query_id, database_id)
+        for query_id in matrix.query_ids
+        for database_id in matrix.database_ids
+    }
+    seen_keys: set[tuple[str, str]] = set()
+
+    for row in matrix.rows:
+        if row.query_id not in query_ids:
+            raise ValueError(
+                f'Latency estimate row references unknown query id {row.query_id!r}'
+            )
+        if row.database_id not in database_ids:
+            raise ValueError(
+                f'Latency estimate row references unknown database id {row.database_id!r}'
+            )
+        key = (row.query_id, row.database_id)
+        if key in seen_keys:
+            raise ValueError(
+                f'Duplicate latency estimate row for query {row.query_id!r} '
+                f'on database {row.database_id!r}'
+            )
+        seen_keys.add(key)
+        _validate_latency_ms(row.latency_ms, row.query_id, row.database_id)
+
+    missing_keys = sorted(expected_keys - seen_keys)
+    if missing_keys:
+        formatted = ', '.join(
+            f'{query_id}@{database_id}'
+            for query_id, database_id in missing_keys
+        )
+        raise ValueError(f'Latency estimate matrix is missing rows for: {formatted}')
+
+
+def _validate_unique_values(values: tuple[str, ...], label: str):
+    seen = set()
+    for value in values:
+        if value in seen:
+            raise ValueError(f'Duplicate {label}: {value!r}')
+        seen.add(value)
+
+
+def _validate_latency_ms(value: float, query_id: str, database_id: str) -> float:
+    try:
+        latency = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f'Latency estimate for query {query_id!r} on database {database_id!r} '
+            'must be a finite non-negative number'
+        ) from exc
+
+    if not math.isfinite(latency) or latency < 0:
+        raise ValueError(
+            f'Latency estimate for query {query_id!r} on database {database_id!r} '
+            'must be a finite non-negative number'
+        )
+    return latency
 
 
 def build_storage_cost_model(
@@ -629,9 +930,14 @@ def print_setup(
         f'  cost weights: latency={args.latency_cost_weight:g}, '
         f'storage={args.storage_cost_weight:g}'
     )
-    print('  model ids:')
-    for driver_type, model_id in model_ids_by_driver.items():
-        print(f'    {driver_type.value}: {model_id}')
+    latency_estimates_path = getattr(args, 'latency_estimates', None)
+    if latency_estimates_path:
+        print(f'  latency estimates: {latency_estimates_path}')
+        print('  model ids: ignored for offline MCTS')
+    else:
+        print('  model ids:')
+        for driver_type, model_id in model_ids_by_driver.items():
+            print(f'    {driver_type.value}: {model_id}')
     print('  storage multipliers:')
     for driver_type, multiplier in multipliers_by_driver.items():
         print(f'    {driver_type.value}: {multiplier:g}')

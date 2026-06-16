@@ -23,6 +23,10 @@ LatencyEstimator = Callable[['WorkloadQuery', 'DatabaseInstance'], float]
 CanExecute = Callable[['WorkloadQuery', 'DatabaseInstance'], bool]
 StorageCostEstimator = Callable[[TableId, 'DatabaseInstance'], float]
 QueryStorageTableResolver = Callable[['WorkloadQuery'], Iterable[TableId]]
+LatencyEstimateInput = (
+    Mapping[LatencyKey, float]
+    | Iterable[tuple[QueryId, DatabaseId, float]]
+)
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,115 @@ class WorkloadQuery:
 class DatabaseInstance:
     id: DatabaseId
     payload: Any = None
+
+
+class PrecomputedLatencyEstimator:
+    """Latency estimator backed by a validated query/database latency matrix."""
+
+    def __init__(self, latencies: LatencyEstimateInput):
+        self.latencies = self._normalize_latencies(latencies)
+
+    def estimate_latency(self, query: WorkloadQuery, database: DatabaseInstance) -> float:
+        key = (query.id, database.id)
+        if key not in self.latencies:
+            raise ValueError(
+                f'Missing precomputed latency estimate for query {query.id!r} '
+                f'on database {database.id!r}'
+            )
+        return self.latencies[key]
+
+    def validate_complete(
+        self,
+        queries: Sequence[WorkloadQuery],
+        databases: Sequence[DatabaseInstance],
+        can_execute: CanExecute,
+    ):
+        missing = [
+            (query.id, database.id)
+            for query in queries
+            for database in databases
+            if can_execute(query, database) and (query.id, database.id) not in self.latencies
+        ]
+        if missing:
+            formatted = ', '.join(f'{query_id}@{database_id}' for query_id, database_id in missing)
+            raise ValueError(
+                'Missing precomputed latency estimates for required query/database pairs: '
+                f'{formatted}'
+            )
+
+    @classmethod
+    def _normalize_latencies(
+        cls,
+        latencies: LatencyEstimateInput,
+    ) -> dict[LatencyKey, float]:
+        normalized: dict[LatencyKey, float] = {}
+        for query_id, database_id, latency in cls._iter_latency_entries(latencies):
+            key = cls._validate_latency_key(query_id, database_id)
+            if key in normalized:
+                raise ValueError(
+                    f'Duplicate precomputed latency estimate for query {query_id!r} '
+                    f'on database {database_id!r}'
+                )
+            normalized[key] = cls._validate_latency(latency, query_id, database_id)
+        return normalized
+
+    @staticmethod
+    def _iter_latency_entries(
+        latencies: LatencyEstimateInput,
+    ) -> Iterable[tuple[QueryId, DatabaseId, float]]:
+        if isinstance(latencies, Mapping):
+            for key, latency in latencies.items():
+                try:
+                    query_id, database_id = key
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        'Precomputed latency mapping keys must be '
+                        '(query_id, database_id) pairs'
+                    ) from exc
+                yield query_id, database_id, latency
+            return
+
+        for item in latencies:
+            try:
+                query_id, database_id, latency = item
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    'Precomputed latency entries must be '
+                    '(query_id, database_id, latency) triples'
+                ) from exc
+            yield query_id, database_id, latency
+
+    @staticmethod
+    def _validate_latency_key(query_id: QueryId, database_id: DatabaseId) -> LatencyKey:
+        for label, value in (('query id', query_id), ('database id', database_id)):
+            try:
+                hash(value)
+            except TypeError as exc:
+                raise ValueError(
+                    f'Precomputed latency {label} must be hashable: {value!r}'
+                ) from exc
+        return query_id, database_id
+
+    @staticmethod
+    def _validate_latency(
+        latency: float,
+        query_id: QueryId,
+        database_id: DatabaseId,
+    ) -> float:
+        try:
+            numeric_latency = float(latency)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f'Precomputed latency estimate for query {query_id!r} '
+                f'on database {database_id!r} must be a finite non-negative number'
+            ) from exc
+
+        if not math.isfinite(numeric_latency) or numeric_latency < 0:
+            raise ValueError(
+                f'Precomputed latency estimate for query {query_id!r} '
+                f'on database {database_id!r} must be a finite non-negative number'
+            )
+        return numeric_latency
 
 
 @dataclass(frozen=True)
@@ -108,7 +221,7 @@ class MCTSOptimizer:
         self,
         queries: Sequence[WorkloadQuery],
         databases: Sequence[DatabaseInstance],
-        estimate_latency: LatencyEstimator,
+        estimate_latency: LatencyEstimator | None = None,
         can_execute: CanExecute | None = None,
         exploration_constant: float = math.sqrt(2.0),
         epsilon: float = 1e-12,
@@ -119,13 +232,23 @@ class MCTSOptimizer:
         latency_cost_weight: float = 1.0,
         storage_cost_weight: float = 0.0,
         cache_storage_costs: bool = True,
+        latency_estimates: LatencyEstimateInput | PrecomputedLatencyEstimator | None = None,
     ):
         self.queries = tuple(queries)
         self.databases = tuple(databases)
-        self.estimate_latency_fn = estimate_latency
         self.can_execute_fn = can_execute
         self.estimate_storage_cost_fn = estimate_storage_cost
         self.get_query_storage_table_ids_fn = get_query_storage_table_ids
+        self.precomputed_latency_estimator = self._build_precomputed_latency_estimator(
+            estimate_latency,
+            latency_estimates,
+        )
+        self.uses_precomputed_latency_estimator = estimate_latency is None
+        self.estimate_latency_fn = (
+            estimate_latency
+            if estimate_latency is not None
+            else self.precomputed_latency_estimator.estimate_latency
+        )
         self.exploration_constant = self._validate_non_negative_finite(
             exploration_constant,
             'exploration_constant',
@@ -168,6 +291,7 @@ class MCTSOptimizer:
 
         self._validate_inputs()
         self._validate_feasible_databases_exist()
+        self._validate_precomputed_latencies_complete()
         self._initialize_query_storage_table_ids()
 
     def optimize(
@@ -298,6 +422,31 @@ class MCTSOptimizer:
 
         if self.storage_cost_weight > 0 and self.estimate_storage_cost_fn is None:
             raise ValueError('estimate_storage_cost is required when storage_cost_weight is positive')
+
+    @staticmethod
+    def _build_precomputed_latency_estimator(
+        estimate_latency: LatencyEstimator | None,
+        latency_estimates: LatencyEstimateInput | PrecomputedLatencyEstimator | None,
+    ) -> PrecomputedLatencyEstimator:
+        if estimate_latency is not None and latency_estimates is not None:
+            raise ValueError('Provide either estimate_latency or latency_estimates, not both')
+
+        if latency_estimates is None:
+            if estimate_latency is None:
+                raise ValueError('estimate_latency or latency_estimates is required')
+            return PrecomputedLatencyEstimator({})
+
+        if isinstance(latency_estimates, PrecomputedLatencyEstimator):
+            return latency_estimates
+        return PrecomputedLatencyEstimator(latency_estimates)
+
+    def _validate_precomputed_latencies_complete(self):
+        if self.uses_precomputed_latency_estimator:
+            self.precomputed_latency_estimator.validate_complete(
+                self.queries,
+                self.databases,
+                self._can_execute,
+            )
 
     def _initialize_query_storage_table_ids(self):
         if self.estimate_storage_cost_fn is None:
