@@ -46,7 +46,7 @@ from search.mcts import (
 
 
 SCHEMA = 'edbt'
-MCTS_TEMPLATE_NAMES = tuple(f'mcts-{index}' for index in range(17))
+MCTS_TEMPLATE_NAMES = tuple(f'mcts-{index}' for index in range(24))
 
 DEFAULT_POSTGRES_MODEL_ID = 'postgres/edbt-2-3-flat-rf'
 DEFAULT_MONGO_MODEL_ID = 'mongo/art-1-2-flat-tail-blend'
@@ -79,6 +79,13 @@ POSTGRES_QUERY_STORAGE = {
     'mcts-14': frozenset({'customer'}),
     'mcts-15': frozenset({'seller'}),
     'mcts-16': frozenset({'order_item'}),
+    'mcts-17': frozenset({'order', 'order_item', 'product'}),
+    'mcts-18': frozenset({'customer', 'order'}),
+    'mcts-19': frozenset({'review'}),
+    'mcts-20': frozenset({'person', 'has_interest'}),
+    'mcts-21': frozenset({'product', 'has_category'}),
+    'mcts-22': frozenset({'product'}),
+    'mcts-23': frozenset({'person', 'follows'}),
 }
 
 MONGO_QUERY_STORAGE = {
@@ -99,6 +106,13 @@ MONGO_QUERY_STORAGE = {
     'mcts-14': frozenset({'customer'}),
     'mcts-15': frozenset({'seller'}),
     'mcts-16': frozenset({'order'}),
+    'mcts-17': frozenset({'order'}),
+    'mcts-18': frozenset({'order'}),
+    'mcts-19': frozenset({'review'}),
+    'mcts-20': frozenset({'person'}),
+    'mcts-21': frozenset({'product'}),
+    'mcts-22': frozenset({'product'}),
+    'mcts-23': frozenset({'person'}),
 }
 
 NEO4J_QUERY_STORAGE = {
@@ -145,6 +159,13 @@ NEO4J_QUERY_STORAGE = {
     'mcts-14': frozenset({'Customer'}),
     'mcts-15': frozenset({'Seller'}),
     'mcts-16': frozenset({'HAS_ITEM'}),
+    'mcts-17': frozenset({'Seller', 'Product', 'Order', 'OFFERS', 'HAS_ITEM'}),
+    'mcts-18': frozenset({'Customer', 'Order', 'PLACED'}),
+    'mcts-19': frozenset({'Product', 'REVIEWED'}),
+    'mcts-20': frozenset({'Person', 'Category', 'HAS_INTEREST'}),
+    'mcts-21': frozenset({'Product', 'Category', 'HAS_CATEGORY'}),
+    'mcts-22': frozenset({'Seller', 'Product', 'OFFERS'}),
+    'mcts-23': frozenset({'Person', 'FOLLOWS'}),
 }
 
 QUERY_STORAGE_BY_DRIVER = {
@@ -511,6 +532,7 @@ def build_edbt_query_bundles(scale: float, instances_per_template: int) -> list[
         driver_type: get_dynamic_class_instance(QueryRegistry, driver_type, SCHEMA)
         for driver_type in DriverType
     }
+    validate_mcts_template_configuration(registries)
 
     bundles = list[EdbtQueryBundle]()
     for instance_index in range(instances_per_template):
@@ -539,6 +561,26 @@ def build_edbt_query_bundles(scale: float, instances_per_template: int) -> list[
             ))
 
     return bundles
+
+
+def validate_mcts_template_configuration(registries: Mapping[DriverType, QueryRegistry[Any]]):
+    expected_templates = set(MCTS_TEMPLATE_NAMES)
+
+    for driver_type, registry in registries.items():
+        missing_templates = sorted(
+            template_name
+            for template_name in expected_templates
+            if registry.get_template(template_name) is None
+        )
+        if missing_templates:
+            joined = ', '.join(missing_templates)
+            raise ValueError(f'Missing EDBT MCTS templates for {driver_type.value}: {joined}')
+
+        storage_templates = set(QUERY_STORAGE_BY_DRIVER[driver_type])
+        missing_storage = sorted(expected_templates - storage_templates)
+        if missing_storage:
+            joined = ', '.join(missing_storage)
+            raise ValueError(f'Missing EDBT MCTS storage mappings for {driver_type.value}: {joined}')
 
 
 def build_workload_queries(query_bundles: list[EdbtQueryBundle]) -> list[WorkloadQuery]:
