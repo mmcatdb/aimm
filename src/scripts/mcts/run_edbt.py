@@ -49,8 +49,8 @@ SCHEMA = 'edbt'
 MCTS_TEMPLATE_NAMES = tuple(f'mcts-{index}' for index in range(17))
 
 DEFAULT_POSTGRES_MODEL_ID = 'postgres/edbt-2-3-flat-rf'
-DEFAULT_MONGO_MODEL_ID = 'mongo/tpch-2-flat-xgb-log'
-DEFAULT_NEO4J_MODEL_ID = 'neo4j/tpch-2-flat-rf'
+DEFAULT_MONGO_MODEL_ID = 'mongo/art-1-2-flat-tail-blend'
+DEFAULT_NEO4J_MODEL_ID = 'neo4j/art-1-2-3-flat-rf'
 EDBT_LATENCY_ESTIMATES_FORMAT = 'aimm.mcts.edbt.latency_estimates'
 EDBT_LATENCY_ESTIMATES_FORMAT_VERSION = 1
 LATENCY_UNIT_MS = 'ms'
