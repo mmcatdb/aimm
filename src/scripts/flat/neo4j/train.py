@@ -10,6 +10,7 @@ from latency_estimation.dataset import create_dataset_id, parse_dataset_id
 from latency_estimation.neo4j.flat_dataset import load_neo4j_flat_dataset
 from latency_estimation.neo4j.flat_feature_extractor import load_flat_feature_extractor
 from latency_estimation.neo4j.flat_model import (
+    CALIBRATION_CHOICES,
     Neo4jFlatLatencyModel,
     compute_metrics,
     create_flat_estimator,
@@ -47,6 +48,7 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--n-jobs', type=int, default=-1, help='Parallel jobs for supported estimators.')
     parser.add_argument('--seed', type=int, default=GLOBAL_RNG_SEED, help='Random seed.')
     parser.add_argument('--sample-weight', default='none', choices=['none', 'log_latency', 'sqrt_latency', 'capped_latency'], help='Optional training-row weighting based only on measured training latency.')
+    parser.add_argument('--calibration', default='none', choices=CALIBRATION_CHOICES, help='Optional validation-fitted latency calibration applied after the base estimator.')
     parser.add_argument('--dry-run', action='store_true', help='Only print dataset/model setup. Do not train.')
 
 
@@ -67,6 +69,7 @@ def run(config: Config, args: argparse.Namespace):
 
     print(f'Model id: {model_id}')
     print(f'Model type: {model_type}')
+    print(f'Calibration: {args.calibration}')
     print(f'Training set: {len(train_dataset)} items')
     print(f'Validation set: {len(val_dataset)} items')
     print(f'Feature dimension: {len(feature_extractor.feature_names)}')
@@ -90,16 +93,31 @@ def run(config: Config, args: argparse.Namespace):
     print('\nTraining flat Neo4j model...')
     model.fit(train_x, train_y, sample_weight=train_weight)
 
+    train_raw_metrics = compute_metrics(model.predict_raw(train_x), train_y)
+    val_raw_metrics = compute_metrics(model.predict_raw(val_x), val_y)
+
+    if args.calibration != 'none':
+        print(f'\nFitting validation calibration: {args.calibration}')
+        calibrator = model.fit_calibrator(val_x, val_y, args.calibration)
+        if calibrator is not None:
+            print(f'Calibration details: {calibrator.describe()}')
+        print_metrics('Raw training metrics', train_raw_metrics)
+        print_metrics('Raw validation metrics', val_raw_metrics)
+
     train_metrics = compute_metrics(model.predict(train_x), train_y)
     val_metrics = compute_metrics(model.predict(val_x), val_y)
     print_metrics('Training metrics', train_metrics)
     print_metrics('Validation metrics', val_metrics)
 
     save_flat_model(output_path, model)
-    save_metrics(pp.flat_metrics(model_id), {
+    metrics = {
         'train': train_metrics,
         'validation': val_metrics,
-    })
+    }
+    if args.calibration != 'none':
+        metrics['train_raw'] = train_raw_metrics
+        metrics['validation_raw'] = val_raw_metrics
+    save_metrics(pp.flat_metrics(model_id), metrics)
     print(f'\nSaved flat model to {output_path}')
 
 
