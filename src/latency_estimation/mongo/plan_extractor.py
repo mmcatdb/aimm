@@ -106,10 +106,11 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
         if isinstance(pipeline, list):
             for stage in pipeline:
                 if not isinstance(stage, dict):
-                    continue
+                    break
                 match_doc = stage.get('$match')
-                if isinstance(match_doc, dict) and match_doc:
-                    filters.append(match_doc)
+                if not isinstance(match_doc, dict) or not match_doc:
+                    break
+                filters.append(match_doc)
 
         return filters
 
@@ -175,14 +176,21 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
         return current
 
     def __aggregation_stage_to_plan_node(self, stage: dict, input_stage: dict) -> dict:
-        if not isinstance(stage, dict) or len(stage) != 1:
+        if not isinstance(stage, dict):
             return {
                 'stage': 'AGG_UNKNOWN',
                 'rawStageKeys': list(stage.keys()) if isinstance(stage, dict) else [],
                 'inputStage': input_stage,
             }
 
-        operator, spec = next(iter(stage.items()))
+        operator, spec = self.__first_aggregation_operator(stage)
+        if operator is None:
+            return {
+                'stage': 'AGG_UNKNOWN',
+                'rawStageKeys': list(stage.keys()),
+                'inputStage': input_stage,
+            }
+
         node = {
             'stage': self.__aggregation_stage_name(operator),
             'inputStage': input_stage,
@@ -204,14 +212,33 @@ class PlanExtractor(BasePlanExtractor[MongoQuery]):
                 node['accumulators'] = {key: value for key, value in spec.items() if key != '_id'}
         elif operator == '$lookup' and isinstance(spec, dict):
             node['foreignCollection'] = spec.get('from', '')
+            for key in ('localField', 'foreignField', 'as', 'let'):
+                if key in spec:
+                    node[key] = spec[key]
             if 'pipeline' in spec:
-                node['pipelineStageCount'] = len(spec.get('pipeline') or [])
+                pipeline = spec.get('pipeline') or []
+                node['pipelineStageCount'] = len(pipeline)
+                pipeline_matches = [
+                    stage.get('$match')
+                    for stage in pipeline
+                    if isinstance(stage, dict)
+                    and isinstance(stage.get('$match'), dict)
+                    and stage.get('$match')
+                ]
+                if pipeline_matches:
+                    node['pipelineMatches'] = pipeline_matches
         elif operator == '$unwind':
             node['path'] = spec.get('path') if isinstance(spec, dict) else spec
         elif operator == '$count':
             node['countField'] = spec
 
         return node
+
+    def __first_aggregation_operator(self, stage: dict) -> tuple[str | None, Any]:
+        for key, value in stage.items():
+            if isinstance(key, str) and key.startswith('$'):
+                return key, value
+        return None, None
 
     def __aggregation_stage_name(self, operator: str) -> str:
         raw = operator.strip('$').replace('-', '_')

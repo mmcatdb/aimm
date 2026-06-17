@@ -202,6 +202,7 @@ class FlatFeatureExtractor:
         features.extend(self._structural_features(nodes_with_depth))
         features.extend(self._stage_group_features(nodes))
         features.extend(self._query_shape_features(plan, nodes, root_stats))
+        features.extend(self._aggregation_work_features(plan, nodes, global_stats, root_stats))
         features.extend(self._filter_features(nodes))
         features.extend(self._selectivity_features(plan, nodes, root_stats))
         features.extend(self._index_features(nodes, root_stats))
@@ -292,6 +293,44 @@ class FlatFeatureExtractor:
             'shape.log1p.array_expression_operator_count',
             'shape.date_expression_operator_count',
             'shape.log1p.date_expression_operator_count',
+        ])
+
+        names.extend([
+            'agg.estimated_final_rows',
+            'agg.log1p.estimated_final_rows',
+            'agg.max_pipeline_rows',
+            'agg.log1p.max_pipeline_rows',
+            'agg.sort_input_rows',
+            'agg.log1p.sort_input_rows',
+            'agg.group_input_rows',
+            'agg.log1p.group_input_rows',
+            'agg.unwind_input_rows',
+            'agg.log1p.unwind_input_rows',
+            'agg.lookup_probe_rows',
+            'agg.log1p.lookup_probe_rows',
+            'agg.lookup_output_rows',
+            'agg.log1p.lookup_output_rows',
+            'agg.lookup_scan_work',
+            'agg.log1p.lookup_scan_work',
+            'agg.max_lookup_matches_per_input',
+            'agg.log1p.max_lookup_matches_per_input',
+            'agg.lookup_output_multiplier',
+            'agg.log1p.lookup_output_multiplier',
+            'agg.unwind_multiplier',
+            'agg.log1p.unwind_multiplier',
+            'agg.lookup_count',
+            'agg.pipeline_lookup_count',
+            'agg.nonsargable_lookup_count',
+            'agg.unwind_count',
+            'agg.post_lookup_match_count',
+            'agg.limit_count',
+            'agg.accumulator_count',
+            'agg.expression_operator_count',
+            'agg.log_lookup_scan_work_times_pipeline_lookup',
+            'agg.log_max_pipeline_rows_times_unwind_count',
+            'agg.log_group_sort_rows_times_lookup_count',
+            'agg.log_max_lookup_matches_times_nonsargable_lookup',
+            'agg.log_lookup_output_rows_times_unwind_count',
         ])
 
         for op in FILTER_OPS:
@@ -526,6 +565,297 @@ class FlatFeatureExtractor:
 
         return count
 
+    def _aggregation_work_features(self, root: dict, nodes: list[dict], global_stats: dict, root_stats: dict) -> list[float]:
+        aggregation_nodes = [
+            node for node in reversed(nodes)
+            if self._node_stage(node).startswith('AGG_')
+        ]
+        if not aggregation_nodes:
+            return [0.0] * 35
+
+        rows = max(0.0, self._estimated_input_docs(root, nodes, root_stats))
+        max_pipeline_rows = rows
+        sort_input_rows = 0.0
+        group_input_rows = 0.0
+        unwind_input_rows = 0.0
+        lookup_probe_rows = 0.0
+        lookup_output_rows = 0.0
+        lookup_scan_work = 0.0
+        max_lookup_matches_per_input = 0.0
+        lookup_output_multiplier = 1.0
+        unwind_multiplier = 1.0
+        lookup_count = 0
+        pipeline_lookup_count = 0
+        nonsargable_lookup_count = 0
+        unwind_count = 0
+        post_lookup_match_count = 0
+        limit_count = 0
+        accumulator_count = 0
+        expression_summary = Counter[str]()
+        lookup_alias_lengths = dict[str, float]()
+        has_seen_lookup = False
+
+        for node in aggregation_nodes:
+            stage = self._node_stage(node)
+            if stage == 'AGG_UNWIND':
+                unwind_count += 1
+                unwind_input_rows += rows
+                multiplier = self._unwind_multiplier(node, root_stats, lookup_alias_lengths)
+                rows *= multiplier
+                unwind_multiplier *= multiplier
+                max_pipeline_rows = max(max_pipeline_rows, rows)
+            elif stage == 'AGG_LOOKUP':
+                lookup_count += 1
+                has_seen_lookup = True
+                if self._numeric(node.get('pipelineStageCount', 0.0)) > 0.0:
+                    pipeline_lookup_count += 1
+                matches_per_input, foreign_count, nonsargable = self._estimate_lookup_matches_per_input(node, global_stats)
+                if nonsargable:
+                    nonsargable_lookup_count += 1
+                lookup_probe_rows += rows
+                lookup_output_rows += rows * matches_per_input
+                lookup_scan_work += rows * self._lookup_scan_work_per_probe(foreign_count, nonsargable)
+                max_lookup_matches_per_input = max(max_lookup_matches_per_input, matches_per_input)
+                lookup_output_multiplier *= max(1.0, matches_per_input)
+                as_name = self._string(node.get('as'))
+                if as_name:
+                    lookup_alias_lengths[as_name] = matches_per_input
+            elif stage == 'AGG_MATCH':
+                if has_seen_lookup:
+                    post_lookup_match_count += 1
+            elif stage == 'AGG_GROUP':
+                group_input_rows += rows
+                accumulators = node.get('accumulators')
+                if isinstance(accumulators, dict):
+                    accumulator_count += len([key for key in accumulators if not self._string(key).startswith('$')])
+            elif stage == 'AGG_SORT':
+                sort_input_rows += rows
+            elif stage == 'AGG_LIMIT':
+                limit_count += 1
+                limit = self._numeric(node.get('limitAmount', 0.0))
+                if limit > 0.0:
+                    rows = min(rows, limit)
+
+            self._summarize_expression(node.get('transformBy'), expression_summary)
+            self._summarize_expression(node.get('groupBy'), expression_summary)
+            self._summarize_expression(node.get('accumulators'), expression_summary)
+            self._summarize_expression(node.get('filter'), expression_summary)
+            self._summarize_expression(node.get('pipelineMatches'), expression_summary)
+
+        values = [
+            rows,
+            max_pipeline_rows,
+            sort_input_rows,
+            group_input_rows,
+            unwind_input_rows,
+            lookup_probe_rows,
+            lookup_output_rows,
+            lookup_scan_work,
+            max_lookup_matches_per_input,
+            lookup_output_multiplier,
+            unwind_multiplier,
+        ]
+        features = list[float]()
+        for value in values:
+            features.append(value)
+            features.append(self._log1p_capped(value))
+
+        expression_operator_count = sum(expression_summary.values())
+        group_sort_rows = group_input_rows + sort_input_rows
+        features.extend([
+            float(lookup_count),
+            float(pipeline_lookup_count),
+            float(nonsargable_lookup_count),
+            float(unwind_count),
+            float(post_lookup_match_count),
+            float(limit_count),
+            float(accumulator_count),
+            float(expression_operator_count),
+            self._log1p_capped(lookup_scan_work) * float(pipeline_lookup_count),
+            self._log1p_capped(max_pipeline_rows) * float(unwind_count),
+            self._log1p_capped(group_sort_rows) * float(lookup_count),
+            self._log1p_capped(max_lookup_matches_per_input) * float(nonsargable_lookup_count),
+            self._log1p_capped(lookup_output_rows) * float(unwind_count),
+        ])
+        return features
+
+    def _unwind_multiplier(self, node: dict, root_stats: dict, lookup_alias_lengths: dict[str, float]) -> float:
+        path = self._unwind_path(node)
+        if not path:
+            return 1.0
+
+        first_part = path.split('.', 1)[0]
+        if first_part in lookup_alias_lengths:
+            return max(1.0, lookup_alias_lengths[first_part])
+
+        return max(1.0, self._average_array_length(root_stats, path))
+
+    def _unwind_path(self, node: dict) -> str:
+        path = self._string(node.get('path'))
+        return path[1:] if path.startswith('$') else path
+
+    def _average_array_length(self, stats: dict, path: str) -> float:
+        field_stats = self._field_stats(stats, path)
+        if field_stats is not None:
+            avg_length = self._numeric(field_stats.get('array_avg_length', 0.0))
+            if avg_length > 0.0:
+                return avg_length
+
+        prefix = f'{path}.'
+        lengths = [
+            self._numeric(child_stats.get('array_avg_length', 0.0))
+            for field, child_stats in self._field_stats_map(stats).items()
+            if field.startswith(prefix)
+            and isinstance(child_stats, dict)
+            and self._numeric(child_stats.get('array_avg_length', 0.0)) > 0.0
+        ]
+        if lengths:
+            return sum(lengths) / len(lengths)
+
+        return 1.0
+
+    def _estimate_lookup_matches_per_input(self, node: dict, global_stats: dict) -> tuple[float, float, bool]:
+        foreign_stats = self._stats_for_collection(global_stats, self._string(node.get('foreignCollection')))
+        foreign_count = max(1.0, self._numeric(foreign_stats.get('count', 0.0)))
+
+        foreign_field = self._string(node.get('foreignField'))
+        if foreign_field:
+            return min(foreign_count, self._average_matches_for_field(foreign_stats, foreign_field)), foreign_count, False
+
+        pipeline_matches = node.get('pipelineMatches')
+        if not isinstance(pipeline_matches, list) or not pipeline_matches:
+            return foreign_count, foreign_count, True
+
+        correlated_matches = list[float]()
+        selectivity = 1.0
+        has_unique_correlated_equality = False
+        has_nonsargable_correlation = False
+
+        for match_doc in pipeline_matches:
+            if not isinstance(match_doc, dict):
+                continue
+
+            expression = match_doc.get('$expr')
+            if expression is not None:
+                expr_matches, expr_selectivity, nonsargable, unique_equality = self._summarize_lookup_expression(expression, foreign_stats)
+                correlated_matches.extend(expr_matches)
+                selectivity *= expr_selectivity
+                has_nonsargable_correlation = has_nonsargable_correlation or nonsargable
+                has_unique_correlated_equality = has_unique_correlated_equality or unique_equality
+
+            non_expr_match = {
+                key: value
+                for key, value in match_doc.items()
+                if key != '$expr'
+            }
+            if non_expr_match:
+                selectivity *= self._estimate_filter_selectivity(non_expr_match, foreign_stats, SelectivitySummary())
+
+        base_matches = min(correlated_matches) if correlated_matches else foreign_count
+        matches_per_input = min(foreign_count, base_matches * self._clamp_selectivity(selectivity))
+        nonsargable = has_nonsargable_correlation or (bool(correlated_matches) and not has_unique_correlated_equality)
+        return max(0.0, matches_per_input), foreign_count, nonsargable
+
+    def _summarize_lookup_expression(self, expression, foreign_stats: dict) -> tuple[list[float], float, bool, bool]:
+        correlated_matches = list[float]()
+        selectivity = 1.0
+        has_nonsargable_correlation = False
+        has_unique_correlated_equality = False
+
+        if isinstance(expression, dict):
+            for operator, value in expression.items():
+                if operator == '$and' and isinstance(value, list):
+                    for child in value:
+                        child_matches, child_selectivity, child_nonsargable, child_unique = self._summarize_lookup_expression(child, foreign_stats)
+                        correlated_matches.extend(child_matches)
+                        selectivity *= child_selectivity
+                        has_nonsargable_correlation = has_nonsargable_correlation or child_nonsargable
+                        has_unique_correlated_equality = has_unique_correlated_equality or child_unique
+                elif operator == '$or' and isinstance(value, list):
+                    child_selectivities = []
+                    for child in value:
+                        child_matches, child_selectivity, child_nonsargable, child_unique = self._summarize_lookup_expression(child, foreign_stats)
+                        correlated_matches.extend(child_matches)
+                        child_selectivities.append(child_selectivity)
+                        has_nonsargable_correlation = has_nonsargable_correlation or child_nonsargable
+                        has_unique_correlated_equality = has_unique_correlated_equality or child_unique
+                    selectivity *= self._combine_or_selectivities(child_selectivities)
+                elif operator == '$eq' and isinstance(value, list) and len(value) == 2:
+                    field, constant, is_correlated = self._lookup_expression_field_and_other(value[0], value[1])
+                    if field and is_correlated:
+                        correlated_matches.append(self._average_matches_for_field(foreign_stats, field))
+                        has_unique_correlated_equality = has_unique_correlated_equality or bool(self._field_stats(foreign_stats, field) and self._field_stats(foreign_stats, field).get('is_unique', False))
+                    elif field:
+                        field_selectivity, _ = self._estimate_equality_selectivity(field, constant, foreign_stats)
+                        selectivity *= field_selectivity
+                elif operator == '$in' and isinstance(value, list) and len(value) == 2:
+                    field, constants, is_correlated = self._lookup_expression_field_and_other(value[0], value[1])
+                    if field and is_correlated:
+                        correlated_matches.append(self._average_matches_for_field(foreign_stats, field))
+                        has_nonsargable_correlation = True
+                    elif field:
+                        in_selectivity, _ = self._estimate_in_selectivity(field, constants, foreign_stats)
+                        selectivity *= in_selectivity
+                else:
+                    child_matches, child_selectivity, child_nonsargable, child_unique = self._summarize_lookup_expression(value, foreign_stats)
+                    correlated_matches.extend(child_matches)
+                    selectivity *= child_selectivity
+                    has_nonsargable_correlation = has_nonsargable_correlation or child_nonsargable
+                    has_unique_correlated_equality = has_unique_correlated_equality or child_unique
+        elif isinstance(expression, list):
+            for child in expression:
+                child_matches, child_selectivity, child_nonsargable, child_unique = self._summarize_lookup_expression(child, foreign_stats)
+                correlated_matches.extend(child_matches)
+                selectivity *= child_selectivity
+                has_nonsargable_correlation = has_nonsargable_correlation or child_nonsargable
+                has_unique_correlated_equality = has_unique_correlated_equality or child_unique
+
+        return correlated_matches, self._clamp_selectivity(selectivity), has_nonsargable_correlation, has_unique_correlated_equality
+
+    def _lookup_expression_field_and_other(self, left, right) -> tuple[str, object, bool]:
+        left_field = self._expression_field(left)
+        right_field = self._expression_field(right)
+        if left_field:
+            return left_field, right, self._is_lookup_variable(right)
+        if right_field:
+            return right_field, left, self._is_lookup_variable(left)
+        return '', None, False
+
+    def _expression_field(self, value) -> str:
+        text = self._string(value)
+        if text.startswith('$') and not text.startswith('$$'):
+            return text[1:]
+        return ''
+
+    def _is_lookup_variable(self, value) -> bool:
+        return self._string(value).startswith('$$')
+
+    def _average_matches_for_field(self, stats: dict, field: str) -> float:
+        field_stats = self._field_stats(stats, field)
+        count = max(1.0, self._numeric(stats.get('count', 0.0)))
+        if field_stats is None:
+            return max(1.0, count * EQUALITY_FALLBACK_SELECTIVITY)
+        if bool(field_stats.get('is_unique', False)):
+            return 1.0
+
+        distinct_count = self._numeric(field_stats.get('distinct_count', 0.0))
+        value_count = self._selectivity_value_count(field_stats)
+        if distinct_count > 0.0 and value_count > 0.0:
+            return max(1.0, value_count / distinct_count)
+        return max(1.0, math.sqrt(count))
+
+    def _lookup_scan_work_per_probe(self, foreign_count: float, nonsargable: bool) -> float:
+        if foreign_count <= 0.0:
+            return 0.0
+        if nonsargable:
+            return foreign_count
+        return max(1.0, math.log2(foreign_count + 1.0))
+
+    def _log1p_capped(self, value: float) -> float:
+        if math.isnan(value) or math.isinf(value):
+            return 0.0
+        return math.log1p(max(0.0, min(value, 1.0e18)))
+
     def _filter_features(self, nodes: list[dict]) -> list[float]:
         summary = FilterSummary()
         for node in nodes:
@@ -627,7 +957,9 @@ class FlatFeatureExtractor:
         return [
             node.get('filter')
             for node in nodes
-            if isinstance(node.get('filter'), dict) and node.get('filter')
+            if self._node_stage(node) != 'AGG_MATCH'
+            and isinstance(node.get('filter'), dict)
+            and node.get('filter')
         ]
 
     def _estimate_filter_selectivity(self, filter_doc, root_stats: dict, summary: SelectivitySummary, field_prefix: str = '') -> float:
@@ -807,22 +1139,29 @@ class FlatFeatureExtractor:
             return min(1.0, 1.0 / count), True
 
         top_count = self._top_value_count(stats, value)
-        non_null_count = self._numeric(stats.get('non_null_count', stats.get('value_count', 0.0)))
+        selectivity_value_count = self._selectivity_value_count(stats)
         if top_count is not None:
-            return min(1.0, self._ratio(min(top_count, non_null_count or top_count), count)), True
+            return min(1.0, self._ratio(min(top_count, selectivity_value_count or top_count), count)), True
 
         distinct_count = self._numeric(stats.get('distinct_count', 0.0))
         if distinct_count > 0.0:
             top_total = sum(self._numeric(item.get('count', 0.0)) for item in stats.get('top_values', []) if isinstance(item, dict))
-            remaining_count = max(0.0, non_null_count - top_total)
+            remaining_count = max(0.0, selectivity_value_count - top_total)
             remaining_distinct = max(1.0, distinct_count - len(stats.get('top_values', [])))
-            estimated_count = remaining_count / remaining_distinct if remaining_count > 0.0 else non_null_count / distinct_count
+            estimated_count = remaining_count / remaining_distinct if remaining_count > 0.0 else selectivity_value_count / distinct_count
             return min(1.0, max(1.0 / count, estimated_count / count)), True
 
-        if non_null_count > 0.0:
-            return min(1.0, max(1.0 / count, 1.0 / math.sqrt(non_null_count))), True
+        if selectivity_value_count > 0.0:
+            return min(1.0, max(1.0 / count, 1.0 / math.sqrt(selectivity_value_count))), True
 
         return EQUALITY_FALLBACK_SELECTIVITY, False
+
+    def _selectivity_value_count(self, stats: dict) -> float:
+        value_count = self._numeric(stats.get('value_count', 0.0))
+        non_null_count = self._numeric(stats.get('non_null_count', 0.0))
+        if bool(stats.get('is_multikey', False)) or self._numeric(stats.get('array_count', 0.0)) > 0.0:
+            return value_count or non_null_count
+        return non_null_count or value_count
 
     def _estimate_in_selectivity(self, field: str, values, root_stats: dict) -> tuple[float, bool]:
         if not isinstance(values, list):

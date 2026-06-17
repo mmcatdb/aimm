@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 from dataclasses import asdict, dataclass
+from typing import Sequence
 
 import numpy as np
 from core.files import JsonEncoder, open_output
@@ -53,7 +54,36 @@ class MongoFlatLatencyModel:
         return float(self.predict(features.reshape(1, -1))[0])
 
 
-def create_flat_estimator(args):
+class FeatureSubsetLatencyBlendRegressor:
+    def __init__(
+        self,
+        components: Sequence[tuple[object, np.ndarray]],
+        weights: Sequence[float] | None = None,
+    ):
+        self.components = list(components)
+        if weights is None:
+            weights = [1.0 / len(self.components)] * len(self.components)
+        weight_array = np.array(weights, dtype=np.float64)
+        self.weights = weight_array / np.sum(weight_array)
+
+    def fit(self, x: np.ndarray, y: np.ndarray, sample_weight: np.ndarray | None = None):
+        for estimator, feature_indices in self.components:
+            estimator.fit(x[:, feature_indices], y, sample_weight=sample_weight)
+        return self
+
+    def predict(self, x: np.ndarray) -> np.ndarray:
+        latency_predictions = []
+        for estimator, feature_indices in self.components:
+            log_prediction = estimator.predict(x[:, feature_indices])
+            latency_predictions.append(np.maximum(np.expm1(log_prediction), EPSILON))
+
+        blended_latency = np.zeros(x.shape[0], dtype=np.float64)
+        for weight, prediction in zip(self.weights, latency_predictions):
+            blended_latency += weight * prediction
+        return np.log1p(np.maximum(blended_latency, EPSILON))
+
+
+def create_flat_estimator(args, feature_names: Sequence[str] | None = None):
     model_type = normalize_model_type(args.model_type)
 
     if model_type == 'random_forest':
@@ -104,6 +134,57 @@ def create_flat_estimator(args):
             n_jobs=args.n_jobs,
         )
 
+    if model_type == 'tail_blend':
+        if feature_names is None:
+            raise ValueError('tail_blend requires feature names for feature-subset selection.')
+
+        from sklearn.ensemble import RandomForestRegressor
+        try:
+            from xgboost import XGBRegressor
+        except ImportError as e:
+            raise ImportError('XGBoost is not installed. Install the "xgboost" package or use another model type.') from e
+
+        selected_work_features = {
+            'agg.log1p.lookup_scan_work',
+            'agg.log1p.max_pipeline_rows',
+            'agg.pipeline_lookup_count',
+            'agg.nonsargable_lookup_count',
+            'agg.unwind_count',
+            'agg.lookup_count',
+        }
+        rf_feature_indices = np.array([
+            index
+            for index, name in enumerate(feature_names)
+            if not name.startswith('agg.') or name in selected_work_features
+        ], dtype=np.int64)
+        all_feature_indices = np.arange(len(feature_names), dtype=np.int64)
+
+        return FeatureSubsetLatencyBlendRegressor([
+            (
+                RandomForestRegressor(
+                    n_estimators=500,
+                    max_depth=None,
+                    min_samples_leaf=10,
+                    random_state=args.seed,
+                    n_jobs=args.n_jobs,
+                ),
+                rf_feature_indices,
+            ),
+            (
+                XGBRegressor(
+                    n_estimators=800,
+                    max_depth=8,
+                    learning_rate=0.03,
+                    subsample=0.9,
+                    colsample_bytree=0.9,
+                    objective='reg:squarederror',
+                    random_state=args.seed,
+                    n_jobs=args.n_jobs,
+                ),
+                all_feature_indices,
+            ),
+        ])
+
     raise ValueError(f'Unsupported flat model type: {args.model_type}')
 
 
@@ -117,6 +198,8 @@ def normalize_model_type(model_type: str) -> str:
         return 'decision_tree'
     if normalized in ('xgb', 'xgboost'):
         return 'xgboost'
+    if normalized in ('tail_blend', 'tailblend', 'blend'):
+        return 'tail_blend'
     raise ValueError(f'Unsupported flat model type: {model_type}')
 
 

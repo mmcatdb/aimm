@@ -37,7 +37,7 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('model_id', nargs=1, help='Id of the model. Pattern: mongo/{model_name}.')
     parser.add_argument('train_dataset', type=str, help='Name of the flat training dataset.')
     parser.add_argument('val_dataset', type=str, help='Name of the flat validation dataset.')
-    parser.add_argument('--model-type', default='random_forest', choices=['random_forest', 'random-forest', 'rf', 'extra_trees', 'extra-trees', 'et', 'decision_tree', 'decision-tree', 'dt', 'xgboost', 'xgb'], help='Tree regressor family.')
+    parser.add_argument('--model-type', default='random_forest', choices=['random_forest', 'random-forest', 'rf', 'extra_trees', 'extra-trees', 'et', 'decision_tree', 'decision-tree', 'dt', 'xgboost', 'xgb', 'tail_blend', 'tail-blend', 'blend'], help='Tree regressor family.')
     parser.add_argument('--n-estimators', type=int, default=500, help='Number of trees for ensemble models.')
     parser.add_argument('--max-depth', type=int, default=None, help='Maximum tree depth.')
     parser.add_argument('--min-samples-leaf', type=int, default=1, help='Minimum samples per leaf.')
@@ -79,7 +79,7 @@ def run(config: Config, args: argparse.Namespace):
         print('\nDry run completed. Exiting before training.')
         return
 
-    estimator = create_flat_estimator(args)
+    estimator = create_flat_estimator(args, feature_extractor.feature_names)
     model = MongoFlatLatencyModel(estimator, feature_extractor, model_id, model_type)
     train_x = transform_dataset_features(model.feature_extractor, train_dataset, train_id)
     train_y = train_dataset.y()
