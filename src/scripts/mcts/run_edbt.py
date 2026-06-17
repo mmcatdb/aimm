@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 import math
 import os
+import random
 from typing import Any
 
 from bson import json_util
@@ -404,6 +405,11 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--iterations', type=int, default=20000)
     parser.add_argument('--instances-per-template', type=int, default=1)
     parser.add_argument('--seed', type=int)
+    parser.add_argument(
+        '--random-start',
+        action='store_true',
+        help='Start MCTS from a random feasible query/database assignment.',
+    )
     parser.add_argument('--latency-cost-weight', type=float, default=1.0)
     parser.add_argument('--storage-cost-weight', type=float, default=0.3)
     parser.add_argument('--postgres-model-id', default=DEFAULT_POSTGRES_MODEL_ID)
@@ -469,6 +475,14 @@ def run(args: argparse.Namespace):
     if args.describe_only:
         return
 
+    initial_assignment = build_initial_assignment(
+        queries,
+        databases,
+        assignment_conditions,
+        random_start=getattr(args, 'random_start', False),
+        seed=getattr(args, 'seed', None),
+    )
+
     if args.latency_estimates:
         latency_matrix = load_edbt_latency_estimates(args.latency_estimates)
         validate_edbt_latency_estimates(
@@ -490,7 +504,10 @@ def run(args: argparse.Namespace):
             random_seed=args.seed,
             assignment_conditions=assignment_conditions,
         )
-        result = optimizer.optimize(iterations=args.iterations)
+        result = optimizer.optimize(
+            iterations=args.iterations,
+            initial_assignment=initial_assignment,
+        )
         print_result(
             result=result,
             queries=queries,
@@ -520,7 +537,10 @@ def run(args: argparse.Namespace):
             random_seed=args.seed,
             assignment_conditions=assignment_conditions,
         )
-        result = optimizer.optimize(iterations=args.iterations)
+        result = optimizer.optimize(
+            iterations=args.iterations,
+            initial_assignment=initial_assignment,
+        )
         print_result(
             result=result,
             queries=queries,
@@ -615,6 +635,35 @@ def build_workload_queries(query_bundles: list[EdbtQueryBundle]) -> list[Workloa
         )
         for bundle in query_bundles
     ]
+
+
+def build_initial_assignment(
+    queries: list[WorkloadQuery],
+    databases: list[DatabaseInstance],
+    assignment_conditions: AssignmentConditions,
+    *,
+    random_start: bool,
+    seed: int | None,
+) -> dict[str, str] | None:
+    if not random_start:
+        return None
+
+    rng = random.Random(seed)
+    assignment = {}
+    for query in queries:
+        feasible_databases = [
+            database
+            for database in databases
+            if assignment_conditions_allow(query.id, database.id, assignment_conditions)
+            and (
+                query.feasible_database_ids is None
+                or database.id in query.feasible_database_ids
+            )
+        ]
+        if not feasible_databases:
+            raise ValueError(f'No feasible database found for query {query.id!r}')
+        assignment[query.id] = rng.choice(feasible_databases).id
+    return assignment
 
 
 def build_databases(scale: float) -> list[DatabaseInstance]:
