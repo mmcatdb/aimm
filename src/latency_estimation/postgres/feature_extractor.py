@@ -45,9 +45,16 @@ class FeatureExtractor(BaseFeatureExtractor):
             if 'Scan' in op_type:
                 self.scan_type_vocab.add(op_type)
 
-            # NOTE: I realize 'Startup Cost' isn't here, but for some reason the model's performance
-            #   completely craters if the feature is normalized.
-            for key in ['Plan Width', 'Plan Rows', 'Plan Buffers', 'Estimated I/Os', 'Hash Buckets', 'Sort Space Used', 'Total Cost']:
+            for key in [
+                'Plan Width',
+                'Plan Rows',
+                'Plan Buffers',
+                'Estimated I/Os',
+                'Hash Buckets',
+                'Sort Space Used',
+                'Startup Cost',
+                'Total Cost',
+            ]:
                 if key in node:
                     numeric_features[key].append(float(node[key]))
 
