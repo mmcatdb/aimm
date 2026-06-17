@@ -423,6 +423,131 @@ class PostgresEdbtQueryRegistry(EdbtQueryRegistry[str]):
             ORDER BY oi.quantity
         '''
 
+    @override
+    def _seller_sales_summary(self, date, seller_ids):
+        return f'''
+            SELECT
+                p.seller_id,
+                COUNT(DISTINCT o.order_id)::int AS orders,
+                COUNT(*)::int AS items,
+                SUM(oi.quantity)::bigint AS units,
+                SUM(oi.line_total_cents)::bigint AS revenue_cents
+            FROM "order" o
+            JOIN order_item oi ON oi.order_id = o.order_id
+            JOIN product p ON p.product_id = oi.product_id
+            WHERE p.seller_id IN ({seller_ids})
+                AND o.ordered_at >= '{date}'
+                AND o.status IN ('paid', 'shipped')
+            GROUP BY p.seller_id
+            ORDER BY revenue_cents DESC, p.seller_id
+            LIMIT 200
+        '''
+
+    @override
+    def _customer_country_order_status(self, date, country_codes):
+        return f'''
+            SELECT
+                c.country_code,
+                o.status,
+                COUNT(*)::int AS orders,
+                SUM(o.total_cents)::bigint AS revenue_cents,
+                AVG(o.total_cents)::float8 AS avg_order_cents
+            FROM customer c
+            JOIN "order" o ON o.customer_id = c.customer_id
+            WHERE c.country_code IN ({country_codes})
+                AND o.ordered_at >= '{date}'
+            GROUP BY c.country_code, o.status
+            ORDER BY c.country_code, o.status
+        '''
+
+    @override
+    def _product_review_summary(self, product_ids, min_helpful_votes):
+        return f'''
+            SELECT
+                r.product_id,
+                COUNT(*)::int AS reviews,
+                AVG(r.rating)::float8 AS avg_rating,
+                SUM(r.helpful_votes)::bigint AS helpful_votes,
+                MAX(r.helpful_votes)::int AS max_helpful_votes
+            FROM review r
+            WHERE r.product_id IN ({product_ids})
+                AND r.helpful_votes >= {min_helpful_votes}
+            GROUP BY r.product_id
+            ORDER BY reviews DESC, r.product_id
+            LIMIT 200
+        '''
+
+    @override
+    def _category_interest_summary(self, category_ids, min_strength):
+        return f'''
+            SELECT
+                hi.category_id,
+                COUNT(DISTINCT hi.person_id)::int AS interested_persons,
+                AVG(hi.strength)::float8 AS avg_strength,
+                MAX(hi.strength)::int AS max_strength
+            FROM has_interest hi
+            JOIN person p ON p.person_id = hi.person_id
+            WHERE hi.category_id IN ({category_ids})
+                AND hi.strength >= {min_strength}
+                AND p.is_active = TRUE
+            GROUP BY hi.category_id
+            ORDER BY interested_persons DESC, hi.category_id
+            LIMIT 200
+        '''
+
+    @override
+    def _category_catalog_summary(self, category_ids, max_price_cents, min_stock_qty):
+        return f'''
+            SELECT
+                hc.category_id,
+                COUNT(DISTINCT p.product_id)::int AS products,
+                SUM(p.stock_qty)::bigint AS stock_qty,
+                AVG(p.price_cents)::float8 AS avg_price_cents
+            FROM has_category hc
+            JOIN product p ON p.product_id = hc.product_id
+            WHERE hc.category_id IN ({category_ids})
+                AND p.is_active = TRUE
+                AND p.price_cents <= {max_price_cents}
+                AND p.stock_qty >= {min_stock_qty}
+            GROUP BY hc.category_id
+            ORDER BY products DESC, hc.category_id
+            LIMIT 200
+        '''
+
+    @override
+    def _seller_catalog_health(self, seller_ids):
+        return f'''
+            SELECT
+                p.seller_id,
+                COUNT(*)::int AS products,
+                SUM(CASE WHEN p.is_active THEN 1 ELSE 0 END)::int AS active_products,
+                SUM(CASE WHEN p.is_active THEN 0 ELSE 1 END)::int AS inactive_products,
+                SUM(p.stock_qty)::bigint AS stock_qty,
+                AVG(p.price_cents)::float8 AS avg_price_cents
+            FROM product p
+            WHERE p.seller_id IN ({seller_ids})
+            GROUP BY p.seller_id
+            ORDER BY products DESC, p.seller_id
+            LIMIT 200
+        '''
+
+    @override
+    def _follow_country_rollup(self, country_codes):
+        return f'''
+            SELECT
+                p_from.country_code AS from_country,
+                p_to.country_code AS to_country,
+                COUNT(*)::int AS edges,
+                SUM(CASE WHEN p_to.is_active THEN 1 ELSE 0 END)::int AS active_targets
+            FROM follows f
+            JOIN person p_from ON p_from.person_id = f.from_id
+            JOIN person p_to ON p_to.person_id = f.to_id
+            WHERE p_from.country_code IN ({country_codes})
+            GROUP BY p_from.country_code, p_to.country_code
+            ORDER BY edges DESC, from_country, to_country
+            LIMIT 200
+        '''
+
     # One "multi-db" query (on purpose)
 
     # Q18) Feed ranking in Neo4j, then page fetch in Mongo (Cross DB, high weight in sale)

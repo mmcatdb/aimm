@@ -158,6 +158,40 @@ class EdbtQueryRegistry(QueryRegistry[TQuery]):
             min_unit_price_cents=self._param_int('min_unit_price_cents', 100, 20_000),
         ))
 
+        self._query('mcts-17', 'Seller sales summary for recent paid/shipped orders (order, order_item, product, seller)', lambda s: s._seller_sales_summary(
+            date=self._param_date_minus_days(7, 180),
+            seller_ids=self._param_seller_ids(10, 100),
+        ))
+
+        self._query('mcts-18', 'Customer-country order status summary (customer, order)', lambda s: s._customer_country_order_status(
+            date=self._param_date_minus_days(7, 180),
+            country_codes=self._param_country_codes(2, 6),
+        ))
+
+        self._query('mcts-19', 'Product review summary for selected products (review)', lambda s: s._product_review_summary(
+            product_ids=self._param_product_ids(10, 100),
+            min_helpful_votes=self._param_int('min_helpful_votes', 0, 30),
+        ))
+
+        self._query('mcts-20', 'Category audience strength summary (person, has_interest, category)', lambda s: s._category_interest_summary(
+            category_ids=self._param_category_ids(10, 80),
+            min_strength=self._param_int('min_strength', 1, 10),
+        ))
+
+        self._query('mcts-21', 'Active category catalog summary (product, has_category)', lambda s: s._category_catalog_summary(
+            category_ids=self._param_category_ids(10, 80),
+            max_price_cents=self._param_int('max_price_cents', 1_000, 50_000),
+            min_stock_qty=self._param_int('min_stock_qty', 0, 200),
+        ))
+
+        self._query('mcts-22', 'Seller catalog health summary (seller, product)', lambda s: s._seller_catalog_health(
+            seller_ids=self._param_seller_ids(10, 100),
+        ))
+
+        self._query('mcts-23', 'Follow graph country rollup (person, follows)', lambda s: s._follow_country_rollup(
+            country_codes=self._param_country_codes(2, 6),
+        ))
+
     # Abstract methods for common MCTS queries
 
     @abstractmethod
@@ -210,3 +244,24 @@ class EdbtQueryRegistry(QueryRegistry[TQuery]):
 
     @abstractmethod
     def _line_item_quantity_distribution(self, min_unit_price_cents) -> TQuery: ...
+
+    @abstractmethod
+    def _seller_sales_summary(self, date, seller_ids) -> TQuery: ...
+
+    @abstractmethod
+    def _customer_country_order_status(self, date, country_codes) -> TQuery: ...
+
+    @abstractmethod
+    def _product_review_summary(self, product_ids, min_helpful_votes) -> TQuery: ...
+
+    @abstractmethod
+    def _category_interest_summary(self, category_ids, min_strength) -> TQuery: ...
+
+    @abstractmethod
+    def _category_catalog_summary(self, category_ids, max_price_cents, min_stock_qty) -> TQuery: ...
+
+    @abstractmethod
+    def _seller_catalog_health(self, seller_ids) -> TQuery: ...
+
+    @abstractmethod
+    def _follow_country_rollup(self, country_codes) -> TQuery: ...

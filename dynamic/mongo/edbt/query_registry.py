@@ -474,6 +474,205 @@ class MongoEdbtQueryRegistry(EdbtQueryRegistry[MongoQuery]):
             {'$sort': {'quantity': 1}},
         ])
 
+    @override
+    def _seller_sales_summary(self, date, seller_ids):
+        return MongoAggregateQuery('order', [
+            {'$match': {
+                'ordered_at': {'$gte': date},
+                'status': {'$in': ['paid', 'shipped']},
+                'items.product.seller_id': {'$in': seller_ids},
+            }},
+            {'$unwind': '$items'},
+            {'$match': {'items.product.seller_id': {'$in': seller_ids}}},
+            {'$group': {
+                '_id': '$items.product.seller_id',
+                'order_ids': {'$addToSet': '$order_id'},
+                'items': {'$sum': 1},
+                'units': {'$sum': '$items.quantity'},
+                'revenue_cents': {'$sum': '$items.line_total_cents'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'seller_id': '$_id',
+                'orders': {'$size': '$order_ids'},
+                'items': 1,
+                'units': 1,
+                'revenue_cents': 1,
+            }},
+            {'$sort': {'revenue_cents': -1, 'seller_id': 1}},
+            {'$limit': 200},
+        ])
+
+    @override
+    def _customer_country_order_status(self, date, country_codes):
+        return MongoAggregateQuery('order', [
+            {'$match': {
+                'ordered_at': {'$gte': date},
+                'customer.country_code': {'$in': country_codes},
+            }},
+            {'$group': {
+                '_id': {
+                    'country_code': '$customer.country_code',
+                    'status': '$status',
+                },
+                'orders': {'$sum': 1},
+                'revenue_cents': {'$sum': '$total_cents'},
+                'avg_order_cents': {'$avg': '$total_cents'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'country_code': '$_id.country_code',
+                'status': '$_id.status',
+                'orders': 1,
+                'revenue_cents': 1,
+                'avg_order_cents': 1,
+            }},
+            {'$sort': {'country_code': 1, 'status': 1}},
+        ])
+
+    @override
+    def _product_review_summary(self, product_ids, min_helpful_votes):
+        return MongoAggregateQuery('review', [
+            {'$match': {
+                'product_id': {'$in': product_ids},
+                'helpful_votes': {'$gte': min_helpful_votes},
+            }},
+            {'$group': {
+                '_id': '$product_id',
+                'reviews': {'$sum': 1},
+                'avg_rating': {'$avg': '$rating'},
+                'helpful_votes': {'$sum': '$helpful_votes'},
+                'max_helpful_votes': {'$max': '$helpful_votes'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'product_id': '$_id',
+                'reviews': 1,
+                'avg_rating': 1,
+                'helpful_votes': 1,
+                'max_helpful_votes': 1,
+            }},
+            {'$sort': {'reviews': -1, 'product_id': 1}},
+            {'$limit': 200},
+        ])
+
+    @override
+    def _category_interest_summary(self, category_ids, min_strength):
+        return MongoAggregateQuery('person', [
+            {'$match': {
+                'is_active': True,
+                'interests': {
+                    '$elemMatch': {
+                        'category.category_id': {'$in': category_ids},
+                        'strength': {'$gte': min_strength},
+                    },
+                },
+            }},
+            {'$unwind': '$interests'},
+            {'$match': {
+                'interests.category.category_id': {'$in': category_ids},
+                'interests.strength': {'$gte': min_strength},
+            }},
+            {'$group': {
+                '_id': '$interests.category.category_id',
+                'person_ids': {'$addToSet': '$person_id'},
+                'avg_strength': {'$avg': '$interests.strength'},
+                'max_strength': {'$max': '$interests.strength'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'category_id': '$_id',
+                'interested_persons': {'$size': '$person_ids'},
+                'avg_strength': 1,
+                'max_strength': 1,
+            }},
+            {'$sort': {'interested_persons': -1, 'category_id': 1}},
+            {'$limit': 200},
+        ])
+
+    @override
+    def _category_catalog_summary(self, category_ids, max_price_cents, min_stock_qty):
+        return MongoAggregateQuery('product', [
+            {'$match': {
+                'is_active': True,
+                'price_cents': {'$lte': max_price_cents},
+                'stock_qty': {'$gte': min_stock_qty},
+                'categories.category.category_id': {'$in': category_ids},
+            }},
+            {'$unwind': '$categories'},
+            {'$match': {
+                'categories.category.category_id': {'$in': category_ids},
+            }},
+            {'$group': {
+                '_id': '$categories.category.category_id',
+                'product_ids': {'$addToSet': '$product_id'},
+                'stock_qty': {'$sum': '$stock_qty'},
+                'avg_price_cents': {'$avg': '$price_cents'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'category_id': '$_id',
+                'products': {'$size': '$product_ids'},
+                'stock_qty': 1,
+                'avg_price_cents': 1,
+            }},
+            {'$sort': {'products': -1, 'category_id': 1}},
+            {'$limit': 200},
+        ])
+
+    @override
+    def _seller_catalog_health(self, seller_ids):
+        return MongoAggregateQuery('product', [
+            {'$match': {
+                'seller.seller_id': {'$in': seller_ids},
+            }},
+            {'$group': {
+                '_id': '$seller.seller_id',
+                'products': {'$sum': 1},
+                'active_products': {'$sum': {'$cond': ['$is_active', 1, 0]}},
+                'inactive_products': {'$sum': {'$cond': ['$is_active', 0, 1]}},
+                'stock_qty': {'$sum': '$stock_qty'},
+                'avg_price_cents': {'$avg': '$price_cents'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'seller_id': '$_id',
+                'products': 1,
+                'active_products': 1,
+                'inactive_products': 1,
+                'stock_qty': 1,
+                'avg_price_cents': 1,
+            }},
+            {'$sort': {'products': -1, 'seller_id': 1}},
+            {'$limit': 200},
+        ])
+
+    @override
+    def _follow_country_rollup(self, country_codes):
+        return MongoAggregateQuery('person', [
+            {'$match': {
+                'country_code': {'$in': country_codes},
+            }},
+            {'$unwind': '$follows'},
+            {'$group': {
+                '_id': {
+                    'from_country': '$country_code',
+                    'to_country': '$follows.to_person.country_code',
+                },
+                'edges': {'$sum': 1},
+                'active_targets': {'$sum': {'$cond': ['$follows.to_person.is_active', 1, 0]}},
+            }},
+            {'$project': {
+                '_id': 0,
+                'from_country': '$_id.from_country',
+                'to_country': '$_id.to_country',
+                'edges': 1,
+                'active_targets': 1,
+            }},
+            {'$sort': {'edges': -1, 'from_country': 1, 'to_country': 1}},
+            {'$limit': 200},
+        ])
+
     @query('other-0', 'Recent order search by status and shipping country')
     def _recent_orders_by_status_country(self):
         return MongoFindQuery('order',

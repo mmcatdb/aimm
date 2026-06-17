@@ -320,3 +320,114 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
                 avg(toFloat(it.unit_price_cents)) AS avg_unit_price_cents
             ORDER BY quantity
         '''
+
+    @override
+    def _seller_sales_summary(self, date, seller_ids):
+        return f'''
+            MATCH (s:Seller)-[:OFFERS]->(pr:Product)<-[it:HAS_ITEM]-(o:Order)
+            WHERE s.seller_id IN [{seller_ids}]
+                AND o.ordered_at >= datetime('{date}')
+                AND o.status IN ['paid', 'shipped']
+            RETURN
+                s.seller_id AS seller_id,
+                count(DISTINCT o.order_id) AS orders,
+                count(*) AS items,
+                sum(it.quantity) AS units,
+                sum(it.line_total_cents) AS revenue_cents
+            ORDER BY revenue_cents DESC, seller_id
+            LIMIT 200
+        '''
+
+    @override
+    def _customer_country_order_status(self, date, country_codes):
+        return f'''
+            MATCH (c:Customer)-[:PLACED]->(o:Order)
+            WHERE c.country_code IN [{country_codes}]
+                AND o.ordered_at >= datetime('{date}')
+            RETURN
+                c.country_code AS country_code,
+                o.status AS status,
+                count(*) AS orders,
+                sum(o.total_cents) AS revenue_cents,
+                avg(toFloat(o.total_cents)) AS avg_order_cents
+            ORDER BY country_code, status
+        '''
+
+    @override
+    def _product_review_summary(self, product_ids, min_helpful_votes):
+        return f'''
+            MATCH ()-[r:REVIEWED]->(p:Product)
+            WHERE p.product_id IN [{product_ids}]
+                AND r.helpful_votes >= {min_helpful_votes}
+            RETURN
+                p.product_id AS product_id,
+                count(*) AS reviews,
+                avg(toFloat(r.rating)) AS avg_rating,
+                sum(r.helpful_votes) AS helpful_votes,
+                max(r.helpful_votes) AS max_helpful_votes
+            ORDER BY reviews DESC, product_id
+            LIMIT 200
+        '''
+
+    @override
+    def _category_interest_summary(self, category_ids, min_strength):
+        return f'''
+            MATCH (p:Person)-[hi:HAS_INTEREST]->(c:Category)
+            WHERE c.category_id IN [{category_ids}]
+                AND hi.strength >= {min_strength}
+                AND p.is_active = true
+            RETURN
+                c.category_id AS category_id,
+                count(DISTINCT p.person_id) AS interested_persons,
+                avg(toFloat(hi.strength)) AS avg_strength,
+                max(hi.strength) AS max_strength
+            ORDER BY interested_persons DESC, category_id
+            LIMIT 200
+        '''
+
+    @override
+    def _category_catalog_summary(self, category_ids, max_price_cents, min_stock_qty):
+        return f'''
+            MATCH (p:Product)-[:HAS_CATEGORY]->(c:Category)
+            WHERE c.category_id IN [{category_ids}]
+                AND p.is_active = true
+                AND p.price_cents <= {max_price_cents}
+                AND p.stock_qty >= {min_stock_qty}
+            RETURN
+                c.category_id AS category_id,
+                count(DISTINCT p.product_id) AS products,
+                sum(p.stock_qty) AS stock_qty,
+                avg(toFloat(p.price_cents)) AS avg_price_cents
+            ORDER BY products DESC, category_id
+            LIMIT 200
+        '''
+
+    @override
+    def _seller_catalog_health(self, seller_ids):
+        return f'''
+            MATCH (s:Seller)-[:OFFERS]->(p:Product)
+            WHERE s.seller_id IN [{seller_ids}]
+            RETURN
+                s.seller_id AS seller_id,
+                count(*) AS products,
+                sum(CASE WHEN p.is_active THEN 1 ELSE 0 END) AS active_products,
+                sum(CASE WHEN p.is_active THEN 0 ELSE 1 END) AS inactive_products,
+                sum(p.stock_qty) AS stock_qty,
+                avg(toFloat(p.price_cents)) AS avg_price_cents
+            ORDER BY products DESC, seller_id
+            LIMIT 200
+        '''
+
+    @override
+    def _follow_country_rollup(self, country_codes):
+        return f'''
+            MATCH (p_from:Person)-[:FOLLOWS]->(p_to:Person)
+            WHERE p_from.country_code IN [{country_codes}]
+            RETURN
+                p_from.country_code AS from_country,
+                p_to.country_code AS to_country,
+                count(*) AS edges,
+                sum(CASE WHEN p_to.is_active THEN 1 ELSE 0 END) AS active_targets
+            ORDER BY edges DESC, from_country, to_country
+            LIMIT 200
+        '''
