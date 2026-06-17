@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+python -m scripts.pipeline.validate_edbt_measurements \
+  postgres \
+  edbt-2/measured-1000-20.jsonl \
+  edbt-3/measured-1000-20.jsonl
+
 # python -m scripts.neural.create_dataset \
 #   postgres/edbt-2-3-train \
 #   edbt-2/measured-1000-20.jsonl \

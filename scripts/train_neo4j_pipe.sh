@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+python -m scripts.pipeline.validate_edbt_measurements \
+  neo4j \
+  edbt-1/measured-1000-40.jsonl \
+  edbt-2/measured-1000-40.jsonl \
+  edbt-3/measured-1000-40.jsonl
+
 python -m scripts.flat.neo4j.create_dataset \
   neo4j/art-1-2-3-flat-train \
   art-1/measured-1000-15.jsonl \

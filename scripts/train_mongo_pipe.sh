@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+python -m scripts.pipeline.validate_edbt_measurements \
+  mongo \
+  edbt-3/measured-1000-50.jsonl
+
 python -m scripts.flat.mongo.create_dataset \
   mongo/art-1-2-flat-train \
   art-1/measured-2000-50.jsonl \
