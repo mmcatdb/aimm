@@ -37,7 +37,14 @@ from latency_estimation.neo4j.plan_extractor import (
 )
 from latency_estimation.postgres.flat_model import load_flat_model as load_postgres_flat_model
 from providers.path_provider import PathProvider
+from scripts.mcts.conditions import (
+    assignment_conditions_allow,
+    edbt_database_ref_resolver,
+    load_assignment_conditions,
+    print_assignment_conditions,
+)
 from search.mcts import (
+    AssignmentConditions,
     DatabaseInstance,
     MCTSOptimizer,
     PrecomputedLatencyEstimator,
@@ -398,13 +405,17 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--instances-per-template', type=int, default=1)
     parser.add_argument('--seed', type=int)
     parser.add_argument('--latency-cost-weight', type=float, default=1.0)
-    parser.add_argument('--storage-cost-weight', type=float, default=1.0)
+    parser.add_argument('--storage-cost-weight', type=float, default=0.3)
     parser.add_argument('--postgres-model-id', default=DEFAULT_POSTGRES_MODEL_ID)
     parser.add_argument('--mongo-model-id', default=DEFAULT_MONGO_MODEL_ID)
     parser.add_argument('--neo4j-model-id', default=DEFAULT_NEO4J_MODEL_ID)
     parser.add_argument(
         '--latency-estimates',
         help='Path to a precomputed EDBT MCTS latency matrix JSONL file.',
+    )
+    parser.add_argument(
+        '--conditions-file',
+        help='Path to a JSON file with optional query/database assignment conditions.',
     )
     parser.add_argument(
         '--postgres-storage-multiplier',
@@ -440,6 +451,12 @@ def run(args: argparse.Namespace):
     storage_model = build_storage_cost_model(args.scale, multipliers_by_driver)
     databases = build_databases(args.scale)
     queries = build_workload_queries(query_bundles)
+    assignment_conditions = load_assignment_conditions(
+        getattr(args, 'conditions_file', None),
+        queries,
+        databases,
+        resolve_database_ref=edbt_database_ref_resolver(databases),
+    )
 
     print_setup(
         args=args,
@@ -460,6 +477,7 @@ def run(args: argparse.Namespace):
             instances_per_template=args.instances_per_template,
             queries=queries,
             databases=databases,
+            assignment_conditions=assignment_conditions,
         )
         latency_estimator = PrecomputedLatencyEstimator(latency_matrix.latency_estimates())
         optimizer = MCTSOptimizer(
@@ -470,6 +488,7 @@ def run(args: argparse.Namespace):
             latency_cost_weight=args.latency_cost_weight,
             storage_cost_weight=args.storage_cost_weight,
             random_seed=args.seed,
+            assignment_conditions=assignment_conditions,
         )
         result = optimizer.optimize(iterations=args.iterations)
         print_result(
@@ -478,6 +497,7 @@ def run(args: argparse.Namespace):
             databases=databases,
             latency_estimator=latency_estimator,
             storage_model=storage_model,
+            assignment_conditions=assignment_conditions,
         )
         return
 
@@ -498,6 +518,7 @@ def run(args: argparse.Namespace):
             latency_cost_weight=args.latency_cost_weight,
             storage_cost_weight=args.storage_cost_weight,
             random_seed=args.seed,
+            assignment_conditions=assignment_conditions,
         )
         result = optimizer.optimize(iterations=args.iterations)
         print_result(
@@ -506,6 +527,7 @@ def run(args: argparse.Namespace):
             databases=databases,
             latency_estimator=latency_estimator,
             storage_model=storage_model,
+            assignment_conditions=assignment_conditions,
         )
     finally:
         latency_estimator.close()
@@ -615,7 +637,10 @@ def default_edbt_latency_estimates_path(
 
 
 def save_edbt_latency_estimates(path: str, matrix: EdbtLatencyEstimateMatrix):
-    _validate_edbt_latency_estimate_rows(matrix)
+    _validate_edbt_latency_estimate_rows(
+        matrix,
+        required_keys=_all_latency_estimate_keys(matrix.query_ids, matrix.database_ids),
+    )
     with open_output(path, skip_dir_check=not os.path.dirname(path)) as file:
         writer = JsonLinesWriter(file, extended=False)
         writer.writeobject(_edbt_latency_estimate_header_to_dict(matrix))
@@ -652,6 +677,7 @@ def validate_edbt_latency_estimates(
     instances_per_template: int,
     queries: list[WorkloadQuery],
     databases: list[DatabaseInstance],
+    assignment_conditions: AssignmentConditions | None = None,
 ):
     if matrix.schema != SCHEMA:
         raise ValueError(
@@ -675,7 +701,14 @@ def validate_edbt_latency_estimates(
     if matrix.database_ids != expected_database_ids:
         raise ValueError('Latency estimate database ids do not match the EDBT MCTS databases')
 
-    _validate_edbt_latency_estimate_rows(matrix)
+    _validate_edbt_latency_estimate_rows(
+        matrix,
+        required_keys=_required_latency_estimate_keys(
+            queries,
+            databases,
+            assignment_conditions or AssignmentConditions(),
+        ),
+    )
 
 
 def _edbt_latency_estimate_header_to_dict(matrix: EdbtLatencyEstimateMatrix) -> dict:
@@ -762,17 +795,15 @@ def _edbt_latency_estimate_row_from_dict(data: dict) -> EdbtLatencyEstimateRecor
     )
 
 
-def _validate_edbt_latency_estimate_rows(matrix: EdbtLatencyEstimateMatrix):
+def _validate_edbt_latency_estimate_rows(
+    matrix: EdbtLatencyEstimateMatrix,
+    required_keys: set[tuple[str, str]] | None = None,
+):
     _validate_unique_values(matrix.query_ids, 'latency estimate query id')
     _validate_unique_values(matrix.database_ids, 'latency estimate database id')
 
     query_ids = set(matrix.query_ids)
     database_ids = set(matrix.database_ids)
-    expected_keys = {
-        (query_id, database_id)
-        for query_id in matrix.query_ids
-        for database_id in matrix.database_ids
-    }
     seen_keys: set[tuple[str, str]] = set()
 
     for row in matrix.rows:
@@ -793,13 +824,38 @@ def _validate_edbt_latency_estimate_rows(matrix: EdbtLatencyEstimateMatrix):
         seen_keys.add(key)
         _validate_latency_ms(row.latency_ms, row.query_id, row.database_id)
 
-    missing_keys = sorted(expected_keys - seen_keys)
-    if missing_keys:
-        formatted = ', '.join(
-            f'{query_id}@{database_id}'
-            for query_id, database_id in missing_keys
-        )
-        raise ValueError(f'Latency estimate matrix is missing rows for: {formatted}')
+    if required_keys is not None:
+        missing_keys = sorted(required_keys - seen_keys)
+        if missing_keys:
+            formatted = ', '.join(
+                f'{query_id}@{database_id}'
+                for query_id, database_id in missing_keys
+            )
+            raise ValueError(f'Latency estimate matrix is missing rows for: {formatted}')
+
+
+def _all_latency_estimate_keys(
+    query_ids: tuple[str, ...],
+    database_ids: tuple[str, ...],
+) -> set[tuple[str, str]]:
+    return {
+        (query_id, database_id)
+        for query_id in query_ids
+        for database_id in database_ids
+    }
+
+
+def _required_latency_estimate_keys(
+    queries: list[WorkloadQuery],
+    databases: list[DatabaseInstance],
+    assignment_conditions: AssignmentConditions,
+) -> set[tuple[str, str]]:
+    return {
+        (query.id, database.id)
+        for query in queries
+        for database in databases
+        if assignment_conditions_allow(query.id, database.id, assignment_conditions)
+    }
 
 
 def _validate_unique_values(values: tuple[str, ...], label: str):
@@ -1009,6 +1065,7 @@ def print_result(
     databases: list[DatabaseInstance],
     latency_estimator: EdbtLatencyEstimator,
     storage_model: EdbtStorageCostModel,
+    assignment_conditions: AssignmentConditions,
 ):
     database_by_id = {database.id: database for database in databases}
 
@@ -1025,6 +1082,9 @@ def print_result(
         f'(latency {result.best_latency_cost:.2f}, storage {result.best_storage_cost:.2f})'
     )
     print(f'  best reward:           {result.best_reward:.4f}')
+    if not assignment_conditions.is_empty:
+        print()
+        print_assignment_conditions(assignment_conditions)
 
     print()
     print('Best assignment:')

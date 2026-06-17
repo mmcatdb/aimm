@@ -58,6 +58,47 @@ class DatabaseInstance:
     payload: Any = None
 
 
+@dataclass(frozen=True)
+class AssignmentConditions:
+    must_assign: Mapping[QueryId, DatabaseId] | None = None
+    must_not_assign: Mapping[QueryId, Iterable[DatabaseId]] | None = None
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            'must_assign',
+            dict(self.must_assign or {}),
+        )
+        object.__setattr__(
+            self,
+            'must_not_assign',
+            self._normalize_must_not_assign(self.must_not_assign or {}),
+        )
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.must_assign and not self.must_not_assign
+
+    @staticmethod
+    def _normalize_must_not_assign(
+        must_not_assign: Mapping[QueryId, Iterable[DatabaseId]],
+    ) -> dict[QueryId, frozenset[DatabaseId]]:
+        normalized = {}
+        for query_id, database_ids in must_not_assign.items():
+            if isinstance(database_ids, (str, bytes)):
+                normalized[query_id] = frozenset({database_ids})
+                continue
+
+            try:
+                normalized[query_id] = frozenset(database_ids)
+            except TypeError as exc:
+                raise ValueError(
+                    f'Assignment condition forbidden databases for query {query_id!r} '
+                    'must be an iterable of database ids'
+                ) from exc
+        return normalized
+
+
 class PrecomputedLatencyEstimator:
     """Latency estimator backed by a validated query/database latency matrix."""
 
@@ -233,6 +274,7 @@ class MCTSOptimizer:
         storage_cost_weight: float = 0.0,
         cache_storage_costs: bool = True,
         latency_estimates: LatencyEstimateInput | PrecomputedLatencyEstimator | None = None,
+        assignment_conditions: AssignmentConditions | None = None,
     ):
         self.queries = tuple(queries)
         self.databases = tuple(databases)
@@ -265,6 +307,7 @@ class MCTSOptimizer:
         self.random = random.Random(random_seed)
         self.cache_latencies = cache_latencies
         self.cache_storage_costs = cache_storage_costs
+        self.assignment_conditions = assignment_conditions or AssignmentConditions()
 
         self.query_ids = tuple(query.id for query in self.queries)
         self.database_ids = tuple(database.id for database in self.databases)
@@ -290,6 +333,7 @@ class MCTSOptimizer:
         self._best_storage_cost = 0.0
 
         self._validate_inputs()
+        self._validate_assignment_conditions()
         self._validate_feasible_databases_exist()
         self._validate_precomputed_latencies_complete()
         self._initialize_query_storage_table_ids()
@@ -422,6 +466,52 @@ class MCTSOptimizer:
 
         if self.storage_cost_weight > 0 and self.estimate_storage_cost_fn is None:
             raise ValueError('estimate_storage_cost is required when storage_cost_weight is positive')
+
+    def _validate_assignment_conditions(self):
+        must_assign = self.assignment_conditions.must_assign or {}
+        must_not_assign = self.assignment_conditions.must_not_assign or {}
+
+        for query_id, database_id in must_assign.items():
+            self._validate_assignment_condition_id(query_id, 'query')
+            self._validate_assignment_condition_id(database_id, 'database')
+            if query_id not in self.query_by_id:
+                raise ValueError(
+                    f'Assignment condition references unknown query id {query_id!r}'
+                )
+            if database_id not in self.database_by_id:
+                raise ValueError(
+                    f'Assignment condition for query {query_id!r} references '
+                    f'unknown database id {database_id!r}'
+                )
+
+        for query_id, database_ids in must_not_assign.items():
+            self._validate_assignment_condition_id(query_id, 'query')
+            if query_id not in self.query_by_id:
+                raise ValueError(
+                    f'Assignment condition references unknown query id {query_id!r}'
+                )
+            for database_id in database_ids:
+                self._validate_assignment_condition_id(database_id, 'database')
+                if database_id not in self.database_by_id:
+                    raise ValueError(
+                        f'Assignment condition for query {query_id!r} references '
+                        f'unknown database id {database_id!r}'
+                    )
+
+        for query_id, required_database_id in must_assign.items():
+            forbidden_database_ids = must_not_assign.get(query_id, frozenset())
+            if required_database_id in forbidden_database_ids:
+                raise ValueError(
+                    f'Assignment conditions require query {query_id!r} to use '
+                    f'database {required_database_id!r}, but also forbid that assignment'
+                )
+
+    @staticmethod
+    def _validate_assignment_condition_id(value: str, label: str):
+        if not isinstance(value, str):
+            raise ValueError(f'Assignment condition {label} id must be a string: {value!r}')
+        if not value:
+            raise ValueError(f'Assignment condition {label} id must not be empty')
 
     @staticmethod
     def _build_precomputed_latency_estimator(
@@ -588,7 +678,17 @@ class MCTSOptimizer:
         if cached is not None:
             return cached
 
-        if self.can_execute_fn is not None:
+        required_database_id = self.assignment_conditions.must_assign.get(query.id)
+        forbidden_database_ids = self.assignment_conditions.must_not_assign.get(
+            query.id,
+            frozenset(),
+        )
+
+        if required_database_id is not None and database.id != required_database_id:
+            can_execute = False
+        elif database.id in forbidden_database_ids:
+            can_execute = False
+        elif self.can_execute_fn is not None:
             can_execute = bool(self.can_execute_fn(query, database))
         elif query.feasible_database_ids is not None:
             can_execute = database.id in query.feasible_database_ids

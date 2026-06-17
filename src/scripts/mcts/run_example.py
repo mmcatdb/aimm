@@ -5,7 +5,12 @@ from dataclasses import dataclass
 import math
 import random
 
-from search.mcts import DatabaseInstance, MCTSOptimizer, WorkloadQuery
+from scripts.mcts.conditions import (
+    assignment_conditions_allow,
+    load_assignment_conditions,
+    print_assignment_conditions,
+)
+from search.mcts import AssignmentConditions, DatabaseInstance, MCTSOptimizer, WorkloadQuery
 
 
 @dataclass(frozen=True)
@@ -120,7 +125,11 @@ def main():
     parser.add_argument('--seed', type=int, default=20260528)
     parser.add_argument('--queries', type=int, default=15)
     parser.add_argument('--latency-cost-weight', type=float, default=1.0)
-    parser.add_argument('--storage-cost-weight', type=float, default=0.0)
+    parser.add_argument('--storage-cost-weight', type=float, default=0.3)
+    parser.add_argument(
+        '--conditions-file',
+        help='Path to a JSON file with optional query/database assignment conditions.',
+    )
     args = parser.parse_args()
 
     if args.queries <= 0:
@@ -151,6 +160,11 @@ def main():
         )
         for index in range(args.queries)
     ]
+    assignment_conditions = load_assignment_conditions(
+        args.conditions_file,
+        queries,
+        databases,
+    )
 
     latency_model = RandomLatencyModel(queries, databases, seed=args.seed + 1)
     storage_model = RandomStorageModel(table_ids, databases, seed=args.seed + 2)
@@ -162,11 +176,17 @@ def main():
         latency_cost_weight=args.latency_cost_weight,
         storage_cost_weight=args.storage_cost_weight,
         random_seed=args.seed + 3,
+        assignment_conditions=assignment_conditions,
     )
 
     result = optimizer.optimize(iterations=args.iterations)
     initial_by_query = result.initial_assignment
-    sampled_oracle_assignment = choose_sampled_latency_oracle_assignment(queries, databases, latency_model)
+    sampled_oracle_assignment = choose_sampled_latency_oracle_assignment(
+        queries,
+        databases,
+        latency_model,
+        assignment_conditions,
+    )
     sampled_oracle_cost = assignment_cost(
         queries,
         optimizer.database_by_id,
@@ -193,7 +213,7 @@ def main():
         f'(latency {result.best_latency_cost:.2f}, storage {result.best_storage_cost:.2f})'
     )
     print(
-        f'Greedy latency assignment cost: {sampled_oracle_cost.total_cost:.2f} '
+        f'Greedy feasible latency assignment cost: {sampled_oracle_cost.total_cost:.2f} '
         f'(latency {sampled_oracle_cost.latency_cost:.2f}, storage {sampled_oracle_cost.storage_cost:.2f})'
     )
     print(f'Best reward:           {result.best_reward:.4f}')
@@ -206,7 +226,10 @@ def main():
             * (result.best_cost - sampled_oracle_cost.total_cost)
             / sampled_oracle_cost.total_cost
         )
-        print(f'Gap to greedy latency assignment: {gap:.1f}%')
+        print(f'Gap to greedy feasible latency assignment: {gap:.1f}%')
+    if not assignment_conditions.is_empty:
+        print()
+        print_assignment_conditions(assignment_conditions)
 
     print()
     print('Best assignment:')
@@ -269,11 +292,17 @@ def choose_sampled_latency_oracle_assignment(
     queries: list[WorkloadQuery],
     databases: list[DatabaseInstance],
     latency_model: RandomLatencyModel,
+    assignment_conditions: AssignmentConditions,
 ) -> dict[str, str]:
     assignment = {}
     for query in queries:
+        feasible_databases = [
+            database
+            for database in databases
+            if assignment_conditions_allow(query.id, database.id, assignment_conditions)
+        ]
         best_database = min(
-            databases,
+            feasible_databases,
             key=lambda database: latency_model.estimate_latency(query, database),
         )
         assignment[query.id] = best_database.id
