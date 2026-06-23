@@ -387,7 +387,7 @@ class MCTSOptimizer:
             initial_reward,
             report_verbose=False,
         )
-        self._print_verbose_initial_cost(initial_cost)
+        self._print_verbose_best_state(root_state, initial_cost)
 
         best_cost_over_time = [self._best_cost] if collect_trace else []
         iterations_completed = 0
@@ -965,10 +965,6 @@ class MCTSOptimizer:
             self._best_storage_cost = breakdown.storage_cost
             if report_verbose:
                 self._print_verbose_best_state(state, breakdown.total_cost)
-
-    def _print_verbose_initial_cost(self, cost: float):
-        if self.verbose:
-            print(f'Initial time: {cost}', flush=True)
 
     def _print_verbose_best_state(self, state: State, cost: float):
         if not self.verbose:

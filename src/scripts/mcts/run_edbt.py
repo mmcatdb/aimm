@@ -529,10 +529,12 @@ def run(args: argparse.Namespace):
                 assignment,
             ),
         )
+        print_mcts_stream_start(args)
         result = optimizer.optimize(
             iterations=args.iterations,
             initial_assignment=initial_assignment,
         )
+        print_mcts_stream_end(args)
         print_result(
             result=result,
             queries=queries,
@@ -567,10 +569,12 @@ def run(args: argparse.Namespace):
                 assignment,
             ),
         )
+        print_mcts_stream_start(args)
         result = optimizer.optimize(
             iterations=args.iterations,
             initial_assignment=initial_assignment,
         )
+        print_mcts_stream_end(args)
         print_result(
             result=result,
             queries=queries,
@@ -1173,6 +1177,16 @@ def format_edbt_assignment_schema(
 
 def format_driver_label(driver_type: DriverType) -> str:
     return driver_type.value.capitalize()
+
+
+def print_mcts_stream_start(args: argparse.Namespace):
+    if args.verbose:
+        print('===START===', flush=True)
+
+
+def print_mcts_stream_end(args: argparse.Namespace):
+    if args.verbose:
+        print('===END===', flush=True)
 
 
 def print_setup(
