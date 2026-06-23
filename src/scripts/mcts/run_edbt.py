@@ -14,7 +14,6 @@ from core.config import Config
 from core.driver_provider import DriverProvider
 from core.drivers import DriverType, MongoDriver, Neo4jDriver, PostgresDriver
 from core.dynamic_provider import get_dynamic_class_instance
-from core.explainers.postgres_explainer import PostgresExplainer
 from core.files import JsonLinesReader, JsonLinesWriter, open_input, open_output
 from core.query import (
     MongoDeleteQuery,
@@ -37,6 +36,7 @@ from latency_estimation.neo4j.plan_extractor import (
     PlanExtractor as Neo4jPlanExtractor,
 )
 from latency_estimation.postgres.flat_model import load_flat_model as load_postgres_flat_model
+from latency_estimation.postgres.plan_extractor import PlanExtractor as PostgresPlanExtractor
 from providers.path_provider import PathProvider
 from scripts.mcts.conditions import (
     assignment_conditions_allow,
@@ -288,8 +288,8 @@ class EdbtLatencyEstimator:
     def _predict(self, driver_type: DriverType, instance: QueryInstance[Any]) -> float:
         if driver_type == DriverType.POSTGRES:
             model = self._model(driver_type)
-            explainer = self._plan_extractor(driver_type)
-            plan = explainer.fetch_plan(instance.content, do_profile=False)
+            extractor = self._plan_extractor(driver_type)
+            plan = extractor.explain_query(instance.content, instance.is_write, do_profile=False)
             return float(model.predict_plan(plan))
 
         if driver_type == DriverType.MONGO:
@@ -356,7 +356,7 @@ class EdbtLatencyEstimator:
 
         driver = self._driver(driver_type)
         if driver_type == DriverType.POSTGRES:
-            extractor = PostgresExplainer(driver, operators=None)
+            extractor = PostgresPlanExtractor(driver)
         elif driver_type == DriverType.MONGO:
             extractor = MongoPlanExtractor(driver)
         elif driver_type == DriverType.NEO4J:
