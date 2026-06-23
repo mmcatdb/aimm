@@ -21,8 +21,10 @@ class PlanExtractor(BasePlanExtractor[str]):
 
         try:
             with connection.cursor() as cursor:
-                analyze_option = 'ANALYZE, ' if do_profile else ''
-                cursor.execute(f'EXPLAIN ({analyze_option}FORMAT JSON, BUFFERS, VERBOSE) {query}')
+                options = 'FORMAT JSON, VERBOSE, COSTS'
+                if do_profile:
+                    options += ', ANALYZE, BUFFERS'
+                cursor.execute(f'EXPLAIN ({options}) {query}')
                 result = cursor.fetchone()
 
             assert result is not None, 'No plan returned from EXPLAIN.'
