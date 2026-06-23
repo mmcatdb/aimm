@@ -412,6 +412,13 @@ def add_args(parser: argparse.ArgumentParser):
     )
     parser.add_argument('--latency-cost-weight', type=float, default=1.0)
     parser.add_argument('--storage-cost-weight', type=float, default=0.3)
+    parser.add_argument(
+        '--query-weights',
+        help=(
+            'Path to a JSON file or inline JSON object with query weight overrides. '
+            'Keys may be template names (mcts-0) or semantic query ids (mcts-0:0).'
+        ),
+    )
     parser.add_argument('--postgres-model-id', default=DEFAULT_POSTGRES_MODEL_ID)
     parser.add_argument('--mongo-model-id', default=DEFAULT_MONGO_MODEL_ID)
     parser.add_argument('--neo4j-model-id', default=DEFAULT_NEO4J_MODEL_ID)
@@ -452,8 +459,15 @@ def run(args: argparse.Namespace):
 
     model_ids_by_driver = model_ids_by_driver_from_args(args)
     multipliers_by_driver = storage_multipliers_by_driver_from_args(args)
+    query_weight_overrides = load_query_weight_overrides(
+        getattr(args, 'query_weights', None),
+    )
 
-    query_bundles = build_edbt_query_bundles(args.scale, args.instances_per_template)
+    query_bundles = build_edbt_query_bundles(
+        args.scale,
+        args.instances_per_template,
+        query_weight_overrides=query_weight_overrides,
+    )
     storage_model = build_storage_cost_model(args.scale, multipliers_by_driver)
     databases = build_databases(args.scale)
     queries = build_workload_queries(query_bundles)
@@ -569,13 +583,19 @@ def storage_multipliers_by_driver_from_args(args: argparse.Namespace) -> dict[Dr
     }
 
 
-def build_edbt_query_bundles(scale: float, instances_per_template: int) -> list[EdbtQueryBundle]:
+def build_edbt_query_bundles(
+    scale: float,
+    instances_per_template: int,
+    query_weight_overrides: Mapping[str, float] | None = None,
+) -> list[EdbtQueryBundle]:
     registries = {
         driver_type: get_dynamic_class_instance(QueryRegistry, driver_type, SCHEMA)
         for driver_type in DriverType
     }
     validate_mcts_template_configuration(registries)
 
+    overrides = dict(query_weight_overrides or {})
+    used_overrides = set[str]()
     bundles = list[EdbtQueryBundle]()
     for instance_index in range(instances_per_template):
         for template_name in MCTS_TEMPLATE_NAMES:
@@ -593,16 +613,78 @@ def build_edbt_query_bundles(scale: float, instances_per_template: int) -> list[
                 if title is None:
                     title = _extract_title(query.label)
 
+            semantic_id = f'{template_name}:{instance_index}'
+            final_weight = weight if weight is not None else 1.0
+            if template_name in overrides:
+                final_weight = overrides[template_name]
+                used_overrides.add(template_name)
+            if semantic_id in overrides:
+                final_weight = overrides[semantic_id]
+                used_overrides.add(semantic_id)
+
             bundles.append(EdbtQueryBundle(
-                semantic_id=f'{template_name}:{instance_index}',
+                semantic_id=semantic_id,
                 template_name=template_name,
                 instance_index=instance_index,
                 title=title or template_name,
-                weight=weight if weight is not None else 1.0,
+                weight=final_weight,
                 query_by_driver=query_by_driver,
             ))
 
+    unknown_overrides = sorted(set(overrides) - used_overrides)
+    if unknown_overrides:
+        joined = ', '.join(unknown_overrides)
+        raise ValueError(
+            f'Query weight override references unknown query/template id(s): {joined}'
+        )
+
     return bundles
+
+
+def load_query_weight_overrides(value: str | None) -> dict[str, float]:
+    if value is None:
+        return {}
+
+    text = value.strip()
+    if not text:
+        return {}
+
+    if text.startswith(('{', '[')):
+        raw_json = text
+        source = '--query-weights'
+    else:
+        source = value
+        with open_input(value) as file:
+            raw_json = file.read()
+
+    try:
+        data = json_util.loads(raw_json)
+    except Exception as exc:
+        raise ValueError(f'Could not parse query weights JSON from {source!r}') from exc
+
+    return parse_query_weight_overrides(data)
+
+
+def parse_query_weight_overrides(data: object) -> dict[str, float]:
+    if not isinstance(data, dict):
+        raise ValueError(
+            'Query weights JSON must be an object mapping query/template ids to weights'
+        )
+
+    overrides = dict[str, float]()
+    for key, value in data.items():
+        if not isinstance(key, str):
+            raise ValueError(f'Query weight id must be a string: {key!r}')
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f'Query weight for {key!r} must be a number')
+
+        weight = float(value)
+        if not math.isfinite(weight) or weight < 0:
+            raise ValueError(f'Query weight for {key!r} must be finite and non-negative')
+
+        overrides[key] = weight
+
+    return overrides
 
 
 def validate_mcts_template_configuration(registries: Mapping[DriverType, QueryRegistry[Any]]):
