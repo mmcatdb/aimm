@@ -23,6 +23,7 @@ LatencyEstimator = Callable[['WorkloadQuery', 'DatabaseInstance'], float]
 CanExecute = Callable[['WorkloadQuery', 'DatabaseInstance'], bool]
 StorageCostEstimator = Callable[[TableId, 'DatabaseInstance'], float]
 QueryStorageTableResolver = Callable[['WorkloadQuery'], Iterable[TableId]]
+AssignmentSchemaFormatter = Callable[[Assignment], Any]
 LatencyEstimateInput = (
     Mapping[LatencyKey, float]
     | Iterable[tuple[QueryId, DatabaseId, float]]
@@ -275,6 +276,9 @@ class MCTSOptimizer:
         cache_storage_costs: bool = True,
         latency_estimates: LatencyEstimateInput | PrecomputedLatencyEstimator | None = None,
         assignment_conditions: AssignmentConditions | None = None,
+        verbose: bool = False,
+        verbose_progress_interval: int = 1000,
+        format_assignment_schema: AssignmentSchemaFormatter | None = None,
     ):
         self.queries = tuple(queries)
         self.databases = tuple(databases)
@@ -308,6 +312,9 @@ class MCTSOptimizer:
         self.cache_latencies = cache_latencies
         self.cache_storage_costs = cache_storage_costs
         self.assignment_conditions = assignment_conditions or AssignmentConditions()
+        self.verbose = verbose
+        self.verbose_progress_interval = verbose_progress_interval
+        self.format_assignment_schema_fn = format_assignment_schema
 
         self.query_ids = tuple(query.id for query in self.queries)
         self.database_ids = tuple(database.id for database in self.databases)
@@ -374,7 +381,13 @@ class MCTSOptimizer:
         self._baseline_cost = initial_cost
         initial_reward = self._reward_for_cost(initial_cost)
         self._cache_state_evaluation(root, initial_breakdown, initial_reward)
-        self._consider_best_state(root_state, initial_breakdown, initial_reward)
+        self._consider_best_state(
+            root_state,
+            initial_breakdown,
+            initial_reward,
+            report_verbose=False,
+        )
+        self._print_verbose_initial_cost(initial_cost)
 
         best_cost_over_time = [self._best_cost] if collect_trace else []
         iterations_completed = 0
@@ -420,6 +433,7 @@ class MCTSOptimizer:
             iterations_completed += 1
             if collect_trace:
                 best_cost_over_time.append(self._best_cost)
+            self._print_verbose_progress(iterations_completed)
 
         return OptimizationResult(
             best_assignment=self._state_to_assignment(self._best_state or root_state),
@@ -466,6 +480,11 @@ class MCTSOptimizer:
 
         if self.storage_cost_weight > 0 and self.estimate_storage_cost_fn is None:
             raise ValueError('estimate_storage_cost is required when storage_cost_weight is positive')
+
+        if not isinstance(self.verbose_progress_interval, int):
+            raise ValueError('verbose_progress_interval must be an integer')
+        if self.verbose_progress_interval < 0:
+            raise ValueError('verbose_progress_interval must be non-negative')
 
     def _validate_assignment_conditions(self):
         must_assign = self.assignment_conditions.must_assign or {}
@@ -931,13 +950,53 @@ class MCTSOptimizer:
         self.state_cost_breakdown_cache[node.state] = breakdown
         self.state_reward_cache[node.state] = reward
 
-    def _consider_best_state(self, state: State, breakdown: CostBreakdown, reward: float):
+    def _consider_best_state(
+        self,
+        state: State,
+        breakdown: CostBreakdown,
+        reward: float,
+        report_verbose: bool = True,
+    ):
         if breakdown.total_cost < self._best_cost:
             self._best_state = state
             self._best_cost = breakdown.total_cost
             self._best_reward = reward
             self._best_latency_cost = breakdown.latency_cost
             self._best_storage_cost = breakdown.storage_cost
+            if report_verbose:
+                self._print_verbose_best_state(state, breakdown.total_cost)
+
+    def _print_verbose_initial_cost(self, cost: float):
+        if self.verbose:
+            print(f'Initial time: {cost}', flush=True)
+
+    def _print_verbose_best_state(self, state: State, cost: float):
+        if not self.verbose:
+            return
+
+        print([self._format_verbose_schema(state), cost], flush=True)
+
+    def _print_verbose_progress(self, iterations_completed: int):
+        if not self.verbose or self.verbose_progress_interval == 0:
+            return
+        if iterations_completed % self.verbose_progress_interval != 0:
+            return
+
+        print(
+            f'Progress: iterations={iterations_completed} '
+            f'states={len(self.nodes_by_state)}',
+            flush=True,
+        )
+
+    def _format_verbose_schema(self, state: State) -> Any:
+        assignment = self._state_to_assignment(state)
+        if self.format_assignment_schema_fn is not None:
+            return self.format_assignment_schema_fn(assignment)
+
+        output: dict[str, list[str]] = {}
+        for query, database_id in zip(self.queries, state):
+            output.setdefault(database_id, []).append(query.id)
+        return output
 
     def _state_to_assignment(self, state: State) -> Assignment:
         return {

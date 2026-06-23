@@ -413,6 +413,12 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--latency-cost-weight', type=float, default=1.0)
     parser.add_argument('--storage-cost-weight', type=float, default=0.3)
     parser.add_argument(
+        '--verbose',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Print flushed MCTS progress and best-assignment updates.',
+    )
+    parser.add_argument(
         '--query-weights',
         help=(
             'Path to a JSON file or inline JSON object with query weight overrides. '
@@ -517,6 +523,11 @@ def run(args: argparse.Namespace):
             storage_cost_weight=args.storage_cost_weight,
             random_seed=args.seed,
             assignment_conditions=assignment_conditions,
+            verbose=args.verbose,
+            format_assignment_schema=lambda assignment: format_edbt_assignment_schema(
+                queries,
+                assignment,
+            ),
         )
         result = optimizer.optimize(
             iterations=args.iterations,
@@ -550,6 +561,11 @@ def run(args: argparse.Namespace):
             storage_cost_weight=args.storage_cost_weight,
             random_seed=args.seed,
             assignment_conditions=assignment_conditions,
+            verbose=args.verbose,
+            format_assignment_schema=lambda assignment: format_edbt_assignment_schema(
+                queries,
+                assignment,
+            ),
         )
         result = optimizer.optimize(
             iterations=args.iterations,
@@ -1139,6 +1155,24 @@ def storage_ids_by_database(
             if storage_driver_type == driver_type:
                 output.setdefault(database_id, set()).add(table_id)
     return output
+
+
+def format_edbt_assignment_schema(
+    queries: list[WorkloadQuery],
+    assignment: Mapping[str, str],
+) -> dict[str, list[str]]:
+    output = {}
+    for database_id, table_ids in storage_ids_by_database(queries, assignment).items():
+        driver_type, _, _ = parse_database_id(database_id)
+        output[format_driver_label(driver_type)] = sorted(
+            parse_storage_id(table_id)[1]
+            for table_id in table_ids
+        )
+    return output
+
+
+def format_driver_label(driver_type: DriverType) -> str:
+    return driver_type.value.capitalize()
 
 
 def print_setup(
