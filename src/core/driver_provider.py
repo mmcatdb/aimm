@@ -22,6 +22,10 @@ class DriverProvider:
             DriverType.NEO4J: config.neo4j,
         })
 
+    def close(self):
+        for driver in self._drivers.values():
+            driver.close()
+
     # For some reason it's not trivial to get the class from the type and then pass it to a type[Driver] argument.
     # So we just just have several get methods for different use cases.
 

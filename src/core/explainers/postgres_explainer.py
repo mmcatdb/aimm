@@ -36,22 +36,25 @@ class PostgresExplainer:
 
 #region Plan fetching
 
-# Detect DML/write operations in SQL
-DML_RE = re.compile(r'^\s*(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|DROP|ALTER)\b', re.IGNORECASE)
+# Detect write operations in SQL
+_WRITE_RE = re.compile(r'^\s*(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|DROP|ALTER)\b', re.IGNORECASE)
+
+def is_write_query(query: str) -> bool:
+    return bool(_WRITE_RE.match(query))
 
 def fetch_plan(driver: PostgresDriver, query: str, do_profile: bool) -> dict:
     """Return the root plan dict from PostgreSQL EXPLAIN ... FORMAT JSON."""
-    is_dml = bool(DML_RE.match(query))
+    is_write = is_write_query(query)
 
-    if is_dml:
+    if is_write:
         print_info(
-            'DML query detected - running inside a transaction that will be rolled back (no data will be modified).'
+            'Write query detected - running inside a transaction that will be rolled back (no data will be modified).'
             if do_profile else
-            'DML query detected - using EXPLAIN without ANALYZE (estimated plan only, query will NOT be executed).'
+            'Write query detected - using EXPLAIN without ANALYZE (estimated plan only, query will NOT be executed).'
         )
 
-    # For DML with ANALYZE we wrap in a transaction and roll back so nothing is actually committed to the database.
-    is_in_transaction = is_dml and do_profile
+    # For write query with ANALYZE we wrap in a transaction and roll back so nothing is actually committed to the database.
+    is_in_transaction = is_write and do_profile
 
     connection = driver.get_connection()
 

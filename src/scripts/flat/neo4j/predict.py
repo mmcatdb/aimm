@@ -1,14 +1,14 @@
 import argparse
 import sys
-
 from core.config import Config
 from core.driver_provider import DriverProvider
 from core.drivers import DriverType, Neo4jDriver
+from core.explainers.postgres_explainer import is_write_query
 from core.query import parse_database_id
 from core.utils import auto_close, exit_with_error, exit_with_exception, trim_to_block
 from latency_estimation.dataset import parse_dataset_id
 from latency_estimation.neo4j.flat_model import load_flat_model
-from latency_estimation.neo4j.plan_extractor import DML_RE, PlanExtractor
+from latency_estimation.neo4j.plan_extractor import PlanExtractor
 from providers.path_provider import PathProvider
 
 
@@ -47,7 +47,7 @@ def run(config: Config, args: argparse.Namespace):
     plan_extractor = PlanExtractor(driver)
 
     with auto_close(driver):
-        plan = plan_extractor.explain_query(query, _is_write_query(query), do_profile=False)
+        plan = plan_extractor.explain_query(query, is_write_query(query), do_profile=False)
         predicted = model.predict_plan(plan)
 
     print(trim_to_block(query))
@@ -73,11 +73,6 @@ def _get_query(args: argparse.Namespace) -> str:
     if not query:
         exit_with_error('No query provided.')
     return query
-
-
-def _is_write_query(query: str) -> bool:
-    return bool(DML_RE.search(query))
-
 
 if __name__ == '__main__':
     main()

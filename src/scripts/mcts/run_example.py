@@ -171,7 +171,7 @@ def main():
     optimizer = MCTSOptimizer(
         queries=queries,
         databases=databases,
-        estimate_latency=latency_model.estimate_latency,
+        latency_estimator=latency_model,
         estimate_storage_cost=storage_model.estimate_storage_cost,
         latency_cost_weight=args.latency_cost_weight,
         storage_cost_weight=args.storage_cost_weight,

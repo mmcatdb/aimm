@@ -1,14 +1,14 @@
 import argparse
 import sys
-
 from core.config import Config
 from core.driver_provider import DriverProvider
 from core.drivers import DriverType, PostgresDriver
-from core.explainers.postgres_explainer import PostgresExplainer
-from core.query import DatabaseId, parse_database_id
+from core.explainers.postgres_explainer import is_write_query
+from core.query import parse_database_id
 from core.utils import auto_close, exit_with_error, exit_with_exception, trim_to_block
 from latency_estimation.dataset import parse_dataset_id
 from latency_estimation.postgres.flat_model import load_flat_model
+from latency_estimation.postgres.plan_extractor import PlanExtractor
 from providers.path_provider import PathProvider
 
 
@@ -44,10 +44,10 @@ def run(config: Config, args: argparse.Namespace):
 
     dp = DriverProvider.default(config)
     driver = dp.get_typed(PostgresDriver, schema, scale)
-    explainer = PostgresExplainer(driver, operators=None)
+    plan_extractor = PlanExtractor(driver)
 
     with auto_close(driver):
-        plan = explainer.fetch_plan(query, do_profile=False)
+        plan = plan_extractor.explain_query(query, is_write_query(query), do_profile=False)
         predicted = model.predict_plan(plan)
 
     print(trim_to_block(query))

@@ -49,28 +49,28 @@ class Neo4jExplainer:
 
 #region Plan fetching
 
-# Detect DML/write operations in Cypher
-DML_RE = re.compile(r'^\s*(CREATE|DELETE|DETACH\s+DELETE|SET|REMOVE|MERGE)\b', re.IGNORECASE | re.MULTILINE)
+# Detect write operations in Cypher
+_WRITE_RE = re.compile(r'^\s*(CREATE|DELETE|DETACH\s+DELETE|SET|REMOVE|MERGE)\b', re.IGNORECASE | re.MULTILINE)
 
 def fetch_plan(driver: Neo4jDriver, query: str, do_profile: bool) -> dict:
-    is_dml = bool(DML_RE.search(query))
+    is_write = bool(_WRITE_RE.search(query))
 
-    if is_dml:
+    if is_write:
         print_info(
-            'DML query detected - running inside a transaction that will be rolled back (no data will be modified).'
+            'Write query detected - running inside a transaction that will be rolled back (no data will be modified).'
             if do_profile else
-            'DML query detected - using EXPLAIN without execution (estimated plan only, query will NOT be executed).'
+            'Write query detected - using EXPLAIN without execution (estimated plan only, query will NOT be executed).'
         )
 
     with driver.session() as session:
         if do_profile:
-            if is_dml:
-                # Use explicit transaction for DML so we can rollback
+            if is_write:
+                # Use explicit transaction for write query so we can rollback
                 tx = session.begin_transaction()
                 try:
                     result = tx.run(cypher(f'PROFILE {query}'))
                     summary = result.consume()
-                    assert summary.profile is not None, 'Failed to retrieve query summary for DML.'
+                    assert summary.profile is not None, 'Failed to retrieve query summary for write query.'
                     plan_dict = normalize_profile(summary.profile)
 
                     # Add summary statistics

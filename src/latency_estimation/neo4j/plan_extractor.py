@@ -1,13 +1,10 @@
 import time
-import re
 from typing import Any
 from neo4j import Session, Transaction
 from typing_extensions import override
 from core.drivers import Neo4jDriver, cypher
 from core.utils import time_quantity
 from latency_estimation.plan_extractor import BasePlanExtractor
-
-DML_RE = re.compile(r'^\s*(CREATE|DELETE|DETACH\s+DELETE|SET|REMOVE|MERGE)\b', re.IGNORECASE | re.MULTILINE)
 
 class PlanExtractor(BasePlanExtractor[str]):
     """

@@ -1,11 +1,10 @@
 from __future__ import annotations
-
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+import json
 import math
 import random
-from typing import Any
-
+from typing import Any, Protocol
 
 QueryId = str
 DatabaseId = str
@@ -19,16 +18,14 @@ LatencyKey = tuple[QueryId, DatabaseId]
 StorageCostKey = tuple[TableId, DatabaseId]
 EdgeKey = tuple[StateKey, StateKey]
 
-LatencyEstimator = Callable[['WorkloadQuery', 'DatabaseInstance'], float]
+class LatencyEstimator(Protocol):
+    def estimate_latency(self, query: WorkloadQuery, database: DatabaseInstance) -> float: ...
+
 CanExecute = Callable[['WorkloadQuery', 'DatabaseInstance'], bool]
 StorageCostEstimator = Callable[[TableId, 'DatabaseInstance'], float]
 QueryStorageTableResolver = Callable[['WorkloadQuery'], Iterable[TableId]]
 AssignmentSchemaFormatter = Callable[[Assignment], Any]
-LatencyEstimateInput = (
-    Mapping[LatencyKey, float]
-    | Iterable[tuple[QueryId, DatabaseId, float]]
-)
-
+LatencyEstimateInput = Mapping[LatencyKey, float] | Iterable[tuple[QueryId, DatabaseId, float]]
 
 @dataclass(frozen=True)
 class WorkloadQuery:
@@ -263,7 +260,7 @@ class MCTSOptimizer:
         self,
         queries: Sequence[WorkloadQuery],
         databases: Sequence[DatabaseInstance],
-        estimate_latency: LatencyEstimator | None = None,
+        latency_estimator: LatencyEstimator,
         can_execute: CanExecute | None = None,
         exploration_constant: float = math.sqrt(2.0),
         epsilon: float = 1e-12,
@@ -274,7 +271,6 @@ class MCTSOptimizer:
         latency_cost_weight: float = 1.0,
         storage_cost_weight: float = 0.0,
         cache_storage_costs: bool = True,
-        latency_estimates: LatencyEstimateInput | PrecomputedLatencyEstimator | None = None,
         assignment_conditions: AssignmentConditions | None = None,
         verbose: bool = False,
         verbose_progress_interval: int = 1000,
@@ -285,16 +281,7 @@ class MCTSOptimizer:
         self.can_execute_fn = can_execute
         self.estimate_storage_cost_fn = estimate_storage_cost
         self.get_query_storage_table_ids_fn = get_query_storage_table_ids
-        self.precomputed_latency_estimator = self._build_precomputed_latency_estimator(
-            estimate_latency,
-            latency_estimates,
-        )
-        self.uses_precomputed_latency_estimator = estimate_latency is None
-        self.estimate_latency_fn = (
-            estimate_latency
-            if estimate_latency is not None
-            else self.precomputed_latency_estimator.estimate_latency
-        )
+        self.latency_estimator = latency_estimator
         self.exploration_constant = self._validate_non_negative_finite(
             exploration_constant,
             'exploration_constant',
@@ -342,7 +329,12 @@ class MCTSOptimizer:
         self._validate_inputs()
         self._validate_assignment_conditions()
         self._validate_feasible_databases_exist()
-        self._validate_precomputed_latencies_complete()
+        if isinstance(latency_estimator, PrecomputedLatencyEstimator):
+            latency_estimator.validate_complete(
+                self.queries,
+                self.databases,
+                self._can_execute,
+            )
         self._initialize_query_storage_table_ids()
 
     def optimize(
@@ -527,35 +519,8 @@ class MCTSOptimizer:
 
     @staticmethod
     def _validate_assignment_condition_id(value: str, label: str):
-        if not isinstance(value, str):
-            raise ValueError(f'Assignment condition {label} id must be a string: {value!r}')
         if not value:
             raise ValueError(f'Assignment condition {label} id must not be empty')
-
-    @staticmethod
-    def _build_precomputed_latency_estimator(
-        estimate_latency: LatencyEstimator | None,
-        latency_estimates: LatencyEstimateInput | PrecomputedLatencyEstimator | None,
-    ) -> PrecomputedLatencyEstimator:
-        if estimate_latency is not None and latency_estimates is not None:
-            raise ValueError('Provide either estimate_latency or latency_estimates, not both')
-
-        if latency_estimates is None:
-            if estimate_latency is None:
-                raise ValueError('estimate_latency or latency_estimates is required')
-            return PrecomputedLatencyEstimator({})
-
-        if isinstance(latency_estimates, PrecomputedLatencyEstimator):
-            return latency_estimates
-        return PrecomputedLatencyEstimator(latency_estimates)
-
-    def _validate_precomputed_latencies_complete(self):
-        if self.uses_precomputed_latency_estimator:
-            self.precomputed_latency_estimator.validate_complete(
-                self.queries,
-                self.databases,
-                self._can_execute,
-            )
 
     def _initialize_query_storage_table_ids(self):
         if self.estimate_storage_cost_fn is None:
@@ -687,9 +652,7 @@ class MCTSOptimizer:
             if database is None:
                 raise ValueError(f'{label} references unknown database id {database_id!r}')
             if not self._can_execute(query, database):
-                raise ValueError(
-                    f'{label} assigns query {query.id!r} to infeasible database {database_id!r}'
-                )
+                raise ValueError(f'{label} assigns query {query.id!r} to infeasible database {database_id!r}')
 
     def _can_execute(self, query: WorkloadQuery, database: DatabaseInstance) -> bool:
         key = (query.id, database.id)
@@ -698,10 +661,7 @@ class MCTSOptimizer:
             return cached
 
         required_database_id = self.assignment_conditions.must_assign.get(query.id)
-        forbidden_database_ids = self.assignment_conditions.must_not_assign.get(
-            query.id,
-            frozenset(),
-        )
+        forbidden_database_ids = self.assignment_conditions.must_not_assign.get(query.id, frozenset())
 
         if required_database_id is not None and database.id != required_database_id:
             can_execute = False
@@ -723,7 +683,7 @@ class MCTSOptimizer:
             return self.latency_cache[key]
 
         try:
-            latency = float(self.estimate_latency_fn(query, database))
+            latency = float(self.latency_estimator.estimate_latency(query, database))
         except (TypeError, ValueError) as exc:
             raise ValueError(
                 f'Latency estimate for query {query.id!r} on database {database.id!r} '
@@ -970,21 +930,25 @@ class MCTSOptimizer:
         if not self.verbose:
             return
 
-        print([self._format_verbose_schema(state), cost], flush=True)
+        print(json.dumps({
+            'type': 'best-state',
+            'iteration': len(self.nodes_by_state),
+            'states': len(self.nodes_by_state),
+            'state': self._format_verbose_schema(state),
+            'cost': cost,
+        }), flush=True)
 
     def _print_verbose_progress(self, iterations_completed: int):
-        if not self.verbose or self.verbose_progress_interval == 0:
-            return
-        if iterations_completed % self.verbose_progress_interval != 0:
+        if not self.verbose or self.verbose_progress_interval == 0 or iterations_completed % self.verbose_progress_interval != 0:
             return
 
-        print(
-            f'Progress: iterations={iterations_completed} '
-            f'states={len(self.nodes_by_state)}',
-            flush=True,
-        )
+        print(json.dumps({
+            'type': 'progress',
+            'iteration': iterations_completed,
+            'states': len(self.nodes_by_state),
+        }), flush=True)
 
-    def _format_verbose_schema(self, state: State) -> Any:
+    def _format_verbose_schema(self, state: State) -> dict[str, list[str]]:
         assignment = self._state_to_assignment(state)
         if self.format_assignment_schema_fn is not None:
             return self.format_assignment_schema_fn(assignment)
@@ -999,6 +963,5 @@ class MCTSOptimizer:
             query.id: database_id
             for query, database_id in zip(self.queries, state)
         }
-
 
 MCTS = MCTSOptimizer
