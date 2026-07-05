@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-python -m scripts.pipeline.validate_edbt_measurements \
-  postgres \
-  edbt-1/measured-200-40.jsonl \
-  edbt-2/measured-200-40.jsonl \
-  edbt-3/measured-200-40.jsonl \
-  edbt-4/measured-200-40.jsonl
+# python -m scripts.pipeline.validate_edbt_measurements \
+#   postgres \
+#   edbt-1/measured-200-40.jsonl \
+#   edbt-2/measured-200-40.jsonl \
+#   edbt-3/measured-200-40.jsonl \
+#   edbt-4/measured-200-40.jsonl
 
 python -m scripts.flat.postgres.create_dataset \
   postgres/art-1-4-flat-train \
