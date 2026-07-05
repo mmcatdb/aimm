@@ -10,7 +10,6 @@ class Neo4jEdbtQueryRegistry(EdbtQueryRegistry[str]):
     def __init__(self):
         super().__init__(DriverType.NEO4J)
 
-    # OLTP focused (mostly Postgres)
 
     @override
     def _order_history_for_person(self, person_id):
