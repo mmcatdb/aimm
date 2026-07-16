@@ -38,6 +38,13 @@ LatencyEstimatorInput = (
     | Callable[[WorkloadQuery, DatabaseInstance], float]
 )
 
+ACTION_SELECTION_UCT = 'uct'
+ACTION_SELECTION_RANDOM = 'random'
+ACTION_SELECTION_CHOICES = (
+    ACTION_SELECTION_UCT,
+    ACTION_SELECTION_RANDOM,
+)
+
 
 @dataclass(frozen=True)
 class TablePlacementAction:
@@ -109,6 +116,7 @@ class TablePlacementMCTSOptimizer:
         verbose: bool = False,
         verbose_progress_interval: int = 1000,
         format_placement_schema: PlacementSchemaFormatter | None = None,
+        action_selection: str = ACTION_SELECTION_UCT,
     ):
         self.queries = tuple(queries)
         self.databases = tuple(databases)
@@ -139,6 +147,10 @@ class TablePlacementMCTSOptimizer:
         self.cache_latencies = cache_latencies
         self.cache_storage_costs = cache_storage_costs
         self.assignment_conditions = assignment_conditions or AssignmentConditions()
+        if action_selection not in ACTION_SELECTION_CHOICES:
+            choices = ', '.join(repr(choice) for choice in ACTION_SELECTION_CHOICES)
+            raise ValueError(f'action_selection must be one of: {choices}')
+        self.action_selection = action_selection
         self.verbose = verbose
         self.verbose_progress_interval = verbose_progress_interval
         self.format_placement_schema_fn = format_placement_schema
@@ -940,6 +952,9 @@ class TablePlacementMCTSOptimizer:
         candidates = [child for child in node.children.values() if child.state not in path_states]
         if not candidates:
             return None
+
+        if self.action_selection == ACTION_SELECTION_RANDOM:
+            return self.random.choice(candidates)
 
         best_score = -math.inf
         best_children: list[TablePlacementNode] = []

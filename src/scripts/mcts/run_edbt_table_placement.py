@@ -27,6 +27,8 @@ from search.mcts import (
     WorkloadQuery,
 )
 from search.table_placement_mcts import (
+    ACTION_SELECTION_CHOICES,
+    ACTION_SELECTION_UCT,
     DatabasePlacement,
     TablePlacementInput,
     TablePlacementMCTSOptimizer,
@@ -58,6 +60,12 @@ def add_args(parser: argparse.ArgumentParser):
     parser.add_argument('--iterations', type=int, default=20000)
     parser.add_argument('--instances-per-template', type=int, default=1)
     parser.add_argument('--seed', type=int)
+    parser.add_argument(
+        '--action-selection',
+        choices=ACTION_SELECTION_CHOICES,
+        default=ACTION_SELECTION_UCT,
+        help='Choose actions using UCT (default) or uniformly at random.',
+    )
     parser.add_argument('--latency-cost-weight', type=float, default=1.0)
     parser.add_argument('--storage-cost-weight', type=float, default=0.3)
     parser.add_argument(
@@ -118,6 +126,7 @@ def add_args(parser: argparse.ArgumentParser):
 
 
 def run(args: argparse.Namespace):
+    args.action_selection = getattr(args, 'action_selection', ACTION_SELECTION_UCT)
     if args.scale <= 0:
         raise ValueError('--scale must be positive')
     if args.iterations < 0:
@@ -199,6 +208,7 @@ def run(args: argparse.Namespace):
         storage_cost_weight=args.storage_cost_weight,
         random_seed=args.seed,
         assignment_conditions=assignment_conditions,
+        action_selection=args.action_selection,
         verbose=args.print_progress,
         format_placement_schema=format_edbt_placement_schema,
     )
@@ -443,6 +453,7 @@ def print_setup(
     print(f'  instances per template: {args.instances_per_template}')
     print(f'  workload queries: {len(query_bundles)}')
     print(f'  iterations: {args.iterations}')
+    print(f'  action selection: {args.action_selection}')
     print(
         f'  cost weights: latency={args.latency_cost_weight:g}, '
         f'storage={args.storage_cost_weight:g}'
